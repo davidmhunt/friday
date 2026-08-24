@@ -138,6 +138,18 @@ def run_interview(existing: dict[str, str]) -> dict[str, str]:
     cfg["BIBLIO_CONTACT_EMAIL"] = ask("Contact email for bibliography-tool User-Agent (blank to skip)", existing.get("BIBLIO_CONTACT_EMAIL", ""))
     cfg["BIBLIO_USER_AGENT_TOKEN"] = ask("User-Agent product token for bibliography tools", existing.get("BIBLIO_USER_AGENT_TOKEN", f"{cfg['PROJECT_NAME'].lower().replace(' ', '-')}-biblio-tools"))
 
+    cfg["LATEX_DRAFTING_ENABLED"] = "true" if ask_yn(
+        "\nUse the LaTeX/Beamer drafting suite (Researcher drafts formal theory\n"
+        "in docs/theory/, Author builds the final report + slide decks in\n"
+        "docs/report/, both as self-contained latexmk projects)?", False
+    ) else "false"
+    if cfg["LATEX_DRAFTING_ENABLED"] != "true":
+        print(
+            "  Researcher/Author still keep their other duties (memos, references,\n"
+            "  docs/RESULTS.md) — they just won't reference docs/theory/ or\n"
+            "  docs/report/, and any formal writeup goes into a Markdown doc instead."
+        )
+
     cfg["ACCELERATORS_ENABLED"] = "true" if ask_yn("\nDoes this project use GPU/accelerator hardware?", False) else "false"
     if cfg["ACCELERATORS_ENABLED"] == "true":
         print(
@@ -182,12 +194,17 @@ ACCELERATOR_SECTIONS = {
     "false": "accel_none",
     "true": "accel_present",
 }
+LATEX_SECTIONS = {
+    "false": "latex_off",
+    "true": "latex_on",
+}
 
 
 def sections_to_drop(cfg: dict[str, str]) -> set[str]:
     """Config-driven section drops: the LAUNCH_METHOD/TRACKER_KIND/
-    ACCELERATORS_ENABLED variants that don't match this project's choice are
-    removed automatically. Other SECTION markers (optional prose blocks) are
+    ACCELERATORS_ENABLED/LATEX_DRAFTING_ENABLED variants that don't match
+    this project's choice are removed automatically. Other SECTION markers
+    (optional prose blocks) are
     left for the operator to delete by hand — there's no config key to
     decide those.
     """
@@ -209,6 +226,10 @@ def sections_to_drop(cfg: dict[str, str]) -> set[str]:
     # when there is.
     if cfg.get("ACCELERATORS_ENABLED", "false") != "true":
         drop.add("accelerator")
+    keep_latex = LATEX_SECTIONS.get(cfg.get("LATEX_DRAFTING_ENABLED", "false"))
+    for name in LATEX_SECTIONS.values():
+        if name != keep_latex:
+            drop.add(name)
     return drop
 
 
@@ -403,6 +424,8 @@ def closing_checklist(cfg: dict[str, str]) -> None:
     gpu_present = (REPO_ROOT / "harness" / "rules" / "gpu.md").exists()
     accel_ok = accel_enabled == gpu_present
     print(f"  [{'x' if accel_ok else ' '}] harness/rules/gpu.md present={gpu_present} matches ACCELERATORS_ENABLED={accel_enabled}")
+    if cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true":
+        print("  [ ] docs/theory/ and docs/report/ exist (created on first use is fine) and LFS is set up for their generated PDFs — see harness/rules/version_control.md's lfs_policy section")
     print("  [ ] python3 harness/tools/../../.claude/hooks/check_md_hygiene.py (or .agents/hooks/) runs clean — not checked automatically, run it yourself")
     print("  [ ] harness/status.md reflects reality (probably: nothing running yet)")
     print("  [ ] first directive opened from harness/plans/directives/TEMPLATE.md")

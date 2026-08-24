@@ -80,6 +80,7 @@ gitignored — deleting it needs no commit).
       bullet per cited bib key, no numbering/grouping, every key resolvable
       in `references.bib`). Any FAIL blocks marking the memo verified until
       fixed — this is a format check, not a content check.
+   <!-- SECTION:latex_on:start -->
    a3. Run `python3 harness/tools/check_unavailable_sources.py` — fails if
       the memo (or `docs/theory/`, `docs/report/`) cites a bib key listed
       under "Confirmed unavailable" in `docs/references/needs_pdf.md`.
@@ -87,6 +88,15 @@ gitignored — deleting it needs no commit).
       evidentiary support anywhere; any FAIL blocks verification until the
       citation is removed or replaced with a verifiable source. Run this
       after any `docs/theory/` or `docs/report/` edit too, not just memos.
+   <!-- SECTION:latex_on:end -->
+   <!-- SECTION:latex_off:start -->
+   a3. Run `python3 harness/tools/check_unavailable_sources.py` — fails if
+      the memo cites a bib key listed under "Confirmed unavailable" in
+      `docs/references/needs_pdf.md`. Those sources have no recoverable
+      copy, so they must not appear as evidentiary support anywhere; any
+      FAIL blocks verification until the citation is removed or replaced
+      with a verifiable source.
+   <!-- SECTION:latex_off:end -->
    b. For each DOI/URL-backed citation the memo treats as load-bearing,
       `WebFetch` it yourself and confirm the fetched content actually
       supports the claim it's cited for (not merely that the link

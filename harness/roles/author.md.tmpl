@@ -5,12 +5,22 @@ results into the persistent record. Owns the project's single-source-of-
 truth results doc (rule 2) and any manuscripts/reports/decks. Exists
 because "update the docs" otherwise has no owner and silently rots.
 **Tier:** Mid (`claude-sonnet-5`) — no tier escalation for this role.
+<!-- SECTION:latex_on:start -->
 **Namespace:** `docs/RESULTS.md` (the results doc) and `docs/report/`
 (the final LaTeX report and Beamer slide decks — write access). Every
 number on a slide follows rule 2 same as a manuscript. Read-only
 everywhere else — never write to source code, `harness/*`, `docs/theory/`
 (Researcher's namespace), or `data/`.
+<!-- SECTION:latex_on:end -->
+<!-- SECTION:latex_off:start -->
+**Namespace:** `docs/RESULTS.md` (the results doc — write access; any
+project write-up beyond it is a Markdown document alongside it, not a
+separate LaTeX project). Every number written follows rule 2 same as a
+manuscript. Read-only everywhere else — never write to source code,
+`harness/*`, or `data/`.
+<!-- SECTION:latex_off:end -->
 
+<!-- SECTION:latex_on:start -->
 ## Slide decks
 
 - Each report or deck is its own self-contained LaTeX project in
@@ -27,6 +37,7 @@ everywhere else — never write to source code, `harness/*`, `docs/theory/`
 - Build with `latexmk -pdf` from inside the artifact's own subdirectory;
   keep only the most recent generated PDF in the repo (tracked via git LFS
   — see `harness/rules/version_control.md`).
+<!-- SECTION:latex_on:end -->
 
 ## Constraints
 
@@ -44,10 +55,10 @@ everywhere else — never write to source code, `harness/*`, `docs/theory/`
   artifact. A run still in progress is described as preliminary/in-progress
   if mentioned at all, not stated as a finding.
 - Never cite a bib key listed under "Confirmed unavailable" in
-  `docs/references/needs_pdf.md` in `docs/report/` — its content can't be
+  `docs/references/needs_pdf.md` anywhere you write — its content can't be
   reverified, so it can't support a claim. Run
   `python3 harness/tools/check_unavailable_sources.py` before close-out on
-  any report edit that touches citations (also enforced by the Reviewer).
+  any edit that touches citations (also enforced by the Reviewer).
 - **Vendored skills/tools (load on trigger, never preemptively; tool
   guidance never overrides harness rules):** if your environment has
   document-format tools (slide decks, PDFs, LaTeX, citation search), use

@@ -2,12 +2,9 @@
   "_comment": "Every symlink-source path in this repo, and where init_harness.py should link it in a consumer project. Consumer paths are relative to the consumer repo root. Adding a new symlink-source file to this template only requires an entry here, not a change to init_harness.py.",
   "symlinks": [
     { "src": "USER_GUIDE.md", "dest": "harness/USER_GUIDE.md" },
-    { "src": "harness/roles/author.md", "dest": "harness/roles/author.md" },
     { "src": "harness/roles/coder.md", "dest": "harness/roles/coder.md" },
     { "src": "harness/roles/controller.md", "dest": "harness/roles/controller.md" },
     { "src": "harness/roles/planner.md", "dest": "harness/roles/planner.md" },
-    { "src": "harness/roles/researcher.md", "dest": "harness/roles/researcher.md" },
-    { "src": "harness/roles/reviewer.md", "dest": "harness/roles/reviewer.md" },
     { "src": "harness/roles/runner.md", "dest": "harness/roles/runner.md" },
     { "src": "harness/rules/conventions.md", "dest": "harness/rules/conventions.md" },
     { "src": "harness/rules/md_hygiene.md", "dest": "harness/rules/md_hygiene.md" },
@@ -61,6 +58,9 @@
   ],
   "materialize": [
     { "src": "harness/harness.md.tmpl", "dest": "harness/harness.md" },
+    { "src": "harness/roles/researcher.md.tmpl", "dest": "harness/roles/researcher.md" },
+    { "src": "harness/roles/author.md.tmpl", "dest": "harness/roles/author.md" },
+    { "src": "harness/roles/reviewer.md.tmpl", "dest": "harness/roles/reviewer.md" },
     { "src": "harness/rules/environment.md.tmpl", "dest": "harness/rules/environment.md" },
     { "src": "harness/rules/task_tracking.md.tmpl", "dest": "harness/rules/task_tracking.md" },
     { "src": "harness/rules/version_control.md.tmpl", "dest": "harness/rules/version_control.md" },

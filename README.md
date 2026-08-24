@@ -28,14 +28,16 @@ templated), so read it here or in any consumer project.
    makes a later question moot) that a bare script can't provide. The agent
    asks about project identity, repository layout, how code runs, GPU/
    accelerator hardware, background jobs, version control & task tracking,
-   agent tooling, Docker, and bibliography tooling — one topic at a time —
-   then writes `harness.config.env` itself and runs `init_harness.py`.
+   agent tooling, Docker, bibliography tooling, and the LaTeX/Beamer
+   drafting suite — one topic at a time — then writes `harness.config.env`
+   itself and runs `init_harness.py`.
 3. **What that leaves you with**: a symlink tree (`harness/`, `.claude/`,
    `.agents/`) pointing into `.friday/` for everything identical across
    every project, plus real materialized copies of anything needing
-   project-specific customization (the three project-facing rules docs,
-   `AGENTS.md`, `README.md`, and `docker-compose.yml` if Docker is
-   enabled). `AGENTS.md` is the one file every agent session loads first —
+   project-specific customization (`harness.md`, the three project-facing
+   rules docs, the Researcher/Author/Reviewer role contracts, `AGENTS.md`,
+   `README.md`, and `docker-compose.yml`/`gpu.md` if Docker/accelerators
+   are enabled). `AGENTS.md` is the one file every agent session loads first —
    it's where this project's own facts (name, working root, results doc,
    package manager, task tracker, repository layout) live.
 4. **Start working**: tell an agent "you are the planner agent" to open the
@@ -139,7 +141,7 @@ about them is ever rendered or project-specific.
 | Consumer path | Points into `.friday/` | Notes |
 |---|---|---|
 | `harness/USER_GUIDE.md` | `USER_GUIDE.md` | the operator manual you're reading a copy of right now |
-| `harness/roles/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `harness/roles/` | all 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
+| `harness/roles/{coder,controller,planner,runner}.md` | `harness/roles/` | 4 of the 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
 | `harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts}.md` | `harness/rules/` | the 5 rules docs with zero project-specific content |
 | `harness/plans/directives/TEMPLATE.md` | `harness/plans/directives/` | the directive template every real directive is copied from |
 | `harness/tools/{_config,intake_references,verify_references,check_unavailable_sources,lint_research_memo,find_open_access_pdf}.py` | `harness/tools/` | bibliography-workflow tools; config-driven via `harness.config.env` (see `harness/tools/_config.py`), not templated |
@@ -162,6 +164,9 @@ one that already exists and differs from a fresh render; use
 | Consumer path | Template source in `.friday/` | Gated by |
 |---|---|---|
 | `harness/harness.md` | `harness/harness.md.tmpl` | — |
+| `harness/roles/researcher.md` | `harness/roles/researcher.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the `docs/theory/` namespace text |
+| `harness/roles/author.md` | `harness/roles/author.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the `docs/report/` namespace + Slide decks section |
+| `harness/roles/reviewer.md` | `harness/roles/reviewer.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in the citation-check step |
 | `harness/rules/environment.md` | `harness/rules/environment.md.tmpl` | — |
 | `harness/rules/task_tracking.md` | `harness/rules/task_tracking.md.tmpl` | — |
 | `harness/rules/version_control.md` | `harness/rules/version_control.md.tmpl` | — |

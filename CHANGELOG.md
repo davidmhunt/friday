@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.5.0
+
+Makes the LaTeX/Beamer drafting suite (`docs/theory/` for the Researcher,
+`docs/report/` for the Author, self-contained `latexmk` projects citing the
+shared `docs/references/references.bib`) an optional, config-gated axis
+instead of content hardcoded into files that were supposed to be
+byte-identical across every project — the same bug class already fixed
+once for GPU support. New `LATEX_DRAFTING_ENABLED` key (SETUP.md §9,
+alongside the bibliography-tooling questions, which stay unconditional —
+the references/inbox/`.bib` workflow was already generic and needed no
+change).
+
+`harness/roles/researcher.md`, `author.md`, and `reviewer.md` move from
+plain `symlinks` entries to `materialize`/`.tmpl` entries in
+`MANIFEST.json`, each gaining `<!-- SECTION:latex_on/latex_off:start/end
+-->` variants (mirrors `harness.md`'s `accel_none`/`accel_present` split).
+With the suite off, Researcher and Author keep every other duty (memos,
+citations, `docs/RESULTS.md`) — their "formal writeup" output is just a
+Markdown doc instead of a separate LaTeX project. `init_harness.py` gained
+`LATEX_SECTIONS` + a `sections_to_drop()` branch, an interview question,
+and a closing-checklist reminder (LFS/`docs/theory,report` setup) when
+enabled. The Claude/Antigravity adapter `description:` frontmatter for
+these two roles was reworded to be true either way, rather than templated
+— those files stay symlink-source.
+
 ## v0.4.1
 
 Documentation only. Replaced README's terse "see MANIFEST.json" pointer

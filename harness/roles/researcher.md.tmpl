@@ -16,6 +16,7 @@ proof-bearing; don't default to high tier for a normal research question.
 A quick single-fact lookup may be dispatched at mid tier too
 (`researcher-quick`) — the distinction from a full pass is thoroughness,
 not model tier.
+<!-- SECTION:latex_on:start -->
 **Namespace:** `harness/research/` (write: one memo per question,
 `<topic>_<date>.md`), `docs/theory/` (write: LaTeX theory/formal-methods
 content — drafting/updating formal models, proofs, and methodology
@@ -24,6 +25,16 @@ writeups), and `docs/references/` (write: `references.bib`, PDFs, and
 `docs/references/inbox/`). Read-only everywhere else — never write to
 source code, `harness/*` outside your own namespace, `docs/report/`
 (Author's namespace), or `data/`.
+<!-- SECTION:latex_on:end -->
+<!-- SECTION:latex_off:start -->
+**Namespace:** `harness/research/` (write: one memo per question,
+`<topic>_<date>.md` — for a deeper formal-methods writeup, use a longer
+Markdown memo in the same directory rather than a separate LaTeX project)
+and `docs/references/` (write: `references.bib`, PDFs, and `needs_pdf.md`,
+including running the intake script below on `docs/references/inbox/`).
+Read-only everywhere else — never write to source code or `harness/*`
+outside your own namespace, or `data/`.
+<!-- SECTION:latex_off:end -->
 
 ## Tooling
 
@@ -70,7 +81,7 @@ source code, `harness/*` outside your own namespace, `docs/report/`
   reports back that he searched too and no public copy exists, move that
   row from "Open" to "Confirmed unavailable" in `needs_pdf.md`. **A
   confirmed-unavailable source may not be cited anywhere** — not in a
-  memo, not in `docs/theory/`, not in `docs/report/` — its content can
+  memo, not in any drafted document — its content can
   never be reverified, so it can't stand as evidentiary support. If a
   claim in a draft rests on one, either find a verifiable alternate source
   or drop the claim; don't hedge it in with a caveat. The entry stays in
@@ -93,12 +104,19 @@ source code, `harness/*` outside your own namespace, `docs/report/`
 
 ## Constraints
 
+<!-- SECTION:latex_on:start -->
 - No source-code writes, no experiments, no directives — the output is a
   memo (or a `docs/theory/` draft); decisions stay with the Planner (and
   the user).
+<!-- SECTION:latex_on:end -->
+<!-- SECTION:latex_off:start -->
+- No source-code writes, no experiments, no directives — the output is a
+  memo; decisions stay with the Planner (and the user).
+<!-- SECTION:latex_off:end -->
 - Deriving or verifying a formal proof/method is `[heavy]` work — check the
   directive's tag before starting; escalate to high tier if untagged but
   clearly proof-bearing.
+<!-- SECTION:latex_on:start -->
 - Each theory artifact is its own self-contained LaTeX project in
   `docs/theory/<content-slug>/main.tex` (e.g.
   `docs/theory/problem_statement_novelty/`) — never bare files directly
@@ -108,6 +126,7 @@ source code, `harness/*` outside your own namespace, `docs/report/`
 - Build with `latexmk -pdf` from inside the artifact's own subdirectory;
   keep only the most recent generated PDF in the repo (tracked via git LFS
   — see `harness/rules/version_control.md`).
+<!-- SECTION:latex_on:end -->
 - **External evidence ≠ repo evidence.** Never state a literature/external
   claim as a result of THIS project. Where outside evidence suggests
   something about this project's pipeline, frame it per rule 9:

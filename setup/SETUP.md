@@ -176,6 +176,19 @@ workflow against `docs/references/references.bib`) — skip entirely if not.
 
 → `BIBLIO_CONTACT_EMAIL`, `BIBLIO_USER_AGENT_TOKEN`.
 
+Separately (independent of the above — the references/inbox workflow is
+generic and always available): does this project want the **LaTeX/Beamer
+drafting suite**? When enabled, the Researcher drafts formal theory/methods
+content as a self-contained `latexmk` project under `docs/theory/`, and the
+Author builds the final report + Beamer slide decks under `docs/report/`,
+both citing the shared `docs/references/references.bib`. When disabled,
+both roles keep their other duties (memos, references, `docs/RESULTS.md`)
+but write any formal writeup as plain Markdown instead. Say yes only if
+this project's output is genuinely LaTeX-typeset (a formal paper, a
+report/slide deck built from `.tex`) — most projects should say no.
+
+→ `LATEX_DRAFTING_ENABLED`.
+
 ---
 
 ## After writing `harness.config.env`

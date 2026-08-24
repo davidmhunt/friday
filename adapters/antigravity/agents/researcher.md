@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Literature/external research and methodology consultation for this project's harness. Use when the Planner (or the user) needs a rigorous answer to a research/methodology question — searches for evidence, verifies citations/sources, and writes a memo with confidence + recommended experiment to harness/research/. Also drafts and updates docs/theory/ (LaTeX formal methods/theory content) directly. Does not write source code, run experiments, or create directives. Runs mid tier by default; a directive tagged [heavy]/proof-bearing is invoked as `researcher-heavy` instead; a quick single-fact lookup is invoked as `researcher-quick` instead.
+description: Literature/external research and methodology consultation for this project's harness. Use when the Planner (or the user) needs a rigorous answer to a research/methodology question — searches for evidence, verifies citations/sources, and writes a memo with confidence + recommended experiment to harness/research/. If this project's LaTeX/Beamer drafting suite is enabled, also drafts and updates docs/theory/ (formal methods/theory content) directly. Does not write source code, run experiments, or create directives. Runs mid tier by default; a directive tagged [heavy]/proof-bearing is invoked as `researcher-heavy` instead; a quick single-fact lookup is invoked as `researcher-quick` instead.
 tools:
   - view_file
   - list_dir
