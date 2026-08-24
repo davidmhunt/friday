@@ -1,6 +1,7 @@
 {
   "_comment": "Every symlink-source path in this repo, and where init_harness.py should link it in a consumer project. Consumer paths are relative to the consumer repo root. Adding a new symlink-source file to this template only requires an entry here, not a change to init_harness.py.",
   "symlinks": [
+    { "src": "USER_GUIDE.md", "dest": "harness/USER_GUIDE.md" },
     { "src": "harness/roles/author.md", "dest": "harness/roles/author.md" },
     { "src": "harness/roles/coder.md", "dest": "harness/roles/coder.md" },
     { "src": "harness/roles/controller.md", "dest": "harness/roles/controller.md" },
@@ -65,7 +66,6 @@
     { "src": "harness/rules/version_control.md.tmpl", "dest": "harness/rules/version_control.md" },
     { "src": "harness/rules/gpu.md.tmpl", "dest": "harness/rules/gpu.md", "accelerators": true },
     { "src": "harness/templates/research_memo_template.md.tmpl", "dest": "harness/templates/research_memo_template.md" },
-    { "src": "harness/USER_GUIDE.md.tmpl", "dest": "harness/USER_GUIDE.md" },
     { "src": "docs/AGENTS.md.tmpl", "dest": "AGENTS.md" },
     { "src": "docs/README.md.tmpl", "dest": "README.md" },
     { "src": "adapters/claude/settings.json.tmpl", "dest": ".claude/settings.json" },

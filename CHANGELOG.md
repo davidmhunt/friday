@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.4.0
+
+`USER_GUIDE.md` is now a generic, non-templated file living at this repo's
+root — symlinked into every consumer project as `harness/USER_GUIDE.md`
+instead of being materialized from a per-project `.tmpl`. It's readable
+natively on GitHub, updates automatically the moment a project's `.friday/`
+checkout advances (no re-materialize step), and never drifts per project.
+Project-specific operational content that used to live in it (results doc
+path, tracker specifics, project layout) moved to `AGENTS.md`, which already
+carries per-project facts — added a `Docker dev container` row there too.
+Expanded the guide's Docker section into a full lifecycle walkthrough:
+installing Docker, building the image, entering the container, day-to-day
+workflow, and adding volumes later. Removed `init_harness.py`'s
+`write_user_guide_docker_section()` (the per-project auto-refreshed Docker
+blurb it maintained no longer applies to a shared, symlinked file).
+
+`README.md` expanded with a full getting-started walkthrough and a new
+"Updating the harness" section documenting both the plain git-submodule
+update sequence and the `harness_sync.sh` convenience wrapper, including
+the exact one-liner to add the project-owned `harness.sh` entry point that
+was previously only mentioned, never actually explained.
+
+Fixed a false positive in `closing_checklist()`: it was scanning symlinked
+(shared, generic) `.md` files for leftover `[SET AT SETUP: ...]` markers,
+which would flag `USER_GUIDE.md` forever since its Docker section
+legitimately mentions that placeholder syntax in prose. Symlinked files are
+now skipped — only materialized per-project files can have a genuine
+unfilled placeholder.
+
 ## v0.3.0
 
 Restores functionality dropped during the original `SETUP.md` migration

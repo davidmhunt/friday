@@ -355,50 +355,6 @@ def maybe_build_docker(cfg: dict[str, str], dry_run: bool) -> None:
         print(f"  WARN: docker compose build failed: {e}")
 
 
-DOCKER_MANUAL_SECTION_MARKER = "<!-- SECTION:docker_quickstart:start -->"
-
-
-def write_user_guide_docker_section(cfg: dict[str, str], dry_run: bool) -> None:
-    guide = REPO_ROOT / "harness" / "USER_GUIDE.md"
-    if not guide.exists():
-        return
-    if cfg.get("DOCKER_ENABLED") == "true":
-        content = (
-            "```bash\n"
-            "docker compose build\n"
-            "docker compose up -d\n"
-            "docker compose exec harness bash\n"
-            "```\n"
-        )
-    else:
-        content = (
-            "Docker was not set up automatically for this project. To set it up "
-            "by hand: copy `.friday/docker/{Dockerfile,.dockerignore}` and render "
-            "`.friday/docker/docker-compose.yml.tmpl` to `docker-compose.yml` at the "
-            "repo root (fill in the `[SET AT SETUP: ...]` tokens by hand), then:\n\n"
-            "```bash\n"
-            "docker compose build\n"
-            "docker compose up -d\n"
-            "docker compose exec harness bash\n"
-            "```\n\n"
-            "Before starting the container, run `ssh-add` on the host so the "
-            "container's forwarded SSH agent can authenticate to your git remote.\n\n"
-            "To add a volume by hand, edit the `# --- user-added volumes ---` block "
-            "in `docker-compose.yml` — the same block `init_harness.py --reconfigure` "
-            "manages, so manual edits and future re-runs don't fight each other.\n"
-        )
-    text = guide.read_text()
-    section_re = re.compile(
-        r"## Setting up Docker manually\n\n.*?(?=\n## |\Z)", re.DOTALL
-    )
-    new_section = f"## Setting up Docker manually\n\n{content}"
-    if section_re.search(text):
-        text = section_re.sub(new_section, text)
-    else:
-        text = text.rstrip("\n") + "\n\n" + new_section
-    print(f"  refreshed 'Setting up Docker manually' section in {guide}")
-    if not dry_run:
-        guide.write_text(text)
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +379,8 @@ def closing_checklist(cfg: dict[str, str]) -> None:
     print("\n=== Closing checklist ===")
     leftovers = []
     for path in (REPO_ROOT / "harness").rglob("*.md"):
+        if path.is_symlink():
+            continue  # shared/generic files (e.g. USER_GUIDE.md) are never a per-project fill-in
         if LEFTOVER_RE.search(path.read_text(errors="ignore")):
             leftovers.append(path)
     for path in (REPO_ROOT / "AGENTS.md", REPO_ROOT / "README.md"):
@@ -484,9 +442,6 @@ def main() -> int:
         if not args.dry_run:
             apply_docker_volumes(cfg)
             maybe_build_docker(cfg, args.dry_run)
-
-    print("\n=== USER_GUIDE.md Docker section ===")
-    write_user_guide_docker_section(cfg, args.dry_run)
 
     closing_checklist(cfg)
     return 0
