@@ -42,7 +42,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _config import find_repo_root  # noqa: E402
+
+REPO_ROOT = find_repo_root()
 REFS_DIR = REPO_ROOT / "docs" / "references"
 INBOX_DIR = REFS_DIR / "inbox"
 BIB_PATH = REFS_DIR / "references.bib"

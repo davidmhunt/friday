@@ -52,9 +52,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from intake_references import parse_bib, sync_needs_pdf  # noqa: E402
-from _config import user_agent  # noqa: E402
+from _config import user_agent, find_repo_root  # noqa: E402
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = find_repo_root()
 REFS_DIR = REPO_ROOT / "docs" / "references"
 BIB_PATH = REFS_DIR / "references.bib"
 

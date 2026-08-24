@@ -28,13 +28,14 @@ import re
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from intake_references import parse_bib  # noqa: E402
+from _config import find_repo_root  # noqa: E402
+
+REPO_ROOT = find_repo_root()
 REFS_DIR = REPO_ROOT / "docs" / "references"
 NEEDS_PDF_PATH = REFS_DIR / "needs_pdf.md"
 BIB_PATH = REFS_DIR / "references.bib"
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from intake_references import parse_bib  # noqa: E402
 
 UNAVAILABLE_HEADER_RE = re.compile(r"^## Confirmed unavailable", re.MULTILINE)
 NEXT_HEADER_RE = re.compile(r"^## ", re.MULTILINE)

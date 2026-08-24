@@ -32,9 +32,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from intake_references import parse_bib  # noqa: E402
-from _config import PROJECT_NAME  # noqa: E402
+from _config import PROJECT_NAME, find_repo_root  # noqa: E402
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = find_repo_root()
 RESEARCH_DIR = REPO_ROOT / "harness" / "research"
 BIB_PATH = REPO_ROOT / "docs" / "references" / "references.bib"
 

@@ -9,15 +9,42 @@ harness/tools/.
 
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-_CONFIG_PATH = REPO_ROOT / "harness.config.env"
+# NOTE: don't derive the consumer repo root from __file__ — this module is
+# reached via a symlink (harness/tools/_config.py -> .friday/harness/tools/
+# _config.py in a consumer project), and Python sets an imported module's
+# __file__ to the resolved real path of whichever sys.path entry found it,
+# not the symlink path it was invoked through. Search upward from the
+# current working directory instead (these tools are documented to run
+# from the repo root, e.g. `python3 harness/tools/verify_references.py`).
+
+
+def find_repo_root() -> Path:
+    """Consumer repo root, found by searching upward from cwd — NOT derived
+    from __file__ (see note above: these modules are reached via a symlink,
+    and a resolved __file__ points inside .friday/, not the consumer repo).
+    These tools are documented to run from the repo root; the upward search
+    is a safety net for being invoked from a subdirectory.
+    """
+    for candidate in (Path.cwd(), *Path.cwd().parents):
+        if (candidate / "harness.config.env").exists() or (candidate / ".git").exists():
+            return candidate
+    return Path.cwd()
+
+
+def _find_config_path() -> Path | None:
+    for candidate in (Path.cwd(), *Path.cwd().parents):
+        path = candidate / "harness.config.env"
+        if path.exists():
+            return path
+    return None
 
 
 def _load_config_file() -> dict[str, str]:
-    if not _CONFIG_PATH.exists():
+    config_path = _find_config_path()
+    if config_path is None:
         return {}
     values: dict[str, str] = {}
-    for line in _CONFIG_PATH.read_text().splitlines():
+    for line in config_path.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

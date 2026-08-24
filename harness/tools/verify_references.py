@@ -25,9 +25,9 @@ import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _config import user_agent  # noqa: E402
+from _config import user_agent, find_repo_root  # noqa: E402
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = find_repo_root()
 BIB_PATH = REPO_ROOT / "docs" / "references" / "references.bib"
 TIMEOUT = 10
 USER_AGENT = user_agent()
