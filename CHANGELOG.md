@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.1
+
+Documentation only. Replaced README's terse "see MANIFEST.json" pointer
+with an actual inline breakdown of every symlinked and materialized path,
+grouped by directory, generated from and cross-checked against
+`MANIFEST.json` — plus a "real project data" section listing what friday
+never touches. Points back to `sync_symlinks()`/`materialize_files()` in
+`setup/init_harness.py` as the code that implements it.
+
 ## v0.4.0
 
 `USER_GUIDE.md` is now a generic, non-templated file living at this repo's

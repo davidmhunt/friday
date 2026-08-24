@@ -122,7 +122,62 @@ Without the wrapper, the plain git submodule sequence is: commit + push
 inside `.friday/`, then commit the updated submodule pointer (gitlink) in
 the consumer repo — repeat the pull half in each other project.
 
-## Repo layout
+## What's symlinked vs. materialized in a consumer project
 
-See `MANIFEST.json` for exactly which files are shared symlinks vs.
-per-project templates, and `USER_GUIDE.md` for the full operator manual.
+`MANIFEST.json` is the single source of truth for this — every path below
+is a literal `dest` entry there, and `sync_symlinks()` /
+`materialize_files()` in `setup/init_harness.py` are what actually create
+them. This section is a human-readable rendering of that manifest, grouped
+by directory; if the two ever disagree, `MANIFEST.json` is authoritative.
+
+### Symlinked (shared — edit in `.friday/`, every project sees it next pull)
+
+These files are byte-identical across every project by design. Their
+symlinks all point back into this repo's checkout at `.friday/`; nothing
+about them is ever rendered or project-specific.
+
+| Consumer path | Points into `.friday/` | Notes |
+|---|---|---|
+| `harness/USER_GUIDE.md` | `USER_GUIDE.md` | the operator manual you're reading a copy of right now |
+| `harness/roles/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `harness/roles/` | all 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
+| `harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts}.md` | `harness/rules/` | the 5 rules docs with zero project-specific content |
+| `harness/plans/directives/TEMPLATE.md` | `harness/plans/directives/` | the directive template every real directive is copied from |
+| `harness/tools/{_config,intake_references,verify_references,check_unavailable_sources,lint_research_memo,find_open_access_pdf}.py` | `harness/tools/` | bibliography-workflow tools; config-driven via `harness.config.env` (see `harness/tools/_config.py`), not templated |
+| `.claude/agents/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `adapters/claude/agents/` | Claude Code role adapter files — present only if `ADAPTERS_ENABLED` includes `claude` |
+| `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
+| `.agents/agents/{author,coder,coder-heavy,controller,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `adapters/antigravity/agents/` | Antigravity role + tier-variant adapter files — present only if `ADAPTERS_ENABLED` includes `antigravity` |
+| `.agents/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.agents/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same canonical files as the `.claude/hooks/*` row above |
+| `Dockerfile`, `docker/entrypoint.sh`, `.dockerignore` | `docker/` | only present if `DOCKER_ENABLED=true` |
+| `.git/hooks/{pre-commit,commit-msg}` | *(anchored to `.claude/hooks/`, per `MANIFEST.json`'s `git_hooks` key — not a manifest `symlinks` entry)* | a second-order symlink: `.git/hooks/*` → `.claude/hooks/*` → `.friday/adapters/hooks/*`; installed by `install_git_hooks()` |
+
+### Materialized (real per-project copies, rendered once)
+
+These start life as a `.tmpl` file in `.friday/`, get their `[SET AT
+SETUP: ...]` tokens substituted and inapplicable `<!-- SECTION -->` blocks
+dropped by `render()`, and are written as ordinary files in the consumer
+project — safe to hand-edit afterward. `init_harness.py` never overwrites
+one that already exists and differs from a fresh render; use
+`--force-materialize=<path>` to force a re-render.
+
+| Consumer path | Template source in `.friday/` | Gated by |
+|---|---|---|
+| `harness/harness.md` | `harness/harness.md.tmpl` | — |
+| `harness/rules/environment.md` | `harness/rules/environment.md.tmpl` | — |
+| `harness/rules/task_tracking.md` | `harness/rules/task_tracking.md.tmpl` | — |
+| `harness/rules/version_control.md` | `harness/rules/version_control.md.tmpl` | — |
+| `harness/rules/gpu.md` | `harness/rules/gpu.md.tmpl` | `ACCELERATORS_ENABLED=true` |
+| `harness/templates/research_memo_template.md` | `harness/templates/research_memo_template.md.tmpl` | — |
+| `AGENTS.md` | `docs/AGENTS.md.tmpl` | — |
+| `README.md` | `docs/README.md.tmpl` | — |
+| `.claude/settings.json` | `adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
+| `.agents/hooks.json` | `adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
+| `docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true` |
+
+### Real project data (never touched by friday)
+
+Everything else under `harness/` — `status.md`, `status_history.md`,
+`log.md`, `plans/next_steps.md`, `plans/suggestions.md`, `plans/goals.md`,
+`plans/directives/<ID>.md` (all but `TEMPLATE.md`), `coding/`, `running/`,
+`review/`, `research/` — is this project's own live state. friday never
+creates, symlinks, or renders anything there; it's not in `MANIFEST.json`
+at all.
