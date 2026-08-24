@@ -37,9 +37,14 @@ templated), so read it here or in any consumer project.
    project-specific customization (`harness.md`, the three project-facing
    rules docs, the Researcher/Author/Reviewer role contracts, `AGENTS.md`,
    `README.md`, and `docker-compose.yml`/`gpu.md` if Docker/accelerators
-   are enabled). `AGENTS.md` is the one file every agent session loads first —
-   it's where this project's own facts (name, working root, results doc,
-   package manager, task tracker, repository layout) live.
+   are enabled) — plus a starter `docs/` and `harness/{coding,plans}/`
+   scaffold (empty working-state files with the right headers, `docs/
+   references/` with its inbox + `needs_pdf.md`, and `docs/theory/`/`docs/
+   report/` if the LaTeX suite is on) so every project starts from the same
+   shape instead of inventing it on first use. `AGENTS.md` is the one file
+   every agent session loads first — it's where this project's own facts
+   (name, working root, results doc, package manager, task tracker,
+   repository layout) live.
 4. **Start working**: tell an agent "you are the planner agent" to open the
    first cycle. See `USER_GUIDE.md` for the full workflow.
 
@@ -144,6 +149,8 @@ about them is ever rendered or project-specific.
 | `harness/roles/{coder,controller,planner,runner}.md` | `harness/roles/` | 4 of the 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
 | `harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts}.md` | `harness/rules/` | the 5 rules docs with zero project-specific content |
 | `harness/plans/directives/TEMPLATE.md` | `harness/plans/directives/` | the directive template every real directive is copied from |
+| `harness/research/README.md`, `harness/review/README.md`, `harness/running/README.md` | same paths | namespace explainers for the Researcher/Reviewer/Runner working directories — zero project-specific content |
+| `docs/references/inbox/README.md` | `docs/references/inbox/` | explains the drop-a-PDF-here + `intake_references.py` workflow |
 | `harness/tools/{_config,intake_references,verify_references,check_unavailable_sources,lint_research_memo,find_open_access_pdf}.py` | `harness/tools/` | bibliography-workflow tools; config-driven via `harness.config.env` (see `harness/tools/_config.py`), not templated |
 | `.claude/agents/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `adapters/claude/agents/` | Claude Code role adapter files — present only if `ADAPTERS_ENABLED` includes `claude` |
 | `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
@@ -172,17 +179,24 @@ one that already exists and differs from a fresh render; use
 | `harness/rules/version_control.md` | `harness/rules/version_control.md.tmpl` | — |
 | `harness/rules/gpu.md` | `harness/rules/gpu.md.tmpl` | `ACCELERATORS_ENABLED=true` |
 | `harness/templates/research_memo_template.md` | `harness/templates/research_memo_template.md.tmpl` | — |
-| `AGENTS.md` | `docs/AGENTS.md.tmpl` | — |
-| `README.md` | `docs/README.md.tmpl` | — |
+| `harness/coding/tasks_working.md`, `tasks_finished.md`, `history.md` | `harness/coding/*.md.tmpl` | — (starter working-state files, blank; real content accrues per-project and is never re-rendered) |
+| `harness/plans/next_steps.md`, `suggestions.md`, `goals.md`, `long_term.md`, `history.md` | `harness/plans/*.md.tmpl` | — (same starter/blank-skeleton pattern as `coding/` above) |
+| `docs/RESULTS.md` | `docs/RESULTS.md.tmpl` | — |
+| `docs/ARCHITECTURE.md` | `docs/ARCHITECTURE.md.tmpl` | — |
+| `docs/references/needs_pdf.md` | `docs/references/needs_pdf.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in its "do not cite" wording |
+| `docs/theory/README.md` | `docs/theory/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
+| `docs/report/README.md` | `docs/report/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
+| `AGENTS.md` | `AGENTS.md.tmpl` | — |
+| `README.md` | `README.md.tmpl` | — |
 | `.claude/settings.json` | `adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
 | `.agents/hooks.json` | `adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
 | `docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true` |
 
 ### Real project data (never touched by friday)
 
-Everything else under `harness/` — `status.md`, `status_history.md`,
-`log.md`, `plans/next_steps.md`, `plans/suggestions.md`, `plans/goals.md`,
-`plans/directives/<ID>.md` (all but `TEMPLATE.md`), `coding/`, `running/`,
-`review/`, `research/` — is this project's own live state. friday never
-creates, symlinks, or renders anything there; it's not in `MANIFEST.json`
-at all.
+`harness/status.md`, `harness/status_history.md`, `harness/log.md`,
+`harness/plans/directives/<ID>.md` (all but `TEMPLATE.md`), and any raw
+reference PDFs/`references.bib` under `docs/references/` are this project's
+own live state — friday materializes the *starting* shape for the files
+above once, then never touches them again (hand-edit freely); these other
+files aren't in `MANIFEST.json` at all, not even as a one-time starter.

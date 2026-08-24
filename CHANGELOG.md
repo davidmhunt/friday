@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.6.0
+
+Consumer projects now get a templated `docs/` and `harness/{coding,plans}/`
+scaffold instead of inventing that shape from scratch on first use — the
+same "make it a real template axis, not implicit convention" move already
+applied to the LaTeX suite (v0.5.0) and GPU support (v0.3.0).
+
+New materialized starters (each rendered once at setup, never re-synced —
+hand-edit freely afterward): `docs/RESULTS.md`, `docs/ARCHITECTURE.md`,
+`docs/references/needs_pdf.md` (its "do not cite" wording is `latex_on`/
+`latex_off`-gated, same mechanism as the role files), and blank-skeleton
+`harness/coding/{tasks_working,tasks_finished,history}.md` +
+`harness/plans/{next_steps,suggestions,goals,long_term,history}.md`. New
+symlinked (pure generic, zero project content) namespace READMEs:
+`harness/{research,review,running}/README.md` and `docs/references/
+inbox/README.md`. New `LATEX_DRAFTING_ENABLED`-gated materialized files:
+`docs/theory/README.md` and `docs/report/README.md`, documenting the
+self-contained-latexmk-project convention on disk instead of only in role
+prose. `materialize_files()` gained a `"latex"` manifest-entry gate
+(mirrors the existing `"accelerators"`/`"docker"` gates); `AGENTS.md.tmpl`
+gained a `latex_on`-gated "LaTeX/Beamer drafting suite" project-facts row;
+`closing_checklist()`'s LaTeX reminder is now a real presence check instead
+of an unconditional TODO line.
+
+`docs/AGENTS.md.tmpl` and `docs/README.md.tmpl` move to this repo's root
+(`AGENTS.md.tmpl`, `README.md.tmpl`) — `docs/` was only ever holding those
+two unrelated files, and freeing it up lets it literally mirror a consumer
+project's real `docs/` tree instead of colliding with it.
+
 ## v0.5.0
 
 Makes the LaTeX/Beamer drafting suite (`docs/theory/` for the Researcher,

@@ -290,6 +290,7 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
 def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force: set[str]) -> None:
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
+    latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
     for entry in manifest["materialize"]:
         adapter = adapter_of(entry)
         enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
@@ -298,6 +299,8 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
         if entry.get("docker") and not docker_enabled:
             continue
         if entry.get("accelerators") and not accelerators_enabled:
+            continue
+        if entry.get("latex") and not latex_enabled:
             continue
         src = SUBMODULE_DIR / entry["src"]
         dest = REPO_ROOT / entry["dest"]
@@ -424,8 +427,12 @@ def closing_checklist(cfg: dict[str, str]) -> None:
     gpu_present = (REPO_ROOT / "harness" / "rules" / "gpu.md").exists()
     accel_ok = accel_enabled == gpu_present
     print(f"  [{'x' if accel_ok else ' '}] harness/rules/gpu.md present={gpu_present} matches ACCELERATORS_ENABLED={accel_enabled}")
-    if cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true":
-        print("  [ ] docs/theory/ and docs/report/ exist (created on first use is fine) and LFS is set up for their generated PDFs — see harness/rules/version_control.md's lfs_policy section")
+    latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
+    theory_present = (REPO_ROOT / "docs" / "theory" / "README.md").exists()
+    latex_ok = latex_enabled == theory_present
+    print(f"  [{'x' if latex_ok else ' '}] docs/theory/, docs/report/ present={theory_present} matches LATEX_DRAFTING_ENABLED={latex_enabled}")
+    if latex_enabled:
+        print("  [ ] LFS is set up for docs/theory/, docs/report/'s generated PDFs — see harness/rules/version_control.md's lfs_policy section")
     print("  [ ] python3 harness/tools/../../.claude/hooks/check_md_hygiene.py (or .agents/hooks/) runs clean — not checked automatically, run it yourself")
     print("  [ ] harness/status.md reflects reality (probably: nothing running yet)")
     print("  [ ] first directive opened from harness/plans/directives/TEMPLATE.md")

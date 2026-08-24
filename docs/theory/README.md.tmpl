@@ -1,0 +1,11 @@
+# Theory (Researcher namespace)
+
+LaTeX theory/formal-methods documents. Each theory artifact is its own
+self-contained LaTeX project in `docs/theory/<content-slug>/main.tex` (e.g.
+`docs/theory/problem_statement_novelty/`) — never bare files directly under
+`docs/theory/`. Build with `latexmk -pdf`, run from the artifact's own
+subdirectory; reach the shared bibliography via
+`\bibliography{../../references/references}`. The generated PDF is tracked
+via git LFS, latest version only per artifact — see
+`harness/rules/version_control.md`'s `lfs_policy` section. See
+`harness/roles/researcher.md` for the full requirements.
