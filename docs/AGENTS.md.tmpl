@@ -1,0 +1,104 @@
+# AGENTS.md
+
+Guidance for coding agents in this repository. This file is loaded into every
+session, so it stays lean — detail lives in on-demand docs. **Load only what
+your task needs, per this index:**
+
+| Before you… | Read |
+|-------------|------|
+| Run any script or test | `harness/rules/environment.md` (env, launch pattern) |
+| Launch/check/trust a long-running job or monitor | `harness/rules/monitoring.md` |
+| Mutate any canonical data artifact (re-generate, re-render, ground truth) | `harness/rules/data_artifacts.md` — snapshot FIRST |
+| [SET AT SETUP: add/remove rows for this project's own on-demand docs, e.g. an architecture doc, a GPU rule, a hardware-interface doc] | |
+| Act as an assigned agent role | `harness/harness.md` (core rules) + `harness/roles/<your-role>.md` only |
+
+## Project facts
+
+| | |
+|---|---|
+| Project | [SET AT SETUP: PROJECT_NAME] — [SET AT SETUP: one-line project description] |
+| Working root | `[SET AT SETUP: PROJECT_WORKING_ROOT]` |
+| Results doc (rule 2) | [SET AT SETUP: where results/findings get recorded for this project] |
+| Environment | [SET AT SETUP: PACKAGE_MANAGER] (`[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD] ...`); see `harness/rules/environment.md` |
+| Accelerators | [SET AT SETUP: none / GPU details, or delete this row] |
+| Work record (rule 12) | git + `[SET AT SETUP: VCS_REMOTE]`; a "record" = a commit, referenced by hash |
+| Who records work | Reviewer, at close-out (never each role individually) |
+| Queue mirror (rule 13) | [SET AT SETUP: TRACKER_KIND] — Planner opens, Reviewer closes (or "none" if not tracked externally) |
+
+## Project Overview
+
+[SET AT SETUP: 1-2 paragraphs describing what this project is and does —
+this section is inherently project-specific prose, not something the
+template can pre-fill. Cover: the problem domain, the shape of the repo
+(what lives where at a high level), and any defining technical constraint
+(e.g. accelerator target, external system it integrates with).]
+
+## Session Continuity
+
+Multiple agents/sessions work here, sometimes concurrently — treat state as
+shared, not private to one session.
+
+- **`harness/status.md`** is the living dashboard: per-directive status for
+  OPEN directives only (owner, state, what's left — the answer to "what is
+  directive X doing right now"), what's running, recent milestones, open
+  issues. Read it at session start; update it on real progress, directive
+  pickup/handoff, job start/finish, or blockers — it must reflect current
+  reality. Keep entries terse; link to your results doc or the relevant
+  script/output instead of duplicating detail. `harness/status_history.md`
+  holds the same directive's record once the Reviewer closes it (rows move
+  there, not deleted) — check it for the outcome of past directives.
+  `harness/plans/directives/<ID>.md` is gitignored (except `TEMPLATE.md`)
+  and deleted by the Reviewer at close-out — it's the working spec while a
+  directive is open, not the durable record.
+- **[SET AT SETUP: this project's results doc]** is the comprehensive
+  results reference (see harness rule 2 — single source of truth for
+  numbers). Update on significant milestones (new version, finalized
+  result, systemic bug fix, real ablation) — not every incremental step.
+  Prefer the pattern: result table + honest interpretation, including
+  negative results with real caveats. [SET AT SETUP: if this project has
+  separate theory/report namespaces (Researcher/Author), describe them
+  here; otherwise delete this sentence.]
+
+## Repository Layout
+
+| Dir | Contents |
+|-----|----------|
+| [SET AT SETUP: fill in this project's own top-level dirs and what lives in each — e.g. `src/`, `notebooks/`, `docs/`, `data/`] | |
+| `harness/` | Multi-agent harness: core rules, role definitions, per-rule detail docs, the live dashboard (`status.md` + `status_history.md`), the role working folders (`plans/`, `coding/`, `running/`, `review/`), and the Researcher's memos (`research/`). |
+
+Conventions: all paths relative to the repo root
+(`[SET AT SETUP: PROJECT_WORKING_ROOT]`), no hardcoded absolute paths in
+code. [SET AT SETUP: PACKAGE_MANAGER] manages dependencies — every run goes
+through `[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD]`.
+
+## Multi-Agent Workflow
+
+Development uses seven roles — Controller, Planner, Coder, Runner, Reviewer,
+Author, Researcher — assigned by the user at chat start ("you are the
+planner agent"). If told to "run the coder and runner in this session," act
+as Controller and spawn the roles as subagents (spawn titles `role(model):
+task`, e.g. `coder(<mid-tier model>): <task>`; utility spawns keep plain
+titles).
+
+**CRITICAL:** `harness/harness.md` holds the loop and the shared rules every
+role must follow; `harness/roles/<role>.md` holds your role's namespace,
+tier, constraints, and handoff protocol. Read the core plus your own role
+file — not the other roles' files. Rule detail docs under `harness/rules/`
+are read only when a rule's trigger matches your next action.
+
+## Command Execution & Approval Policy
+
+Command execution is programmatically guarded by `.agents/hooks.json` via
+`.agents/hooks/command_guard.py` before `run_command` executes:
+
+- **Auto-allowed (`allow`)**: [SET AT SETUP: this project's read-only/build commands, e.g.
+  `<PACKAGE_MANAGER_SYNC_CMD>`, `<PACKAGE_MANAGER_RUN_CMD> pytest`], read-only git queries
+  (`git status`, `git diff`, `git log`, `git show`, `git branch`),
+  and non-destructive inspections (`ls`, `cat`, `grep`, `rg`, `find`, `pwd`).
+- **Requires user approval (`force_ask`)**: State-modifying git commands (`git commit`,
+  `git push`, `git checkout`, `git switch`, `git reset`), background jobs (`systemd-run`,
+  `setsid`), dependency modifications ([SET AT SETUP: e.g. `<PACKAGE_MANAGER> add/remove`]),
+  file deletions (`rm`, `unlink`), and unclassified commands.
+- **Strictly forbidden (`deny`)**: Privilege escalation (`sudo`, `su`), force pushes (`git push --force`),
+  destructive wipes (`rm -rf /`), and piping remote web scripts to shell (`curl | sh`).
+

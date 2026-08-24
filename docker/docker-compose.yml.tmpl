@@ -1,0 +1,37 @@
+services:
+  harness:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_UID: "${USER_UID:-1000}"
+        USER_GID: "${USER_GID:-1000}"
+        INSTALL_LATEX: "${INSTALL_LATEX:-true}"
+    image: [SET AT SETUP: PROJECT_NAME_LOWER]-harness:latest
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - ${SSH_AUTH_SOCK}:/ssh-agent
+      - ~/.gitconfig:/home/agent/.gitconfig:ro
+      - claude-config:/home/agent/.claude
+      - claude-cache:/home/agent/.cache
+      # --- user-added volumes (managed by init_harness.py) ---
+      # --- end user-added volumes ---
+      # --- Future device/port passthrough placeholder -----------------------
+      # Not needed today. If a future need requires e.g. a USB/serial device
+      # inside the container, add here:
+      #   devices:
+      #     - "/dev/ttyUSB0:/dev/ttyUSB0"
+      # and/or a top-level `ports:` block for network passthrough.
+      # ------------------------------------------------------------------------
+    environment:
+      - SSH_AUTH_SOCK=/ssh-agent
+    env_file:
+      - .env
+    stdin_open: true
+    tty: true
+    init: true
+
+volumes:
+  claude-config:
+  claude-cache:

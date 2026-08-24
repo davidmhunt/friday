@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Mechanical markdown-hygiene checker (harness.md rule 8).
+
+Checks the hot-path markdown files against line-count caps and prints a WARN
+line per violation. Plain Python, no dependencies — run it at every Planner/
+Reviewer pass start and from a warn-only pre-commit hook.
+
+Exit code: 1 if any file is over its cap, 0 otherwise. The pre-commit wrapper
+ignores the code (always exits 0) so hygiene never blocks a commit; the
+Planner/Reviewer loop treats exit 1 as the signal to compact per rule 8.
+
+CONFIGURE: FILE_CAPS below is the authoritative copy of the caps quoted in
+harness/rules/md_hygiene.md — keep the two in sync.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+# .claude/hooks/<this file> -> repo root
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Path (relative to repo root) -> max line count. History files are
+# append-only permanent records and are intentionally exempt — don't add them.
+FILE_CAPS = {
+    "harness/status.md": 150,
+    "harness/plans/suggestions.md": 60,
+    "harness/plans/next_steps.md": 400,
+    "harness/coding/tasks_working.md": 250,
+    "harness/coding/tasks_finished.md": 200,
+    "docs/references/needs_pdf.md": 150,
+}
+
+# Additional warn-only per-entry cap: a single task block that sprawls is the
+# usual reason a working file blows its total cap.
+PER_ENTRY_FILE = "harness/coding/tasks_working.md"
+PER_ENTRY_CAP = 12
+_HEADING_RE = re.compile(r"^(#{2,4})\s+(.*)$")
+
+
+def count_lines(path: Path) -> int:
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        return sum(1 for _ in f)
+
+
+def check_per_entry_caps(path: Path) -> list:
+    """WARN for any task block (a `##`-`####` heading through the line before
+    the next such heading, or EOF) longer than PER_ENTRY_CAP. Warn-only."""
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    headings = [
+        (i, m.group(2).strip())
+        for i, line in enumerate(lines)
+        if (m := _HEADING_RE.match(line))
+    ]
+
+    warnings = []
+    for idx, (start, text) in enumerate(headings):
+        end = headings[idx + 1][0] if idx + 1 < len(headings) else len(lines)
+        n = end - start
+        if n > PER_ENTRY_CAP:
+            warnings.append(
+                f"WARN | hygiene | {PER_ENTRY_FILE} entry '{text}' is "
+                f"{n} lines (per-entry cap {PER_ENTRY_CAP})"
+            )
+    return warnings
+
+
+def main() -> int:
+    any_warn = False
+    for rel_path, cap in FILE_CAPS.items():
+        path = REPO_ROOT / rel_path
+        if not path.exists():
+            continue
+        n = count_lines(path)
+        if n > cap:
+            print(f"WARN | hygiene | {rel_path} is {n} lines (cap {cap})")
+            any_warn = True
+
+    per_entry_path = REPO_ROOT / PER_ENTRY_FILE
+    if per_entry_path.exists():
+        for msg in check_per_entry_caps(per_entry_path):
+            print(msg)  # warn-only: deliberately does not affect the exit code
+
+    return 1 if any_warn else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Warn-only commit-message-prefix hook (harness.md rule 12).
+#
+# Prints a WARN if the first line isn't `Role: description` but ALWAYS exits 0
+# — advisory, never a gate.
+#
+# Install (from repo root):
+#   ln -sf ../../.agents/hooks/commit-msg .git/hooks/commit-msg
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -n "$REPO_ROOT" ] || exit 0
+
+PYTHON_BIN="$(command -v python3 || command -v python)"
+[ -n "$PYTHON_BIN" ] || exit 0
+
+if [ -f "$REPO_ROOT/.agents/hooks/check_commit_msg.py" ]; then
+  "$PYTHON_BIN" "$REPO_ROOT/.agents/hooks/check_commit_msg.py" "$1"
+elif [ -f "$REPO_ROOT/.claude/hooks/check_commit_msg.py" ]; then
+  "$PYTHON_BIN" "$REPO_ROOT/.claude/hooks/check_commit_msg.py" "$1"
+fi
+
+exit 0
