@@ -39,6 +39,12 @@ CONFIG_PATH = REPO_ROOT / "harness.config.env"
 MANIFEST_PATH = SUBMODULE_DIR / "MANIFEST.json"
 
 PLACEHOLDER_RE = re.compile(r"\[SET AT SETUP:\s*([A-Z0-9_]+)(?:[^\]]*)\]")
+# Broader than PLACEHOLDER_RE: also catches free-text prose markers (e.g.
+# "[SET AT SETUP: describe ...]") that PLACEHOLDER_RE's all-caps capture
+# group deliberately doesn't match (those aren't tokens render() substitutes
+# — they're for a human/agent to write prose into by hand). Used only for
+# the closing-checklist leftover scan, never for substitution.
+LEFTOVER_RE = re.compile(r"\[SET AT SETUP:[^\]]*\]")
 SECTION_RE = re.compile(
     r"<!--\s*SECTION:([a-zA-Z0-9_]+):start\s*-->.*?<!--\s*SECTION:\1:end\s*-->\n?",
     re.DOTALL,
@@ -132,6 +138,15 @@ def run_interview(existing: dict[str, str]) -> dict[str, str]:
     cfg["BIBLIO_CONTACT_EMAIL"] = ask("Contact email for bibliography-tool User-Agent (blank to skip)", existing.get("BIBLIO_CONTACT_EMAIL", ""))
     cfg["BIBLIO_USER_AGENT_TOKEN"] = ask("User-Agent product token for bibliography tools", existing.get("BIBLIO_USER_AGENT_TOKEN", f"{cfg['PROJECT_NAME'].lower().replace(' ', '-')}-biblio-tools"))
 
+    cfg["ACCELERATORS_ENABLED"] = "true" if ask_yn("\nDoes this project use GPU/accelerator hardware?", False) else "false"
+    if cfg["ACCELERATORS_ENABLED"] == "true":
+        print(
+            "  After this interview, fill in the device table and allocation policy\n"
+            "  in harness/rules/gpu.md (materialized from harness/rules/gpu.md.tmpl) —\n"
+            "  those are free-text [SET AT SETUP: ...] prose blocks the script can't\n"
+            "  infer, same as the Project Overview section in AGENTS.md."
+        )
+
     # --- Docker (B.1a) ---
     cfg["DOCKER_ENABLED"] = "true" if ask_yn("\nSet up Docker for this project?", False) else "false"
     if cfg["DOCKER_ENABLED"] == "true":
@@ -163,13 +178,18 @@ TRACKER_KIND_SECTIONS = {
     "gitlab-issues": "tracker_gitlab",
     "github-issues": "tracker_github",
 }
+ACCELERATOR_SECTIONS = {
+    "false": "accel_none",
+    "true": "accel_present",
+}
 
 
 def sections_to_drop(cfg: dict[str, str]) -> set[str]:
-    """Config-driven section drops: the LAUNCH_METHOD/TRACKER_KIND variants
-    that don't match this project's choice are removed automatically. Other
-    SECTION markers (accelerator notes, optional prose blocks) are left for
-    the operator to delete by hand — there's no config key to decide those.
+    """Config-driven section drops: the LAUNCH_METHOD/TRACKER_KIND/
+    ACCELERATORS_ENABLED variants that don't match this project's choice are
+    removed automatically. Other SECTION markers (optional prose blocks) are
+    left for the operator to delete by hand — there's no config key to
+    decide those.
     """
     drop = set()
     keep_launch = LAUNCH_METHOD_SECTIONS.get(cfg.get("LAUNCH_METHOD", ""))
@@ -180,6 +200,15 @@ def sections_to_drop(cfg: dict[str, str]) -> set[str]:
     for name in TRACKER_KIND_SECTIONS.values():
         if name != keep_tracker:
             drop.add(name)
+    keep_accel = ACCELERATOR_SECTIONS.get(cfg.get("ACCELERATORS_ENABLED", "false"))
+    for name in ACCELERATOR_SECTIONS.values():
+        if name != keep_accel:
+            drop.add(name)
+    # environment.md.tmpl's single free-text accelerator note: drop it
+    # outright when there's no accelerator, keep (for the agent to fill in)
+    # when there is.
+    if cfg.get("ACCELERATORS_ENABLED", "false") != "true":
+        drop.add("accelerator")
     return drop
 
 
@@ -239,12 +268,15 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
 
 def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force: set[str]) -> None:
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
+    accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
     for entry in manifest["materialize"]:
         adapter = adapter_of(entry)
         enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
         if adapter and adapter not in enabled_adapters:
             continue
         if entry.get("docker") and not docker_enabled:
+            continue
+        if entry.get("accelerators") and not accelerators_enabled:
             continue
         src = SUBMODULE_DIR / entry["src"]
         dest = REPO_ROOT / entry["dest"]
@@ -391,10 +423,10 @@ def closing_checklist(cfg: dict[str, str]) -> None:
     print("\n=== Closing checklist ===")
     leftovers = []
     for path in (REPO_ROOT / "harness").rglob("*.md"):
-        if PLACEHOLDER_RE.search(path.read_text(errors="ignore")):
+        if LEFTOVER_RE.search(path.read_text(errors="ignore")):
             leftovers.append(path)
     for path in (REPO_ROOT / "AGENTS.md", REPO_ROOT / "README.md"):
-        if path.exists() and PLACEHOLDER_RE.search(path.read_text(errors="ignore")):
+        if path.exists() and LEFTOVER_RE.search(path.read_text(errors="ignore")):
             leftovers.append(path)
     if leftovers:
         print(f"  [ ] {len(leftovers)} file(s) still have [SET AT SETUP: ...] markers — fill in by hand:")
@@ -409,6 +441,14 @@ def closing_checklist(cfg: dict[str, str]) -> None:
         present = (REPO_ROOT / dirname / "agents").exists()
         ok = enabled == present
         print(f"  [{'x' if ok else ' '}] {dirname}/ present={present} matches ADAPTERS_ENABLED={enabled}")
+    accel_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
+    gpu_present = (REPO_ROOT / "harness" / "rules" / "gpu.md").exists()
+    accel_ok = accel_enabled == gpu_present
+    print(f"  [{'x' if accel_ok else ' '}] harness/rules/gpu.md present={gpu_present} matches ACCELERATORS_ENABLED={accel_enabled}")
+    print("  [ ] python3 harness/tools/../../.claude/hooks/check_md_hygiene.py (or .agents/hooks/) runs clean — not checked automatically, run it yourself")
+    print("  [ ] harness/status.md reflects reality (probably: nothing running yet)")
+    print("  [ ] first directive opened from harness/plans/directives/TEMPLATE.md")
+    print("  [ ] anything surprising you learned during setup recorded in harness/log.md — that file is the \"why\" behind your rules, and it starts on day one")
 
 
 def main() -> int:

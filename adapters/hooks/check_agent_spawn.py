@@ -26,6 +26,7 @@ Dependency-free, can be exercised standalone:
 import json
 import re
 import sys
+from pathlib import Path
 
 # The base harness roles and their variant mappings.
 # Any subagent type not in this set is a utility spawn and exempt.
@@ -60,7 +61,31 @@ TIER_TABLE = (
     "quick lookup -> researcher-quick/inherit)"
 )
 
-HIGH_TIER_KEYWORDS = ("pro", "opus", "high", "heavy")
+def _load_high_tier_keywords(default: tuple[str, ...] = ("opus",)) -> tuple[str, ...]:
+    """Read HIGH_TIER_MODEL_KEYWORDS from harness.config.env, searching
+    upward from cwd (same convention as harness/tools/_config.py). Kept as a
+    tiny standalone reader rather than importing _config.py — this hook is
+    deliberately dependency-free so it stays exercisable in isolation
+    (see module docstring). Falls back to `default` if the config file or
+    key is missing, so the hook still works before setup writes a config.
+    """
+    here = Path.cwd()
+    for candidate in (here, *here.parents):
+        config_path = candidate / "harness.config.env"
+        if config_path.exists():
+            for line in config_path.read_text(errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("HIGH_TIER_MODEL_KEYWORDS="):
+                    value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    keywords = tuple(k.strip() for k in value.split(",") if k.strip())
+                    return keywords or default
+            return default
+        if (candidate / ".git").exists():
+            break
+    return default
+
+
+HIGH_TIER_KEYWORDS = _load_high_tier_keywords()
 
 SPAWN_TOOL_NAMES = {"invoke_subagent", "Agent", "Task"}
 

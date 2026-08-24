@@ -39,7 +39,7 @@ Both wrappers always exit 0 — a violation prints, it never blocks a commit.
 
 ## Configure before relying on them
 
-- `check_agent_spawn.py`: Validates subagent spawn calls against the `role(model): task` convention and checks `[heavy]` tier escalation. `HIGH_TIER_KEYWORDS` should match `harness.config.env`'s `HIGH_TIER_MODEL_KEYWORDS`.
+- `check_agent_spawn.py`: Validates subagent spawn calls against the `role(model): task` convention and checks `[heavy]` tier escalation. `HIGH_TIER_KEYWORDS` is read automatically from the consumer project's `harness.config.env` (`HIGH_TIER_MODEL_KEYWORDS`) at hook run time — no manual sync needed. Falls back to `("opus",)` if no config file is found (e.g. before setup has run).
 - `command_guard.py`: Enforces auto-allow, force-ask, and deny command execution policies (configured with `DENY_PATTERNS`, `FORCE_ASK_PATTERNS`, `ALLOW_COMMAND_PATTERNS`) — its allow-list currently assumes a `uv`/`pytest`/`latexmk`-flavored toolchain; extend the patterns if this project uses a different package manager.
 - `check_md_hygiene.py`: `FILE_CAPS` must match the caps in
   `harness/rules/md_hygiene.md`.

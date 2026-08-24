@@ -72,7 +72,19 @@ free-text `[SET AT SETUP: ...]` prose in `AGENTS.md` (Project Overview) and
 `README.md` (Overview) once materialized — write that prose yourself from
 the answer, `init_harness.py` only substitutes literal tokens.
 
-## 2. Running code
+## 2. Repository layout
+
+- What are this project's top-level directories, and what lives in each
+  (source, notebooks, data, docs, generated output)?
+- Which paths are generated/large/excluded from version control — is
+  `.gitignore` already correct, or does it need entries added?
+
+→ No config key — this is free-text prose written directly into `AGENTS.md`
+§Repository Layout once materialized (the `harness/` row is already filled
+in by the template; add the project's own rows above it). If `.gitignore`
+needs new entries, edit it directly as part of this step.
+
+## 3. Running code
 
 - What language(s), and how is the environment managed — `uv`, `pip`,
   `poetry`, `npm`, conda, a container, nothing at all? If it needs
@@ -84,18 +96,35 @@ the answer, `init_harness.py` only substitutes literal tokens.
 → `PACKAGE_MANAGER`, `PACKAGE_MANAGER_SYNC_CMD`, `PACKAGE_MANAGER_RUN_CMD`,
 `PACKAGE_MANAGER_ADD_CMD`, `TEST_CMD`, `DEPENDENCY_MANIFEST`, `LOCKFILE`.
 
-## 3. Detached background jobs
+## 4. Hardware / accelerators
+
+- Does this project use any GPU/accelerator hardware? "No" is the common
+  case for most projects and is fine — just confirm before moving on.
+- If yes: how many, what model/memory, and do the tools you use (e.g.
+  `nvidia-smi`, your ML framework, a job scheduler) agree on device
+  indexing? Is compute shared with other people or jobs, and if so, how is
+  that coordinated?
+
+→ `ACCELERATORS_ENABLED` (`true`/`false`). If `true`, `init_harness.py`
+materializes `harness/rules/gpu.md` and turns on the accelerator-allocation
+rule (10) and shared-compute-etiquette rule (14) in `harness/harness.md` —
+write the device table and allocation policy into `gpu.md` yourself
+afterward (free-text `[SET AT SETUP: ...]` prose, same pattern as Project
+Overview). If `false`, both files stay in their default "no accelerator
+hardware" state and nothing else is needed.
+
+## 5. Detached background jobs
 
 - Does this machine have a user systemd manager (survives a dropped
   SSH/tmux session)? If unsure, check: `systemctl --user status` succeeding
   is a yes.
 - If not, is this running inside the project's own Docker container (see
-  §6)? If neither, plain `setsid`/`nohup` is the fallback.
+  §8)? If neither, plain `setsid`/`nohup` is the fallback.
 
 → `LAUNCH_METHOD` — exactly one of `systemd-run-user`, `setsid-nohup`,
 `setsid-nohup-container`.
 
-## 4. Version control & task tracking
+## 6. Version control & task tracking
 
 - What's the git remote (SSH URL)? If there isn't one yet, offer to help
   create it (`git init`, a new GitHub/GitLab repo) — confirm before acting.
@@ -108,7 +137,7 @@ the answer, `init_harness.py` only substitutes literal tokens.
 → `VCS_REMOTE`, `TRACKER_KIND` (`none` | `gitlab-issues` | `github-issues`),
 and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 
-## 5. Agent tooling
+## 7. Agent tooling
 
 - Which coding-agent adapters does this project need — Claude Code
   (`.claude/`), Antigravity (`.agents/`), both?
@@ -118,7 +147,7 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 → `ADAPTERS_ENABLED` (comma-separated: `claude`, `antigravity`, or both),
 `HIGH_TIER_MODEL_KEYWORDS`.
 
-## 6. Docker (optional)
+## 8. Docker (optional)
 
 - Set up a Docker dev-container for this project? Most projects should say
   yes only if isolating agent tool calls from the host matters here.
@@ -134,7 +163,7 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 `DOCKER_EXTRA_VOLUMES` in `harness.config.env` directly and re-run
 `init_harness.py` — no need to redo the whole interview.
 
-## 7. Bibliography tooling (optional)
+## 9. Bibliography tooling (optional)
 
 Only relevant if this project uses `harness/tools/*.py` (literature-review
 workflow against `docs/references/references.bib`) — skip entirely if not.
@@ -159,6 +188,13 @@ python3 .friday/setup/init_harness.py
 
 Read its closing checklist. It will call out any `[SET AT SETUP: ...]`
 markers still unfilled — those are free-text prose sections (project
-overview, accelerator notes, optional rule sections) that only a human/agent
-can write, not something the script can infer from `harness.config.env`.
-Fill those in by hand, in the materialized files it lists, then you're done.
+overview, repository layout, accelerator device table, optional rule
+sections) that only a human/agent can write, not something the script can
+infer from `harness.config.env`. Fill those in by hand, in the materialized
+files it lists. The checklist also reminds you to: run the markdown-hygiene
+hook, confirm `harness/status.md` reflects reality, and open a first
+directive from `harness/plans/directives/TEMPLATE.md`.
+
+Finally, record anything surprising you learned during this setup in
+`harness/log.md` — that file is the "why" behind your rules, and it starts
+on day one. Then you're done.

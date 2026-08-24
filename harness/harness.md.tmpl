@@ -184,8 +184,20 @@ via SETUP.md; keep the invariant.
    variable; anything less is written `HYPOTHESIS:` with the discriminating
    experiment named alongside.
 
+<!-- SECTION:accel_none:start -->
 10. *(removed — no accelerator hardware in this project; re-add if/when a
     GPU is provisioned. See `harness/log.md`.)*
+<!-- SECTION:accel_none:end -->
+<!-- SECTION:accel_present:start -->
+10. **Accelerator allocation.** Before claiming a GPU/accelerator for a job,
+    check it isn't already in use by another job/agent; record which device
+    index you're using in `harness/status.md` alongside the job. Tools that
+    report device indices must agree with each other (e.g. `nvidia-smi`
+    ordering vs. the framework's own numbering) — verify this once and note
+    the mapping in `harness/rules/gpu.md` if they don't. **Trigger:** before
+    launching any job that claims accelerator hardware →
+    `harness/rules/gpu.md`.
+<!-- SECTION:accel_present:end -->
 
 11. **Fail-loud numerical guards.** A skip-bad-batch guard must also detect
     permanent collapse and abort loudly; "no valid batches" resolves to a
@@ -210,10 +222,19 @@ via SETUP.md; keep the invariant.
     **Trigger:** opening or closing a directive →
     `harness/rules/task_tracking.md`.
 
+<!-- SECTION:accel_none:start -->
 14. *(reserved for a project-specific rule, e.g. accelerator/hardware
     access — add or remove per-project via `harness/log.md`; leave as a
     numbered placeholder if unused so rule numbers stay stable across
     projects that DO use it.)*
+<!-- SECTION:accel_none:end -->
+<!-- SECTION:accel_present:start -->
+14. **Shared-compute etiquette.** [SET AT SETUP: describe whether this
+    project's accelerator(s) are shared with other people/jobs and, if so,
+    the etiquette for claiming/releasing them — e.g. a lockfile, a
+    scheduler, or just "ask in chat before a long run." Delete this
+    sentence and replace with the real answer during setup.]
+<!-- SECTION:accel_present:end -->
 
 15. **Detached background launches.** Every long-running background job
     (training, multi-hour eval, monitor) is launched fully detached from its
