@@ -12,22 +12,32 @@ re-authoring it.
 ```bash
 git submodule add <this-repo-url> .friday
 git submodule update --init --recursive
-python3 .friday/setup/init_harness.py
 ```
 
-The interview writes `harness.config.env` at your repo root and creates a
-symlink tree (`harness/`, `.claude/`, `.agents/`) pointing into `.friday/`
-for everything that's identical across projects, plus real materialized
-copies of anything that needs project-specific customization (rules docs,
-`AGENTS.md`, `README.md`, `USER_GUIDE.md`).
+Then point your coding agent (Claude Code, Antigravity, or any other) at
+**`setup/SETUP.md`** and say *"walk me through `.friday/setup/SETUP.md`."*
+That's the preferred path — the interview needs judgment (recommending
+defaults, taking real setup actions like `uv init` or creating a remote,
+adapting when an answer makes a later question moot) that a bare script
+can't provide. The agent conducts the interview, writes
+`harness.config.env` itself, then invokes `init_harness.py` to do the
+mechanical work: creates a symlink tree (`harness/`, `.claude/`,
+`.agents/`) pointing into `.friday/` for everything identical across
+projects, plus real materialized copies of anything needing
+project-specific customization (rules docs, `AGENTS.md`, `README.md`,
+`USER_GUIDE.md`, and `docker-compose.yml` if Docker is enabled).
 
-Re-run it any time — it's idempotent and won't overwrite files you've
-hand-edited beyond the interview answers:
+A human can also skip the agent and either hand-write
+`harness.config.env` (see `setup/harness.config.env.example`) or run the
+script's own bare interactive interview directly:
 
 ```bash
-python3 .friday/setup/init_harness.py             # re-sync
+python3 .friday/setup/init_harness.py             # interview if no config yet, else re-sync
 python3 .friday/setup/init_harness.py --reconfigure # re-run the interview
 ```
+
+Either way, re-running is idempotent and won't overwrite files you've
+hand-edited beyond the interview answers.
 
 ## Porting a change between projects
 
