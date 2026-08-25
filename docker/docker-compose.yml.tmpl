@@ -25,6 +25,7 @@ services:
       # <!-- SECTION:docker_agent_antigravity_compose:start -->
       - gemini-config:/home/agent/.gemini
       # <!-- SECTION:docker_agent_antigravity_compose:end -->
+      - herdr-config:/home/agent/.config/herdr
       - agent-cache:/home/agent/.cache
       # --- user-added volumes (managed by init_harness.py) ---
       # --- end user-added volumes ---
@@ -70,4 +71,5 @@ volumes:
   # <!-- SECTION:docker_agent_antigravity_compose:start -->
   gemini-config:
   # <!-- SECTION:docker_agent_antigravity_compose:end -->
+  herdr-config:
   agent-cache:

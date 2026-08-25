@@ -147,9 +147,20 @@ RUN su - agent -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
 COPY docker/antigravity_settings.json /home/agent/.gemini/antigravity-cli/settings.json
 RUN chown -R "${USER_UID}:${USER_GID}" /home/agent/.gemini
 # <!-- SECTION:docker_agent_antigravity:end -->
+# <!-- SECTION:docker_herdr:start -->
+# Herdr (herdr.dev) — terminal workspace manager for AI coding agents.
+# Installed unconditionally rather than gated on ADAPTERS_ENABLED: it wraps
+# whichever agent CLI(s) happen to be on PATH rather than being tied to one,
+# and is the container's default foreground process (see CMD below).
+RUN su - agent -c 'curl -fsSL https://herdr.dev/install.sh | sh'
 
-# Covers every per-user install location used above: uv, pipx/poetry, and
-# (defensively, since its exact layout isn't documented) the Antigravity
+# Mount point for the herdr-config volume — see the ownership note above.
+RUN mkdir -p /home/agent/.config/herdr \
+    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.config/herdr
+# <!-- SECTION:docker_herdr:end -->
+
+# Covers every per-user install location used above: uv, pipx/poetry, herdr,
+# and (defensively, since its exact layout isn't documented) the Antigravity
 # installer.
 ENV PATH="/home/agent/.local/bin:${PATH}"
 
@@ -160,4 +171,8 @@ USER agent
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["bash"]
+# Drop straight into herdr rather than a plain shell — it's the
+# container's intended entry point, from which claude/agy get launched as
+# managed panes. Override with `docker compose run harness bash` for a
+# plain shell when needed.
+CMD ["herdr"]

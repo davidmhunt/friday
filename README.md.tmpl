@@ -73,13 +73,18 @@ project directory is your host filesystem; named volumes keep auth and
 caches across restarts. The image follows this project's own
 `harness.config.env` (package manager, agent CLI, LaTeX, GPU) — after
 re-running `init_harness.py` to reconfigure, run `docker compose build`
-again to pick up a changed `Dockerfile`. See `harness/USER_GUIDE.md` §12
-for the full workflow, including reconfiguring mounts.
+again to pick up a changed `Dockerfile`. The container's default foreground
+process is [herdr](https://herdr.dev), a terminal workspace manager for AI
+coding agents, installed unconditionally alongside whichever agent CLI(s)
+this project enabled. See `harness/USER_GUIDE.md` §12 for the full
+workflow, including reconfiguring mounts.
 
 ```bash
 docker compose build                # build the image
 docker compose up -d                # start the container, detached
-docker compose exec harness bash    # open a shell inside it
+docker compose attach harness       # attach to the running herdr TUI
+# or, for a plain shell instead:
+docker compose exec harness bash
 docker compose down                 # stop it (project dir untouched)
 ```
 <!-- SECTION:docker_quickstart:end -->

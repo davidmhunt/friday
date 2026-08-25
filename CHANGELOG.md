@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.10.0
+
+The dev container now installs and launches
+[herdr](https://herdr.dev), a terminal workspace manager for AI coding
+agents.
+
+**Herdr installs unconditionally.** Unlike the `claude`/`antigravity`
+adapter CLIs, herdr isn't gated on any `harness.config.env` key — it wraps
+whichever agent CLI(s) happen to be on `PATH` rather than being tied to
+one, so every project with `DOCKER_ENABLED=true` gets it. It gets its own
+`herdr-config` volume (`/home/agent/.config/herdr`), pre-created and
+owned by the `agent` user the same way `claude-config`/`gemini-config` are,
+so session and settings state survives `docker compose down`/`up`.
+
+**Herdr is the container's default foreground process.** `Dockerfile`'s
+`CMD` changed from `bash` to `herdr`; the day-to-day workflow is now
+`docker compose up -d && docker compose attach harness`. A plain shell (to
+launch `claude`/`agy` directly without herdr managing them, or just to poke
+around) is still one `docker compose exec harness bash` away.
+`USER_GUIDE.md` §12 and the project `README.md.tmpl` Docker quickstart are
+updated accordingly.
+
 ## v0.9.0
 
 Adapters are now gated symmetrically in the dev container, the Antigravity

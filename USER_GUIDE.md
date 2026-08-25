@@ -672,6 +672,13 @@ already covers:
   regardless of need; it now strictly follows the config.)
 - **`ACCELERATORS_ENABLED`** gates an NVIDIA GPU device reservation in
   `docker-compose.yml` — see §12.7.
+- **Herdr** (`herdr.dev`, a terminal workspace manager for AI coding agents)
+  installs **unconditionally** — unlike the adapter CLIs above it isn't
+  gated on any `harness.config.env` key, since it wraps whichever agent
+  CLI(s) happen to be on `PATH` rather than being tied to one. It gets its
+  own `herdr-config` volume (`/home/agent/.config/herdr`) so sessions and
+  settings persist across `docker compose down`/`up`, and it is the
+  container's default foreground process — see §12.5.
 
 > [!WARNING]
 > **Reconfiguring requires a rebuild — and a re-render first.** These
@@ -698,10 +705,11 @@ This installs Ubuntu 24.04, git, build tooling, and creates a non-root
 `agent` user (uid 1000) matching your host UID/GID, so files the container
 writes come out owned by your host user, not root — plus whichever package
 manager and agent CLI(s) this project's `PACKAGE_MANAGER` and
-`ADAPTERS_ENABLED` selected (§12.3). `uv`, when selected, lands at
-`/home/agent/.local/bin/uv`; the Claude Code CLI, when selected, lands at
-`/usr/bin/claude`; the Antigravity CLI, when selected, lands at
-`/home/agent/.local/bin/agy`. Expect a few minutes the first time; rebuilds after
+`ADAPTERS_ENABLED` selected (§12.3), plus herdr, always. `uv`, when selected,
+lands at `/home/agent/.local/bin/uv`; the Claude Code CLI, when selected,
+lands at `/usr/bin/claude`; the Antigravity CLI, when selected, lands at
+`/home/agent/.local/bin/agy`; herdr lands at `/home/agent/.local/bin/herdr`.
+Expect a few minutes the first time; rebuilds after
 that are cached and fast unless `Dockerfile` itself changed.
 
 `docker compose config` works even with no `.env` file present and
@@ -711,16 +719,33 @@ validating the compose file before you set either up.
 
 ### 12.5 Start and enter the container
 
+The container's default foreground process is **herdr**, not a plain
+shell — start it and attach directly:
+
 ```bash
-docker compose up -d          # start the container, detached
-docker compose exec harness bash   # open a shell inside it
+docker compose up -d          # start the container, detached (launches herdr)
+docker compose attach harness # attach to the running herdr TUI
+```
+
+Detach from `attach` with the usual Docker sequence (`Ctrl-p Ctrl-q`) without
+stopping herdr or the container; `docker compose attach harness` again from
+any terminal reattaches to the same session. `docker compose attach`
+requires a real terminal on the host — it refuses to attach when stdin isn't
+a TTY (e.g. run from a script).
+
+For a plain shell instead of herdr — to poke around, run one-off commands,
+or if you'd rather launch `claude`/`agy` directly without herdr managing
+them:
+
+```bash
+docker compose exec harness bash
 ```
 
 Inside the container, the project directory is bind-mounted at
 `/workspace` and is writable — edits made on the host appear instantly
 inside the container and vice versa, files written from inside the
 container come out owned by your host user (not root), and nothing is
-copied. From that shell:
+copied. From a plain shell (or a pane herdr opens for you):
 
 ```bash
 claude                        # start Claude Code inside the container
@@ -734,7 +759,9 @@ claude login                  # first time only, if not using ANTHROPIC_API_KEY
 `gemini-config` at `/home/agent/.gemini`, each present only when its adapter
 is enabled) persist your `claude login` and `agy` credentials and sessions
 across `docker compose down`/`up` cycles, so you only authenticate once per
-machine. The image pre-creates each of those paths, plus `/home/agent/.cache`,
+machine. `herdr-config` at `/home/agent/.config/herdr` does the same for
+herdr's own settings and session/workspace state, unconditionally. The image
+pre-creates each of those paths, plus `/home/agent/.cache`,
 owned by the `agent` user before the volumes ever mount — a named volume
 mounted onto a path the image doesn't already own is otherwise created
 root-owned by Docker, which the non-root `agent` user can't write, silently
@@ -764,7 +791,7 @@ name.
 
 ### 12.6 Day-to-day workflow
 
-- **Resume work**: `docker compose up -d && docker compose exec harness bash` — the container and its named volumes (auth, caches) persist between sessions; you're not rebuilding or re-authenticating each time.
+- **Resume work**: `docker compose up -d && docker compose attach harness` — the container and its named volumes (auth, caches, herdr session state) persist between sessions; you're not rebuilding or re-authenticating each time.
 - **Detached background jobs** (training runs, long evals) inside the container use the same `setsid nohup ... & disown` pattern as a bare SSH box (see `harness/rules/environment.md`) — the container has no systemd user manager, but Compose's `init: true` runs tini as PID 1, which reaps zombies from detached jobs the same way systemd would on a bare host.
 - **Stop the container**: `docker compose down` — the bind-mounted project directory is untouched (it's your host filesystem), and named volumes (auth, caches) survive; only the container itself is removed.
 - **Rebuild after a Dockerfile change**: `docker compose build && docker compose up -d`.
