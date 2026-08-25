@@ -1,0 +1,63 @@
+# Harness Log — rule provenance & amendment history
+
+Every shared rule in `harness.md` should exist because of a real incident in
+this repo (or, when bootstrapping a new project from this template, a real
+incident somewhere the harness's author has seen this exact failure mode
+before). This file holds the dates, incidents, and amendment history so
+`harness.md` itself stays lean. Relaxing or amending a rule requires a
+dated entry here.
+
+## Rule provenance
+
+- **[SET AT SETUP: fill in today's date, YYYY-MM-DD] — setup interview.**
+  Harness bootstrapped from the `friday` portable-agent-harness template via
+  `.friday/setup/init_harness.py`. [SET AT SETUP: record anything
+  surprising or project-specific that came out of the setup interview here
+  — e.g. rules removed/added for this project's shape (no accelerator
+  hardware yet, no external tracker, a non-default launch method), or any
+  other deviation from the template defaults. This file starts on day one;
+  don't leave it empty once the interview is done.]
+
+## Amendments
+
+- _(none yet)_
+
+## General lessons worth carrying forward (from the harness this template was exported from)
+
+These are process-level lessons, not project-specific facts — worth keeping
+in mind as this new harness accumulates its own incidents:
+
+- **A rule with no incident behind it tends to erode under time pressure.**
+  Rules that sound obviously right in the abstract get argued down or
+  quietly skipped in a real crunch; a rule with a one-line "this is what it
+  cost us last time" note behind it survives. Populate this file's
+  provenance section for real as incidents happen here, rather than leaving
+  it as an abstract rulebook.
+- **Mechanical backstops beat honor-system rules for anything checkable.**
+  Line caps, provenance sidecars, and role attribution on recorded work all
+  eventually got a small script backing them, because the honor-system
+  version recurred despite everyone agreeing it mattered. If a rule can be
+  checked by a script, build the script sooner rather than later.
+- **"Done" needs a mechanical definition, not a vibe.** A closeout checklist
+  (the work record exists, the artifact exists in the right place, the task
+  moved with that record's reference pasted next to it, the Verify line
+  actually re-run) catches fabricated-looking claims that a plain "looks
+  done to me" review misses.
+- **A dead monitor next to a live job is worse than no monitor** — it reads
+  as reassurance. Heartbeat staleness needs an explicit "too old = treat as
+  dead" threshold, not an implicit one.
+- **Detached ≠ crash-proof** in every environment. If your session runs
+  inside a container/cgroup-managed multiplexer, standard shell-level
+  detachment (`setsid`/`nohup`/`disown`) protects against SIGHUP but not
+  against the whole cgroup being torn down — verify what your actual
+  execution environment does on a crash before trusting "it's backgrounded"
+  as durability.
+- **Placement is verified after launch, never inferred from the flag you
+  set.** A device pin can silently select a different physical device than
+  intended (runtimes and system tools disagree on index ordering; a wrong
+  index looks identical in the log), and the symptom is not an error — it's
+  a job that merely runs slow, or OOMs hours later. Cross-check the running
+  process against a stable device identity (UUID/serial) immediately after
+  launch. Same shape as the provenance self-check: the cheap confirmation
+  belongs at the moment of the claim, not at the moment someone gets
+  suspicious.

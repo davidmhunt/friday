@@ -11,14 +11,49 @@ Planner/Reviewer loop treats exit 1 as the signal to compact per rule 8.
 
 CONFIGURE: FILE_CAPS below is the authoritative copy of the caps quoted in
 harness/rules/md_hygiene.md — keep the two in sync.
+
+NOTE: don't derive the consumer repo root from `Path(__file__).resolve()` —
+this module is reached via a symlink (.claude/hooks/<this file> ->
+.friday/adapters/hooks/<this file> in a consumer project), and `.resolve()`
+follows the symlink to its real path inside `.friday/`, making an ancestor
+count land inside the submodule instead of the consumer repo (see
+harness/tools/_config.py for the same note). Search upward instead — from
+cwd first, then from the *unresolved* `Path(__file__).parent` as a fallback
+— for a directory containing `harness.config.env`, or failing that one
+containing both `.gitmodules` and `.friday/`. Kept as a tiny standalone
+reader rather than importing `_config.py` or `check_agent_spawn.py`'s
+`_load_high_tier_keywords()` — this module is deliberately dependency-free
+so it stays exercisable in isolation (see module docstring above).
 """
 
 import re
 import sys
 from pathlib import Path
 
-# .claude/hooks/<this file> -> repo root
-REPO_ROOT = Path(__file__).resolve().parents[2]
+
+def _looks_like_consumer_root(candidate: Path) -> bool:
+    if (candidate / "harness.config.env").exists():
+        return True
+    return (candidate / ".gitmodules").exists() and (candidate / ".friday").is_dir()
+
+
+def find_repo_root() -> Path:
+    """Consumer repo root, found by an upward search — NOT derived from a
+    resolved `__file__` (see module docstring: this file is reached via a
+    symlink, and `.resolve()` points inside `.friday/`, not the consumer
+    repo). Tries cwd first (these hooks are documented/invoked from the
+    repo root), then falls back to walking up from the *unresolved*
+    `Path(__file__).parent` (i.e. following the symlink's own directory,
+    not its resolved target) in case cwd isn't the repo root.
+    """
+    for start in (Path.cwd(), Path(__file__).parent):
+        for candidate in (start, *start.parents):
+            if _looks_like_consumer_root(candidate):
+                return candidate
+    return Path.cwd()
+
+
+REPO_ROOT = find_repo_root()
 
 # Path (relative to repo root) -> max line count. History files are
 # append-only permanent records and are intentionally exempt — don't add them.

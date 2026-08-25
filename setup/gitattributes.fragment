@@ -1,0 +1,12 @@
+# NOTE TO MAINTAINERS: this file is never copied into a consumer project
+# verbatim — see setup/gitignore.fragment's header for how init_harness.py
+# processes fragment files. The whole content below is gated on
+# LATEX_DRAFTING_ENABLED: the LaTeX/Beamer drafting suite is the only source
+# of large generated PDFs that warrant git-LFS, so a project with the suite
+# off gets no .gitattributes content (and no file at all).
+# ---FRAGMENT CONTENT BELOW---
+
+# GATE:latex:start
+docs/theory/**/*.pdf filter=lfs diff=lfs merge=lfs -text
+docs/report/**/*.pdf filter=lfs diff=lfs merge=lfs -text
+# GATE:latex:end

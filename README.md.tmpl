@@ -66,10 +66,34 @@ This project uses `[SET AT SETUP: PACKAGE_MANAGER]` for dependency/environment m
 ```
 
 <!-- SECTION:docker_quickstart:start -->
-[SET AT SETUP: if Docker was set up for this project, init_harness.py fills
-in the docker compose build/up/exec commands here; otherwise this section
-is omitted.]
+### Docker Dev Container
+
+This project runs its agent tooling inside a container. The bind-mounted
+project directory is your host filesystem; named volumes keep auth and
+caches across restarts. See `harness/USER_GUIDE.md` §6 for the full
+workflow, including reconfiguring mounts.
+
+```bash
+docker compose build                # build the image
+docker compose up -d                # start the container, detached
+docker compose exec harness bash    # open a shell inside it
+docker compose down                 # stop it (project dir untouched)
+```
 <!-- SECTION:docker_quickstart:end -->
+<!-- SECTION:latex_on:start -->
+### LaTeX Document Compilation
+
+Theory documents and presentation decks are individual self-contained LaTeX
+projects built via `latexmk`:
+
+```bash
+# Build a docs/theory/ document
+cd docs/theory/<content-slug> && latexmk -pdf main.tex
+
+# Build a docs/report/ document or slide deck
+cd docs/report/<content-slug> && latexmk -pdf main.tex
+```
+<!-- SECTION:latex_on:end -->
 
 ### Common Harness Commands
 

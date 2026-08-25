@@ -4,9 +4,10 @@
 An entry lands in the "Confirmed unavailable" section of
 docs/references/needs_pdf.md when neither automated OA discovery nor a real
 manual/institutional attempt turned up a copy (see needs_pdf.md itself).
-Since its content can never be reverified, David's rule is: it may stay in
-references.bib for the record, but it must not be used as evidentiary
-support anywhere — not in docs/theory/, docs/report/, or harness/research/.
+Since its content can never be reverified, the operator's rule is: it may
+stay in references.bib for the record, but it must not be used as
+evidentiary support anywhere — not in docs/theory/, docs/report/, or
+harness/research/.
 
 This script:
   1. Parses the "Confirmed unavailable" bib keys out of needs_pdf.md.

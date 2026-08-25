@@ -1,0 +1,50 @@
+# Directive Status History
+
+Append-only. Reviewer-owned (write access, alongside `coding/tasks_finished.md`
+and `harness/review/`). Every directive ever tracked in `harness/status.md`
+ends up here exactly once, in the same close-out pass that marks it `done` and deletes
+`harness/plans/directives/<ID>.md` (rule 3 / rule 13). This is the durable
+record that survives the directive file itself being gitignored/removed —
+<!-- SECTION:tracker_gitlab:start -->
+keep enough here (title, owner history, closing artifact, GitLab issue) that
+<!-- SECTION:tracker_gitlab:end -->
+<!-- SECTION:tracker_github:start -->
+keep enough here (title, owner history, closing artifact, GitHub issue) that
+<!-- SECTION:tracker_github:end -->
+<!-- SECTION:tracker_none:start -->
+keep enough here (title, owner history, closing artifact) that
+<!-- SECTION:tracker_none:end -->
+nothing is lost by the deletion. EXEMPT from the rule 8 line cap (same as
+`harness/plans/history.md` and `harness/coding/history.md`) — never compact
+or delete an entry, only append.
+
+Newest first. One entry per closed directive:
+
+<!-- SECTION:tracker_gitlab:start -->
+```
+## D<NN> — <title>
+Closed: <date>, Reviewer. GitLab issue #<N>: closed.
+Worked by: <role(s)>. Verify: <one-line closing evidence — commit hash,
+artifact path, re-run output excerpt or pointer to it>.
+```
+<!-- SECTION:tracker_gitlab:end -->
+<!-- SECTION:tracker_github:start -->
+```
+## D<NN> — <title>
+Closed: <date>, Reviewer. GitHub issue #<N>: closed.
+Worked by: <role(s)>. Verify: <one-line closing evidence — commit hash,
+artifact path, re-run output excerpt or pointer to it>.
+```
+<!-- SECTION:tracker_github:end -->
+<!-- SECTION:tracker_none:start -->
+```
+## D<NN> — <title>
+Closed: <date>, Reviewer.
+Worked by: <role(s)>. Verify: <one-line closing evidence — commit hash,
+artifact path, re-run output excerpt or pointer to it>.
+```
+<!-- SECTION:tracker_none:end -->
+
+---
+
+_(none yet)_

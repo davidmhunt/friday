@@ -27,8 +27,8 @@ templated), so read it here or in any consumer project.
    actions like `uv init` or creating a remote, adapting when an answer
    makes a later question moot) that a bare script can't provide. The agent
    asks about project identity, repository layout, how code runs, GPU/
-   accelerator hardware, background jobs, version control & task tracking,
-   agent tooling, Docker, bibliography tooling, and the LaTeX/Beamer
+   accelerator hardware, version control & task tracking, agent tooling,
+   Docker, background jobs, bibliography tooling, and the LaTeX/Beamer
    drafting suite — one topic at a time — then writes `harness.config.env`
    itself and runs `init_harness.py`.
 3. **What that leaves you with**: a symlink tree (`harness/`, `.claude/`,
@@ -40,10 +40,17 @@ templated), so read it here or in any consumer project.
    are enabled) — plus a starter `docs/` and `harness/{coding,plans}/`
    scaffold (empty working-state files with the right headers, `docs/
    references/` with its inbox + `needs_pdf.md`, and `docs/theory/`/`docs/
-   report/` if the LaTeX suite is on) so every project starts from the same
-   shape instead of inventing it on first use. `AGENTS.md` is the one file
-   every agent session loads first — it's where this project's own facts
-   (name, working root, results doc, package manager, task tracker,
+   report/` if the LaTeX suite is on), the three core state files
+   `harness/status.md`, `harness/status_history.md`, and `harness/log.md`
+   (seeded empty and ready to use — previously referenced everywhere in the
+   harness but never actually materialized), and `harness/running/logs/`
+   — so every project starts from the same shape instead of inventing it on
+   first use. `init_harness.py` also applies the `.gitignore`/
+   `.gitattributes` fragments (secrets, gitignored directive files, and
+   LaTeX/reference artifacts when those axes are enabled), appending only
+   the lines a project's existing files are missing. `AGENTS.md` is the one
+   file every agent session loads first — it's where this project's own
+   facts (name, working root, results doc, package manager, task tracker,
    repository layout) live.
 4. **Start working**: tell an agent "you are the planner agent" to open the
    first cycle. See `USER_GUIDE.md` for the full workflow.
@@ -186,6 +193,9 @@ one that already exists and differs from a fresh render; use
 | `docs/references/needs_pdf.md` | `docs/references/needs_pdf.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in its "do not cite" wording |
 | `docs/theory/README.md` | `docs/theory/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
 | `docs/report/README.md` | `docs/report/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
+| `harness/status.md` | `harness/status.md.tmpl` | — (starter, blank; real content accrues per-project and is never re-rendered) |
+| `harness/status_history.md` | `harness/status_history.md.tmpl` | — (same starter/blank-skeleton pattern) |
+| `harness/log.md` | `harness/log.md.tmpl` | — (same starter/blank-skeleton pattern, seeded with one entry recording the setup interview) |
 | `AGENTS.md` | `AGENTS.md.tmpl` | — |
 | `README.md` | `README.md.tmpl` | — |
 | `.claude/settings.json` | `adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
@@ -194,9 +204,19 @@ one that already exists and differs from a fresh render; use
 
 ### Real project data (never touched by friday)
 
-`harness/status.md`, `harness/status_history.md`, `harness/log.md`,
 `harness/plans/directives/<ID>.md` (all but `TEMPLATE.md`), and any raw
 reference PDFs/`references.bib` under `docs/references/` are this project's
 own live state — friday materializes the *starting* shape for the files
 above once, then never touches them again (hand-edit freely); these other
 files aren't in `MANIFEST.json` at all, not even as a one-time starter.
+
+### `.gitignore` / `.gitattributes`
+
+Not a manifest entry — `init_harness.py` appends
+`setup/gitignore.fragment` and `setup/gitattributes.fragment` to the
+project's own `.gitignore`/`.gitattributes` at sync time, one missing line
+at a time, and never rewrites a file that already exists. Covers secrets
+(`.env`, `harness.config.env`), gitignoring `harness/plans/directives/*.md`
+while keeping `!TEMPLATE.md` tracked, and — when `LATEX_DRAFTING_ENABLED`
+or the bibliography workflow are in use — LaTeX build artifacts, LFS-tracked
+PDFs, and reference PDFs.

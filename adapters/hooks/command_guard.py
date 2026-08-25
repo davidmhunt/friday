@@ -2,15 +2,174 @@
 """Antigravity PreToolUse hook for command permission guarding.
 
 Evaluates CommandLine against project policies:
-- "allow": Safe, read-only, tests, docs compilation, or uv sync.
-- "force_ask": Modifying commands (git commit/push, uv add, systemd-run, rm, unclassified).
+- "allow": Safe, read-only, tests, docs compilation, or package-manager sync.
+- "force_ask": Modifying commands (git commit/push, dependency add/remove, systemd-run, rm, unclassified).
 - "deny": Strictly forbidden destructive commands (sudo, rm -rf /, git push --force).
+
+The generic patterns below (deny list, git read-only inspection, basic file
+inspection/navigation, and the modifying-command force-ask list) are
+project-independent and stay hardcoded. The package-manager/test/LaTeX allow
+patterns and the dependency-add/remove force-ask patterns are project
+-specific, so they're derived at import time from `harness.config.env`
+(PACKAGE_MANAGER*, TEST_CMD, LATEX_DRAFTING_ENABLED) via a tiny standalone
+upward-search reader — the same pattern `check_agent_spawn.py` uses for
+`_load_high_tier_keywords()` — rather than importing `harness/tools/
+_config.py`, so this hook stays dependency-free and exercisable standalone
+(this file is a shared symlink into every consumer project's
+`.claude/hooks/` / Antigravity hooks dir; the config it reads is per-project,
+found by searching upward from cwd). If `harness.config.env` is missing or
+doesn't carry usable package-manager keys (e.g. before setup has run), this
+falls back to the original hardcoded `uv` + LaTeX patterns so behavior never
+regresses.
 """
 
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Manager name -> verb used for its "remove a dependency" subcommand. Used to
+# build a force-ask pattern from PACKAGE_MANAGER alone, without requiring a
+# dedicated PACKAGE_MANAGER_REMOVE_CMD config key.
+_REMOVE_VERB_BY_MANAGER = {
+    "uv": "remove",
+    "pip": "uninstall",
+    "pip3": "uninstall",
+    "poetry": "remove",
+    "npm": "uninstall",
+    "yarn": "remove",
+    "pnpm": "remove",
+}
+
+# Read-only / lockfile-refresh subcommands that are safe to auto-allow
+# alongside the sync/run/test commands derived from config. These don't fall
+# out of any harness.config.env key (the interview only captures sync/run/
+# add/test), but the hardcoded list this replaced did allow `uv lock`, and
+# dropping it would silently start prompting for a routine no-op.
+_SAFE_VERBS_BY_MANAGER = {
+    "uv": ("lock",),
+    "poetry": ("lock", "check"),
+    "npm": ("ci",),
+    "pnpm": ("install --frozen-lockfile",),
+}
+
+# Fail-safe default: today's exact uv + LaTeX literals, used whenever
+# harness.config.env is missing, unreadable, or carries none of the relevant
+# package-manager/test keys (i.e. "unparseable" for our purposes).
+_DEFAULT_ALLOW_EXTRA = [
+    r"^uv\s+(sync|lock|--version|-V)(\s+.*)?$",
+    r"^(uv\s+run\s+)?pytest(\s+.*)?$",
+    r"^(uv\s+run\s+)?python[3]?(\s+.*)?$",
+    r"^(latexmk|bibtex|pdflatex|xelatex|lualatex)(\s+.*)?$",
+]
+_DEFAULT_FORCE_ASK_EXTRA = [
+    (r"\buv\s+(add|remove)\b", "Modifying project dependencies requires confirmation."),
+]
+
+
+def _read_config_file(config_path: Path) -> Dict[str, str]:
+    values: Dict[str, str] = {}
+    for line in config_path.read_text(errors="ignore").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _load_project_command_config(start: Optional[Path] = None) -> Dict[str, str]:
+    """Read the handful of package-manager/test/LaTeX keys this hook cares
+    about from `harness.config.env`, searching upward — same convention as
+    `harness/tools/_config.py` and `check_md_hygiene.py`'s
+    `find_repo_root()`. Kept as a tiny standalone reader rather than
+    importing either of those (see module docstring).
+
+    Two start points are tried, in order: cwd (these hooks are documented and
+    wired to run from the consumer repo root), then the *unresolved*
+    `Path(__file__).parent` — i.e. the symlink's own directory
+    (`.agents/hooks/`), not its resolved target inside `.friday/`.
+
+    The second start point is what makes this correct when cwd happens to sit
+    inside `.friday/` (an agent that cd'd into the submodule, a test runner).
+    An earlier version stopped the walk at the first directory containing a
+    `.git` entry, which in a submodule is a *file* — so a cwd inside
+    `.friday/` hit that boundary, found no config, and silently fell back to
+    the `uv`+LaTeX defaults below. On a project that uses neither, that
+    quietly auto-allowed `uv sync` and `latexmk` while pushing the project's
+    real commands to force_ask. A guardrail applying another project's policy
+    is worse than one that's merely absent, so there is deliberately no
+    early boundary break here: an upward walk that finds no
+    `harness.config.env` at all falls through to the safe defaults anyway.
+    """
+    starts = [start] if start is not None else [Path.cwd(), Path(__file__).parent]
+    for begin in starts:
+        for candidate in (begin, *begin.parents):
+            config_path = candidate / "harness.config.env"
+            if config_path.exists():
+                return _read_config_file(config_path)
+    return {}
+
+
+def build_dynamic_patterns(config: Dict[str, str]) -> Tuple[List[str], List[Tuple[str, str]]]:
+    """Pure function: parsed harness.config.env dict -> (extra allow
+    patterns, extra force-ask (pattern, reason) pairs). Separated from
+    `_load_project_command_config()` so it's directly unit-testable with
+    fabricated config dicts, independent of the real filesystem/cwd.
+    """
+    sync_cmd = config.get("PACKAGE_MANAGER_SYNC_CMD", "").strip()
+    run_cmd = config.get("PACKAGE_MANAGER_RUN_CMD", "").strip()
+    add_cmd = config.get("PACKAGE_MANAGER_ADD_CMD", "").strip()
+    test_cmd = config.get("TEST_CMD", "").strip()
+    manager = config.get("PACKAGE_MANAGER", "").strip().lower()
+    latex_enabled = config.get("LATEX_DRAFTING_ENABLED", "").strip().lower() == "true"
+
+    if not (sync_cmd or run_cmd or test_cmd):
+        # No usable project-command keys: config missing/unparseable for our
+        # purposes. Fall back to the historical hardcoded uv+LaTeX behavior
+        # so the hook never regresses and still works before setup runs.
+        return list(_DEFAULT_ALLOW_EXTRA), list(_DEFAULT_FORCE_ASK_EXTRA)
+
+    allow: List[str] = []
+    force_ask: List[Tuple[str, str]] = []
+
+    for cmd in (sync_cmd, run_cmd, test_cmd):
+        if cmd:
+            allow.append(rf"^{re.escape(cmd)}(\s+.*)?$")
+
+    # When TEST_CMD is just RUN_CMD plus a runner (`uv run pytest`), allow the
+    # bare runner too (`pytest`). The hardcoded list this replaced matched
+    # `^(uv\s+run\s+)?pytest`, i.e. both forms; deriving only from TEST_CMD
+    # would quietly start prompting for a bare `pytest`. Managers whose test
+    # command isn't prefixed by the run command (`npm test` vs `npm run`) get
+    # no bare form, which is correct — there's no separate runner to name.
+    if test_cmd and run_cmd and test_cmd.startswith(run_cmd + " "):
+        bare_runner = test_cmd[len(run_cmd) :].strip()
+        if bare_runner:
+            allow.append(rf"^{re.escape(bare_runner)}(\s+.*)?$")
+    if manager:
+        allow.append(rf"^{re.escape(manager)}\s+(--version|-V)$")
+        for verb in _SAFE_VERBS_BY_MANAGER.get(manager, ()):
+            allow.append(rf"^{re.escape(manager)}\s+{re.escape(verb)}(\s+.*)?$")
+
+    if add_cmd:
+        force_ask.append((rf"\b{re.escape(add_cmd)}\b", "Modifying project dependencies requires confirmation."))
+    if manager:
+        remove_verb = _REMOVE_VERB_BY_MANAGER.get(manager, "remove")
+        force_ask.append((
+            rf"\b{re.escape(manager)}\s+{re.escape(remove_verb)}\b",
+            "Modifying project dependencies requires confirmation.",
+        ))
+
+    if latex_enabled:
+        allow.append(r"^(latexmk|bibtex|pdflatex|xelatex|lualatex)(\s+.*)?$")
+
+    return allow, force_ask
+
+
+_PROJECT_COMMAND_CONFIG = _load_project_command_config()
+_EXTRA_ALLOW_PATTERNS, _EXTRA_FORCE_ASK_PATTERNS = build_dynamic_patterns(_PROJECT_COMMAND_CONFIG)
 
 DENY_PATTERNS = [
     (r"\b(sudo|su|doas)\b", "Privilege escalation is forbidden."),
@@ -25,23 +184,14 @@ DENY_PATTERNS = [
 FORCE_ASK_PATTERNS = [
     (r"\bgit\s+(commit|push|checkout|switch|reset|stash|merge|rebase|tag|cherry-pick|revert)\b", "Git branch/remote state modification requires confirmation."),
     (r"\b(systemd-run|setsid)\b", "Launching detached/background service requires confirmation."),
-    (r"\buv\s+(add|remove)\b", "Modifying project dependencies requires confirmation."),
     (r"\bpip\s+(install|uninstall)\b", "Package installation/removal requires confirmation."),
     (r"\b(rm|unlink|rmdir)\b", "File deletion requires confirmation."),
     (r"\bmv\b", "Moving or renaming files requires confirmation."),
     (r"\b(kill|pkill|killall)\b", "Terminating processes requires confirmation."),
     (r"\bsed\s+-i", "In-place file modification via sed requires confirmation."),
-]
+] + _EXTRA_FORCE_ASK_PATTERNS
 
 ALLOW_COMMAND_PATTERNS = [
-    # uv sync / version
-    r"^uv\s+(sync|lock|--version|-V)(\s+.*)?$",
-    # pytest / tests
-    r"^(uv\s+run\s+)?pytest(\s+.*)?$",
-    # uv run python / scripts
-    r"^(uv\s+run\s+)?python[3]?(\s+.*)?$",
-    # latex compilation
-    r"^(latexmk|bibtex|pdflatex|xelatex|lualatex)(\s+.*)?$",
     # git read-only inspection operations
     r"^git\s+(status|diff|log|show|branch|rev-parse|describe|remote|ls-files|check-ignore|check-attr|version)(\s+.*)?$",
     # curl / http requests (safe, not piped to bash)
@@ -50,7 +200,7 @@ ALLOW_COMMAND_PATTERNS = [
     r"^(ls|dir|pwd|cat|head|tail|grep|rg|find|which|whereis|echo|diff|colordiff|wc|sort|uniq|cut|awk|tree|file|stat|du|df|env|printenv|uname|whoami|date|uptime)(\s+.*)?$",
     # tool version checks
     r"^(python|python3|jupyter|node|git|latexmk)\s+(--version|-V|-v)$",
-]
+] + _EXTRA_ALLOW_PATTERNS
 
 
 def unwrap_command_strings(command_line: str) -> List[str]:

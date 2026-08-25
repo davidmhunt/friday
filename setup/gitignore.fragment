@@ -1,0 +1,51 @@
+# NOTE TO MAINTAINERS: this file is never copied into a consumer project
+# verbatim — .friday/setup/init_harness.py parses it, drops any content
+# inside a "# GATE:<name>:start" / "# GATE:<name>:end" pair whose gate isn't
+# active for that project's harness.config.env, and merges the rest into
+# the consumer's real .gitignore inside a managed block. Everything below
+# this line (outside GATE markers) ships unconditionally, so keep it terse
+# and consumer-facing — this comment itself is stripped before merging.
+# ---FRAGMENT CONTENT BELOW---
+
+__pycache__/
+*.pyc
+
+# uv / Python virtual environment
+.venv/
+
+# secrets
+.env
+
+# non-secret but regenerable/environment-specific harness config
+harness.config.env
+
+# directive files churn frequently (created/closed/deleted per cycle) — the
+# task tracker (if configured) and harness/status_history.md are the
+# durable record; TEMPLATE.md is the canonical example and stays tracked
+harness/plans/directives/*.md
+!harness/plans/directives/TEMPLATE.md
+
+# GATE:biblio:start
+# raw reference PDFs — kept locally, never committed
+docs/references/*.pdf
+
+# reference intake staging — raw drops, cleared out by intake_references.py
+docs/references/inbox/*
+!docs/references/inbox/README.md
+# GATE:biblio:end
+
+# GATE:latex:start
+# LaTeX build artifacts (keep only the tracked, generated PDF itself)
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.bbl
+*.blg
+# GATE:latex:end

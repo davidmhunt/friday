@@ -1,5 +1,118 @@
 # Changelog
 
+## v0.7.0
+
+Alignment pass closing the gap between a freshly generated friday harness
+and heimdall's own, live one.
+
+**The three missing harness state files now exist.** `harness/status.md`,
+`harness/status_history.md`, and `harness/log.md` were referenced 52 times
+across `harness.md.tmpl`, all seven role contracts, five rules docs,
+`README.md.tmpl`, `AGENTS.md.tmpl`, `check_md_hygiene.py`'s `FILE_CAPS`, and
+`init_harness.py`'s own closing checklist — but were absent from
+`MANIFEST.json` entirely, so a fresh project's central rule-3 invariant
+pointed at a file that did not exist. All three are now `materialize`
+entries seeded from heimdall's live files, with project bodies emptied to
+`_(none)_`/`(none yet)` and tracker/accelerator wording gated the same way
+as everywhere else.
+
+**Fixed `check_md_hygiene.py` silently no-op'ing in every consumer
+project.** Its `REPO_ROOT` was computed as
+`Path(__file__).resolve().parents[2]`; reached through the `.claude/hooks/`
+symlink, `.resolve()` followed the link into `.friday/adapters/hooks/`,
+landing `REPO_ROOT` on `.friday/` itself instead of the consumer repo. Every
+capped path then missed `path.exists()` and was silently skipped — the
+pre-commit hook and the Planner/Reviewer pass-start hygiene check both
+looked healthy while checking nothing. Confirmed live in heimdall before
+the fix. Replaced with an upward search for the consumer repo root (a
+directory containing `harness.config.env`, or failing that `.gitmodules` +
+`.friday/`), matching the convention `harness/tools/_config.py` already
+documents. **This is a behavioral change for every existing consumer
+project**: the checker was silently passing before and will now actually
+report files over their line cap. Added
+`adapters/hooks/test_check_md_hygiene.py` as a regression guard for the
+exact symlink-resolution failure that shipped silently.
+
+**`command_guard.py` is no longer hardcoded to `uv`/`latexmk`.** Its
+allow-list and force-ask patterns now derive from `harness.config.env`
+(`PACKAGE_MANAGER_SYNC_CMD`, `PACKAGE_MANAGER_RUN_CMD`, `TEST_CMD`,
+`PACKAGE_MANAGER_ADD_CMD`, and LaTeX patterns only when
+`LATEX_DRAFTING_ENABLED=true`) instead of literal `uv`/`latexmk` strings, so
+a poetry/npm project gets a real allow-list instead of everything degrading
+to `force_ask`. Falls back to today's `uv`+LaTeX literals if
+`harness.config.env` is missing or unparseable, so behavior never regresses
+before setup writes a config.
+
+Two follow-on defects in that derivation were caught in review and fixed:
+
+- The upward search stopped at the first directory containing a `.git`
+  entry. In a submodule `.friday/.git` is a *file*, so any invocation whose
+  cwd sat inside `.friday/` hit that boundary, found no config, and fell
+  through to the `uv`+LaTeX fallback — auto-allowing `uv sync` and `latexmk`
+  on a project that uses neither, while pushing that project's own commands
+  to `force_ask`. A guardrail silently enforcing a *different* project's
+  policy is worse than one that is merely absent. The boundary break is
+  gone, and the search now tries cwd first and then the *unresolved*
+  `Path(__file__).parent` (the symlink's own directory), matching
+  `check_md_hygiene.py`'s `find_repo_root()`. Regression test added.
+- Deriving purely from config was narrower than the hardcoded list it
+  replaced: `uv lock` and a bare `pytest` (the old pattern matched
+  `^(uv\s+run\s+)?pytest`) both silently lost their auto-allow. Safe
+  lockfile/refresh verbs are now derived per package manager, and when
+  `TEST_CMD` is `RUN_CMD` plus a runner, the bare runner is allowed too.
+  This gap was invisible to the original test suite because the `.git`
+  boundary above meant those tests never found a config and only ever
+  exercised the fallback path.
+
+**`init_harness.py`/`MANIFEST.json`**: `docker_quickstart` and
+`lfs_policy` SECTION axes are now gated (`DOCKER_ENABLED`,
+`LATEX_DRAFTING_ENABLED`) instead of shipping into every project
+regardless of whether Docker or the LaTeX suite are in use;
+`harness/running/logs/` is now created at sync (the directory
+`environment.md.tmpl` already documents launches redirecting into);
+`closing_checklist()`'s marker scan now covers `docs/**/*.md`, not just
+`harness/**/*.md` + `AGENTS.md` + `README.md`; ships
+`setup/gitignore.fragment` and `setup/gitattributes.fragment`, applied by
+appending missing lines idempotently — never rewriting a consumer's
+existing file — covering secrets, gitignoring
+`harness/plans/directives/*.md` (with `!TEMPLATE.md` kept tracked), and
+LaTeX/reference artifacts when those axes are enabled.
+
+**Template prose**: `README.md.tmpl` gained the LaTeX build section
+(`latexmk` commands under `docs/{theory,report}/<content-slug>/`) that
+every other doc already gated on the LaTeX axis but this one had lost;
+`environment.md.tmpl` no longer leaves a blank gap when the non-matching
+launch-method section is dropped, and keeps a two-line cross-reference to
+the other launch patterns so a systemd project doesn't lose the
+`setsid`/`nohup` fallback knowledge entirely; `AGENTS.md.tmpl`'s
+command-guard bullets now render the real `PACKAGE_MANAGER_*` tokens
+instead of `[SET AT SETUP: ...]` placeholders, matching what B2's
+config-driven `command_guard.py` actually does; `docs/ARCHITECTURE.md.tmpl`'s
+source-dir marker is now a single clean `[SET AT SETUP: ...]` the closing
+checklist's `docs/**/*.md` scan will surface; removed heimdall-specific
+text (`JAX`, "David") from `USER_GUIDE.md` and the bibliography tool
+docstrings, which are symlinked unmodified into every project.
+
+**`setup/SETUP.md`**: fixed heading numbering after the "Detached
+background jobs" topic moved later in the interview order; replaced the
+`.gitignore`-correctness hand-wave with a description of the new
+fragment-based mechanical behavior; the closing description of what setup
+produces now accounts for the three new state files, `harness/running/
+logs/`, and the `.gitignore`/`.gitattributes` step.
+
+**Also caught in review**: the `docker_quickstart` block in
+`README.md.tmpl` carried a comment claiming `init_harness.py` fills in the
+compose commands, which it never did — gating it on `DOCKER_ENABLED` fixed
+the non-Docker case but left the false claim shipping to every *Docker*
+project, so the block now holds the real `docker compose`
+build/up/exec/down commands. Two more blank-gap bugs of the same shape as
+`environment.md.tmpl`'s were fixed in `task_tracking.md.tmpl` (between the
+gated tracker sections) and `author.md.tmpl` (between the gated LaTeX
+sections). Remaining heimdall-specific text was genericized in
+`harness/roles/researcher.md.tmpl` ("David" → "the operator", three
+places) and `version_control.md.tmpl`'s commit-message examples, both of
+which are shared across every consumer project.
+
 ## v0.6.0
 
 Consumer projects now get a templated `docs/` and `harness/{coding,plans}/`

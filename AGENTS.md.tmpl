@@ -95,14 +95,18 @@ are read only when a rule's trigger matches your next action.
 Command execution is programmatically guarded by `.agents/hooks.json` via
 `.agents/hooks/command_guard.py` before `run_command` executes:
 
-- **Auto-allowed (`allow`)**: [SET AT SETUP: this project's read-only/build commands, e.g.
-  `<PACKAGE_MANAGER_SYNC_CMD>`, `<PACKAGE_MANAGER_RUN_CMD> pytest`], read-only git queries
+- **Auto-allowed (`allow`)**: `[SET AT SETUP: PACKAGE_MANAGER_SYNC_CMD]`,
+  `[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD]`, `[SET AT SETUP: TEST_CMD]`,
+<!-- SECTION:latex_on:start -->
+  `latexmk`/`bibtex`/`pdflatex`/`xelatex`/`lualatex`,
+<!-- SECTION:latex_on:end -->
+  read-only git queries
   (`git status`, `git diff`, `git log`, `git show`, `git branch`),
   and non-destructive inspections (`ls`, `cat`, `grep`, `rg`, `find`, `pwd`).
 - **Requires user approval (`force_ask`)**: State-modifying git commands (`git commit`,
   `git push`, `git checkout`, `git switch`, `git reset`), background jobs (`systemd-run`,
-  `setsid`), dependency modifications ([SET AT SETUP: e.g. `<PACKAGE_MANAGER> add/remove`]),
-  file deletions (`rm`, `unlink`), and unclassified commands.
+  `setsid`), dependency modifications (`[SET AT SETUP: PACKAGE_MANAGER_ADD_CMD]` and its
+  remove counterpart), file deletions (`rm`, `unlink`), and unclassified commands.
 - **Strictly forbidden (`deny`)**: Privilege escalation (`sudo`, `su`), force pushes (`git push --force`),
   destructive wipes (`rm -rf /`), and piping remote web scripts to shell (`curl | sh`).
 

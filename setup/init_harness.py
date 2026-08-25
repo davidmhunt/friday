@@ -49,6 +49,19 @@ SECTION_RE = re.compile(
     r"<!--\s*SECTION:([a-zA-Z0-9_]+):start\s*-->.*?<!--\s*SECTION:\1:end\s*-->\n?",
     re.DOTALL,
 )
+# Same gating idea as SECTION_RE, but for files that can't carry HTML
+# comments (.gitignore, .gitattributes) — uses '#' comment markers instead.
+# Used only by sync_git_ignore_attributes().
+GATE_RE = re.compile(
+    r"#\s*GATE:([a-zA-Z0-9_]+):start\s*\n(.*?)#\s*GATE:\1:end\s*\n?",
+    re.DOTALL,
+)
+GIT_MANAGED_BLOCK_RE = re.compile(
+    r"# --- friday harness \(managed by init_harness\.py\) ---\n"
+    r".*?"
+    r"# --- end friday harness ---\n?",
+    re.DOTALL,
+)
 
 # ---------------------------------------------------------------------------
 # Config file I/O
@@ -230,6 +243,14 @@ def sections_to_drop(cfg: dict[str, str]) -> set[str]:
     for name in LATEX_SECTIONS.values():
         if name != keep_latex:
             drop.add(name)
+    # README.md.tmpl's Docker quickstart block: only meaningful when this
+    # project actually has Docker set up.
+    if cfg.get("DOCKER_ENABLED", "false") != "true":
+        drop.add("docker_quickstart")
+    # version_control.md.tmpl's LFS-policy bullet: LFS-tracked PDFs only
+    # arise from the LaTeX/Beamer drafting suite (docs/theory/, docs/report/).
+    if cfg.get("LATEX_DRAFTING_ENABLED", "false") != "true":
+        drop.add("lfs_policy")
     return drop
 
 
@@ -320,6 +341,21 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
                 dest.chmod(dest.stat().st_mode | stat.S_IEXEC)
 
 
+def create_running_dirs(dry_run: bool) -> None:
+    """harness/rules/environment.md.tmpl documents background launches
+    redirecting output to harness/running/logs/your_script.log. That
+    directory isn't a template (git doesn't track empty dirs) so a fresh
+    project never gets it — create it with a .gitkeep during sync.
+    """
+    gitkeep = REPO_ROOT / "harness" / "running" / "logs" / ".gitkeep"
+    if gitkeep.exists():
+        return
+    print(f"  create {gitkeep}")
+    if not dry_run:
+        gitkeep.parent.mkdir(parents=True, exist_ok=True)
+        gitkeep.write_text("")
+
+
 def install_git_hooks(manifest: dict, dry_run: bool) -> None:
     anchor = manifest["git_hooks"]["anchor"]
     for hook in manifest["git_hooks"]["hooks"]:
@@ -380,6 +416,136 @@ def maybe_build_docker(cfg: dict[str, str], dry_run: bool) -> None:
 
 
 
+# ---------------------------------------------------------------------------
+# .gitignore / .gitattributes
+# ---------------------------------------------------------------------------
+
+
+def _active_gitfile_gates(cfg: dict[str, str]) -> set[str]:
+    gates = set()
+    if cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true":
+        gates.add("latex")
+    # The reference-PDF ignore rules only matter to projects actually using
+    # harness/tools/'s bibliography workflow. There's no dedicated
+    # "bibliography enabled" config key, so use the two BIBLIO_* fields the
+    # interview always asks for as a proxy: if either was filled in, assume
+    # the workflow is in play.
+    if cfg.get("BIBLIO_CONTACT_EMAIL", "").strip() or cfg.get("BIBLIO_USER_AGENT_TOKEN", "").strip():
+        gates.add("biblio")
+    return gates
+
+
+FRAGMENT_MARKER = "# ---FRAGMENT CONTENT BELOW---\n"
+
+
+def _render_gitfile_fragment(text: str, active_gates: set[str]) -> list[str]:
+    # Drop the maintainer-facing header comment above the marker (if any) —
+    # it documents this file for humans editing the fragment, not for a
+    # consumer's real .gitignore/.gitattributes.
+    if FRAGMENT_MARKER in text:
+        text = text.split(FRAGMENT_MARKER, 1)[1]
+
+    def drop_gate(m: re.Match) -> str:
+        name = m.group(1)
+        return m.group(2) if name in active_gates else ""
+
+    rendered = GATE_RE.sub(drop_gate, text)
+    lines = rendered.splitlines()
+    cleaned: list[str] = []
+    prev_blank = False
+    for line in lines:
+        if line.strip() == "":
+            if prev_blank or not cleaned:
+                continue
+            cleaned.append("")
+            prev_blank = True
+        else:
+            cleaned.append(line)
+            prev_blank = False
+    while cleaned and cleaned[-1] == "":
+        cleaned.pop()
+    return cleaned
+
+
+def _sync_one_gitfile(fragment_path: Path, dest: Path, cfg: dict[str, str], dry_run: bool) -> None:
+    if not fragment_path.exists():
+        print(f"  WARN: fragment source missing: {fragment_path}")
+        return
+    desired = _render_gitfile_fragment(fragment_path.read_text(), _active_gitfile_gates(cfg))
+    if not desired:
+        return  # nothing gated on for this project (e.g. no LaTeX -> no .gitattributes content)
+
+    existing_text = dest.read_text() if dest.exists() else ""
+    outside_text = GIT_MANAGED_BLOCK_RE.sub("", existing_text)
+    outside_lines = {
+        line.strip()
+        for line in outside_text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    # Never duplicate a pattern the consumer file already has outside our
+    # managed block. A comment only earns its place if at least one pattern
+    # it introduces survives that dedup — otherwise re-syncing a project
+    # whose .gitignore already covers everything (the common case when the
+    # harness was hand-installed first) appends a block of orphaned comment
+    # headers with no patterns under them.
+    # Group the fragment into (heading comments, patterns) pairs — a new
+    # group starts at the first comment/blank following a pattern — and emit
+    # a group only when at least one of its patterns survives dedup.
+    groups: list[tuple[list[str], list[str]]] = []
+    heading: list[str] = []
+    patterns: list[str] = []
+    for line in desired:
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped == "":
+            if patterns:
+                groups.append((heading, patterns))
+                heading, patterns = [], []
+            heading.append(line)
+        else:
+            patterns.append(line)
+    if heading or patterns:
+        groups.append((heading, patterns))
+
+    block_lines: list[str] = []
+    for heading, patterns in groups:
+        kept = [p for p in patterns if p.strip() not in outside_lines]
+        if not kept:
+            continue
+        block_lines.extend(heading)
+        block_lines.extend(kept)
+    while block_lines and block_lines[0].strip() == "":
+        block_lines.pop(0)
+    if not block_lines:
+        return
+
+    new_block = (
+        "# --- friday harness (managed by init_harness.py) ---\n"
+        + "\n".join(block_lines) + "\n"
+        + "# --- end friday harness ---\n"
+    )
+    if GIT_MANAGED_BLOCK_RE.search(existing_text):
+        new_text = GIT_MANAGED_BLOCK_RE.sub(new_block, existing_text)
+    else:
+        sep = "" if not existing_text or existing_text.endswith("\n") else "\n"
+        new_text = existing_text + sep + ("\n" if existing_text else "") + new_block
+
+    if new_text == existing_text:
+        return
+    print(f"  {'update' if dest.exists() else 'create'} {dest}")
+    if not dry_run:
+        dest.write_text(new_text)
+
+
+def sync_git_ignore_attributes(cfg: dict[str, str], dry_run: bool) -> None:
+    """Append missing .gitignore / .gitattributes lines idempotently, from
+    setup/gitignore.fragment and setup/gitattributes.fragment. Never
+    rewrites or reorders content outside our own managed block; content
+    inside the managed block is safely regenerated each run (same pattern
+    as apply_docker_volumes()'s user-added-volumes block).
+    """
+    _sync_one_gitfile(SUBMODULE_DIR / "setup" / "gitignore.fragment", REPO_ROOT / ".gitignore", cfg, dry_run)
+    _sync_one_gitfile(SUBMODULE_DIR / "setup" / "gitattributes.fragment", REPO_ROOT / ".gitattributes", cfg, dry_run)
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -405,6 +571,11 @@ def closing_checklist(cfg: dict[str, str]) -> None:
     for path in (REPO_ROOT / "harness").rglob("*.md"):
         if path.is_symlink():
             continue  # shared/generic files (e.g. USER_GUIDE.md) are never a per-project fill-in
+        if LEFTOVER_RE.search(path.read_text(errors="ignore")):
+            leftovers.append(path)
+    for path in (REPO_ROOT / "docs").rglob("*.md"):
+        if path.is_symlink():
+            continue
         if LEFTOVER_RE.search(path.read_text(errors="ignore")):
             leftovers.append(path)
     for path in (REPO_ROOT / "AGENTS.md", REPO_ROOT / "README.md"):
@@ -466,6 +637,12 @@ def main() -> int:
 
     print("\n=== Git hooks ===")
     install_git_hooks(manifest, args.dry_run)
+
+    print("\n=== harness/running/logs ===")
+    create_running_dirs(args.dry_run)
+
+    print("\n=== .gitignore / .gitattributes ===")
+    sync_git_ignore_attributes(cfg, args.dry_run)
 
     if cfg.get("DOCKER_ENABLED") == "true":
         print("\n=== Docker ===")

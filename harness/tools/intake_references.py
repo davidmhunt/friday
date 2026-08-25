@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Merge new sources from docs/references/inbox/ into references.bib.
 
-Run by the Researcher when David has dropped PDFs and/or a Zotero BibTeX
-export into docs/references/inbox/ (see that folder's README). For each
+Run by the Researcher when the operator has dropped PDFs and/or a Zotero
+BibTeX export into docs/references/inbox/ (see that folder's README). For each
 entry found across the inbox's *.bib files:
 
   1. Skip it (leave in place, flag) if its key or DOI already exists in

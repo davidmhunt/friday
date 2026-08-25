@@ -146,7 +146,7 @@ When tasks reach `awaiting review`:
      - Lints research memo formatting: `python3 harness/tools/lint_research_memo.py`
      - Checks against unavailable sources: `python3 harness/tools/check_unavailable_sources.py`
      - Checks markdown line caps: `python3 .claude/hooks/check_md_hygiene.py` (or `.agents/hooks/check_md_hygiene.py`, whichever adapter(s) this project uses)
-   - **Git commit & attribution** (Rule 12): Commits verified changes under a message attributed to the role (e.g., `Coder: implement JAX particle filter update step`).
+   - **Git commit & attribution** (Rule 12): Commits verified changes under a message attributed to the role (e.g., `Coder: implement data loader batching fix`).
    - **Issue closure** (Rule 13): Closes the associated tracker issue, if this project uses one.
    - **Status archival** (Rule 3): Removes the closed directive from `harness/status.md` and appends its permanent record to `harness/status_history.md`.
    - **Feedback loop**: Writes any follow-up recommendations or new research needs into `harness/plans/suggestions.md` to feed the next Planner pass.

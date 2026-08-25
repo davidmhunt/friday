@@ -71,14 +71,15 @@ outside your own namespace, or `data/`.
   further real manual attempt (publisher page, author site) also fails,
   don't leave the citation silently PDF-less: add a row to
   `docs/references/needs_pdf.md` ("Open" section — bib key, title, doi/url,
-  why the attempt failed, date) so David can hunt it down by hand — his
-  institutional access (Google Scholar/EZproxy to IEEE/ACM) reaches sources
-  the automated tier can't, but pulling those is a supervised, live-session
-  action (e.g. via browser automation against his own logged-in session),
-  not something to attempt unattended. When he drops a matching PDF into
-  `docs/references/inbox/` and you re-run the intake script, its row comes
-  out of `needs_pdf.md` automatically (see Inbox intake below). If David
-  reports back that he searched too and no public copy exists, move that
+  why the attempt failed, date) so the operator can hunt it down by hand —
+  their institutional access (Google Scholar/EZproxy to IEEE/ACM) reaches
+  sources the automated tier can't, but pulling those is a supervised,
+  live-session action (e.g. via browser automation against their own
+  logged-in session), not something to attempt unattended. When they drop a
+  matching PDF into `docs/references/inbox/` and you re-run the intake
+  script, its row comes out of `needs_pdf.md` automatically (see Inbox
+  intake below). If the operator reports back that they searched too and no
+  public copy exists, move that
   row from "Open" to "Confirmed unavailable" in `needs_pdf.md`. **A
   confirmed-unavailable source may not be cited anywhere** — not in a
   memo, not in any drafted document — its content can
@@ -89,9 +90,9 @@ outside your own namespace, or `data/`.
   `python3 harness/tools/check_unavailable_sources.py` is the mechanical
   check for this (also run by the Reviewer) — run it yourself before
   handing off a memo, theory doc, or report edit.
-- **Inbox intake.** David drops new PDFs and BibTeX exports (e.g. from
+- **Inbox intake.** The operator drops new PDFs and BibTeX exports (e.g. from
   Zotero) into `docs/references/inbox/` between sessions rather than
-  filing them himself — see that folder's README. Before starting
+  filing them by hand — see that folder's README. Before starting
   citation-heavy work (or whenever the inbox is non-empty), run
   `harness/tools/intake_references.py`: it merges non-duplicate inbox
   entries into `references.bib`, matches and moves their PDFs into

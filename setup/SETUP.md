@@ -76,13 +76,30 @@ the answer, `init_harness.py` only substitutes literal tokens.
 
 - What are this project's top-level directories, and what lives in each
   (source, notebooks, data, docs, generated output)?
-- Which paths are generated/large/excluded from version control — is
-  `.gitignore` already correct, or does it need entries added?
+- Any project-specific paths that are generated/large/excluded from version
+  control beyond what `init_harness.py` already handles for you (see below)?
 
 → No config key — this is free-text prose written directly into `AGENTS.md`
 §Repository Layout once materialized (the `harness/` row is already filled
-in by the template; add the project's own rows above it). If `.gitignore`
-needs new entries, edit it directly as part of this step.
+in by the template; add the project's own rows above it). Note any
+project-specific ignore entries you want, and add them to `.gitignore`
+yourself as part of this step — the harness-side entries are handled
+automatically (see next).
+
+**`.gitignore` / `.gitattributes` are mechanical, not part of this
+interview.** `init_harness.py` appends `setup/gitignore.fragment` and
+`setup/gitattributes.fragment` to the project's `.gitignore` /
+`.gitattributes` at sync time, one missing line at a time — it never
+rewrites or reorders a file that already exists, so hand-authored entries
+are untouched. The fragments cover the invariants the harness depends on:
+secrets (`.env`, `harness.config.env`) never get committed, and
+`harness/plans/directives/*.md` stays gitignored (with `!TEMPLATE.md` kept
+tracked) so the rule-13 contract holds — the tracker + `status_history.md`
+are the durable record, not the directive files themselves. When
+`LATEX_DRAFTING_ENABLED=true` it also adds the LaTeX build-artifact and
+LFS-tracked-PDF lines; the reference-PDF block is added when the
+bibliography workflow is in use. You only need to add the project's own
+entries on top of what's already there.
 
 ## 3. Running code
 
@@ -113,18 +130,7 @@ afterward (free-text `[SET AT SETUP: ...]` prose, same pattern as Project
 Overview). If `false`, both files stay in their default "no accelerator
 hardware" state and nothing else is needed.
 
-## 5. Detached background jobs
-
-- Does this machine have a user systemd manager (survives a dropped
-  SSH/tmux session)? If unsure, check: `systemctl --user status` succeeding
-  is a yes.
-- If not, is this running inside the project's own Docker container (see
-  §8)? If neither, plain `setsid`/`nohup` is the fallback.
-
-→ `LAUNCH_METHOD` — exactly one of `systemd-run-user`, `setsid-nohup`,
-`setsid-nohup-container`.
-
-## 6. Version control & task tracking
+## 5. Version control & task tracking
 
 - What's the git remote (SSH URL)? If there isn't one yet, offer to help
   create it (`git init`, a new GitHub/GitLab repo) — confirm before acting.
@@ -137,7 +143,7 @@ hardware" state and nothing else is needed.
 → `VCS_REMOTE`, `TRACKER_KIND` (`none` | `gitlab-issues` | `github-issues`),
 and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 
-## 7. Agent tooling
+## 6. Agent tooling
 
 - Which coding-agent adapters does this project need — Claude Code
   (`.claude/`), Antigravity (`.agents/`), both?
@@ -147,7 +153,7 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 → `ADAPTERS_ENABLED` (comma-separated: `claude`, `antigravity`, or both),
 `HIGH_TIER_MODEL_KEYWORDS`.
 
-## 8. Docker (optional)
+## 7. Docker (optional)
 
 - Set up a Docker dev-container for this project? Most projects should say
   yes only if isolating agent tool calls from the host matters here.
@@ -162,6 +168,17 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 (`true`/`false`). To change ONLY the volume list later, edit
 `DOCKER_EXTRA_VOLUMES` in `harness.config.env` directly and re-run
 `init_harness.py` — no need to redo the whole interview.
+
+## 8. Detached background jobs
+
+- Does this machine have a user systemd manager (survives a dropped
+  SSH/tmux session)? If unsure, check: `systemctl --user status` succeeding
+  is a yes.
+- If not, is this running inside the project's own Docker container (see
+  §7)? If neither, plain `setsid`/`nohup` is the fallback.
+
+→ `LAUNCH_METHOD` — exactly one of `systemd-run-user`, `setsid-nohup`,
+`setsid-nohup-container`.
 
 ## 9. Bibliography tooling (optional)
 
@@ -198,6 +215,13 @@ Run:
 ```bash
 python3 .friday/setup/init_harness.py
 ```
+
+The script materializes the symlink tree and every templated doc, including
+`harness/status.md`, `harness/status_history.md`, and `harness/log.md` —
+the three core state files the rest of the harness assumes exist from day
+one — each seeded empty (`_(none)_` / `(none yet)`) and ready to use. It
+also creates `harness/running/logs/` and applies the `.gitignore` /
+`.gitattributes` fragments described above.
 
 Read its closing checklist. It will call out any `[SET AT SETUP: ...]`
 markers still unfilled — those are free-text prose sections (project
