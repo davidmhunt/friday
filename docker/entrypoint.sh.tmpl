@@ -1,6 +1,21 @@
 #!/bin/bash
 set -e
 
+# The Dockerfile COPYs docker/antigravity_settings.json into the
+# gemini-config volume, but that only seeds the volume the *first* time it's
+# created — Docker never re-copies into an existing named volume, so a
+# change to the source file has no effect until the volume is recreated.
+# Re-sync it from the bind-mounted repo on every start instead, so a plain
+# restart picks up config changes. Probed at runtime (source file and target
+# dir existence) rather than gated at render time, for the same reason the
+# AUTO_LAUNCH_AGENT probe below is: this file has no per-adapter variants to
+# keep in sync with ADAPTERS_ENABLED.
+if [ -f /workspace/docker/antigravity_settings.json ] \
+  && [ -d /home/agent/.gemini/antigravity-cli ]; then
+  cp /workspace/docker/antigravity_settings.json \
+    /home/agent/.gemini/antigravity-cli/settings.json
+fi
+
 # Set AUTO_LAUNCH_AGENT=1 (e.g. in .env) to drop straight into an agent CLI
 # instead of a plain shell.
 #

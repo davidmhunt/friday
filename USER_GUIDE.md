@@ -677,8 +677,8 @@ already covers:
   gated on any `harness.config.env` key, since it wraps whichever agent
   CLI(s) happen to be on `PATH` rather than being tied to one. It gets its
   own `herdr-config` volume (`/home/agent/.config/herdr`) so sessions and
-  settings persist across `docker compose down`/`up`, and it is the
-  container's default foreground process — see §12.5.
+  settings persist across `docker compose down`/`up`. It is not the
+  container's default foreground process — run it by hand — see §12.5.
 
 > [!WARNING]
 > **Reconfiguring requires a rebuild — and a re-render first.** These
@@ -719,23 +719,18 @@ validating the compose file before you set either up.
 
 ### 12.5 Start and enter the container
 
-The container's default foreground process is **herdr**, not a plain
-shell — start it and attach directly:
+The container's default foreground process is a **plain shell**, not herdr:
 
 ```bash
-docker compose up -d          # start the container, detached (launches herdr)
-docker compose attach harness # attach to the running herdr TUI
+docker compose up -d          # start the container, detached
+docker compose attach harness # attach to the shell
 ```
 
-Detach from `attach` with the usual Docker sequence (`Ctrl-p Ctrl-q`) without
-stopping herdr or the container; `docker compose attach harness` again from
-any terminal reattaches to the same session. `docker compose attach`
+Detach from `attach` with the usual Docker sequence (`Ctrl-p Ctrl-q`), or
+just `exit`/`Ctrl-d` the shell — either way the container keeps running,
+since a shell has no session state worth preserving. `docker compose attach`
 requires a real terminal on the host — it refuses to attach when stdin isn't
-a TTY (e.g. run from a script).
-
-For a plain shell instead of herdr — to poke around, run one-off commands,
-or if you'd rather launch `claude`/`agy` directly without herdr managing
-them:
+a TTY (e.g. run from a script). Equivalently, from another terminal:
 
 ```bash
 docker compose exec harness bash
@@ -745,7 +740,7 @@ Inside the container, the project directory is bind-mounted at
 `/workspace` and is writable — edits made on the host appear instantly
 inside the container and vice versa, files written from inside the
 container come out owned by your host user (not root), and nothing is
-copied. From a plain shell (or a pane herdr opens for you):
+copied. From the shell:
 
 ```bash
 claude                        # start Claude Code inside the container
@@ -753,7 +748,16 @@ claude                        # start Claude Code inside the container
 agy                           # start Antigravity CLI inside the container
 # or, non-interactively:
 claude login                  # first time only, if not using ANTHROPIC_API_KEY
+# or, to manage multiple agent panes in one session:
+herdr
 ```
+
+Herdr is installed but **not** the default foreground process, deliberately:
+when it is the container's own PID-2 process, detaching from
+`docker compose attach` (rather than backgrounding herdr from inside it)
+kills herdr, and with it the whole container — there's no plain-shell
+fallback to land back in. Run `herdr` by hand from the shell above instead;
+if you background or exit it, the shell (and container) are still there.
 
 **Auth persistence**: named volumes (`claude-config` at `/home/agent/.claude`,
 `gemini-config` at `/home/agent/.gemini`, each present only when its adapter
@@ -781,17 +785,22 @@ name.
 > **A named volume is initialized from image content only the first time it
 > is created.** Rebuilding the image does *not* refresh files inside a volume
 > that already exists — most visibly, a change to
-> `docker/antigravity_settings.json` will not reach
+> `docker/antigravity_settings.json` won't reach
 > `~/.gemini/antigravity-cli/settings.json` in an existing `gemini-config`
-> volume, no matter how many times you `docker compose build`. Run
-> `docker compose down -v` to discard the volumes and `up -d` to get fresh
-> ones. The same applies if this project had a container before the image
-> started pre-creating those paths: old volumes may still be root-owned, and
-> `down -v` is the fix. Note `down -v` also discards your stored logins.
+> volume just by rebuilding the image. `entrypoint.sh` works around this for
+> `antigravity_settings.json` specifically: it re-syncs that one file from
+> the bind-mounted repo on every container start, so a plain
+> `docker compose up -d` (or a restart) is enough to pick up a change there.
+> Anything else seeded into a named volume at build time doesn't get that
+> treatment — if a change elsewhere in a volume isn't taking effect, or if
+> this project had a container before the image started pre-creating those
+> paths (old volumes may still be root-owned), run `docker compose down -v`
+> to discard the volumes and `up -d` to get fresh ones. Note `down -v` also
+> discards your stored logins.
 
 ### 12.6 Day-to-day workflow
 
-- **Resume work**: `docker compose up -d && docker compose attach harness` — the container and its named volumes (auth, caches, herdr session state) persist between sessions; you're not rebuilding or re-authenticating each time.
+- **Resume work**: `docker compose up -d && docker compose attach harness` — the container and its named volumes (auth, caches, herdr session state) persist between sessions; you're not rebuilding or re-authenticating each time. Run `herdr` from the shell this drops you into if you want it.
 - **Detached background jobs** (training runs, long evals) inside the container use the same `setsid nohup ... & disown` pattern as a bare SSH box (see `harness/rules/environment.md`) — the container has no systemd user manager, but Compose's `init: true` runs tini as PID 1, which reaps zombies from detached jobs the same way systemd would on a bare host.
 - **Stop the container**: `docker compose down` — the bind-mounted project directory is untouched (it's your host filesystem), and named volumes (auth, caches) survive; only the container itself is removed.
 - **Rebuild after a Dockerfile change**: `docker compose build && docker compose up -d`.

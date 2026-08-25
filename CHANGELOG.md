@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.10.1
+
+Four persistence/permission bugs found running the v0.10.0 dev container
+in practice, all fixed.
+
+**Antigravity settings re-sync on every start.** `Dockerfile`'s `COPY
+docker/antigravity_settings.json ...` only seeds the `gemini-config` volume
+the *first* time it's created — Docker never re-copies into an existing
+named volume, so a rebuilt image alone never updated a running project's
+settings. `entrypoint.sh` now re-syncs that one file from the bind-mounted
+repo on every container start, so a plain restart is enough.
+
+**Claude Code installs into a per-user npm prefix.** `npm install -g` at
+build time landed the CLI under the root-owned default location
+(`/usr/lib/node_modules`), so its self-updater failed at runtime as the
+non-root `agent` user with "npm global folder isn't writable." Now
+installed as `agent` into `~/.npm-global`, on `PATH` via `ENV`.
+
+**Herdr is no longer the container's default foreground process.**
+Reverted the v0.10.0 change: with herdr as the container's own PID-2
+process, detaching from `docker compose attach` (rather than backgrounding
+herdr from inside it) killed herdr, and with it the whole container — no
+plain-shell fallback to land back in. `CMD` is `bash` again; run `herdr` by
+hand when you want it.
+
+**`~/.claude.json` now persists.** Claude Code's main config file is a
+*sibling* of the `.claude/` directory the `claude-config` volume mounts,
+not a member of it, so it lived on the container's throwaway layer and was
+lost on every recreate — while `~/.claude/.credentials.json` (inside the
+volume) survived. That split made a recreated container look logged-out:
+the OAuth token was still there, but Claude fell back to a stale backup or
+a fresh default for everything else `.claude.json` tracks. `~/.claude.json`
+is now a symlink into the volume-backed directory.
+
+`USER_GUIDE.md` §12.3, §12.5, and §12.6 updated to match.
+
 ## v0.10.0
 
 The dev container now installs and launches

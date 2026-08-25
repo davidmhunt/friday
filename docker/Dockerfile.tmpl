@@ -124,11 +124,31 @@ RUN corepack enable \
 # <!-- SECTION:docker_pm_none:end -->
 # <!-- SECTION:docker_agent_claude:start -->
 # Claude Code CLI (Node comes from the docker_node_runtime block above).
-RUN npm install -g @anthropic-ai/claude-code
+#
+# Installed as `agent` into a per-user npm prefix (~/.npm-global), not the
+# default `npm install -g` location under /usr. That default is root-owned,
+# so the CLI's built-in auto-updater — which runs as `agent` at container
+# runtime — would fail with "npm global folder isn't writable" the first
+# time it tried to self-update.
+RUN su - agent -c 'npm config set prefix ~/.npm-global \
+    && npm install -g @anthropic-ai/claude-code'
+ENV PATH="/home/agent/.npm-global/bin:${PATH}"
 
 # Mount point for the claude-config volume — see the ownership note above.
+#
+# Claude Code's main config file is `~/.claude.json` — a SIBLING of the
+# `.claude/` directory the volume mounts, not a member of it — so it lives
+# on the container's throwaway layer and is lost on every recreate even
+# though `~/.claude/.credentials.json` (inside the volume) survives. That
+# split makes a rebuilt/recreated container look logged-out: the OAuth
+# token is still there, but Claude falls back to a stale on-disk backup (or
+# a fresh default) for everything else `.claude.json` tracks. Symlinking it
+# into the volume-backed directory keeps both files on the same durable
+# storage.
 RUN mkdir -p /home/agent/.claude \
-    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.claude
+    && ln -s .claude/.claude.json /home/agent/.claude.json \
+    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.claude \
+    && chown -h "${USER_UID}:${USER_GID}" /home/agent/.claude.json
 # <!-- SECTION:docker_agent_claude:end -->
 # <!-- SECTION:docker_agent_antigravity:start -->
 # Antigravity CLI, via the official installer. Run as `agent` so anything
@@ -140,18 +160,20 @@ RUN su - agent -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
 # is fixed: the `agy` binary carries `~/.gemini/antigravity-cli/settings.json`
 # hardcoded.
 #
-# NOTE: a named volume is initialized from image content only when it is
-# FIRST created. Rebuilding the image does not update settings.json inside an
-# existing gemini-config volume — `docker compose down -v` is required to
-# pick up a change here. See USER_GUIDE.md §12.5.
+# This COPY only seeds the gemini-config volume the *first* time it's
+# created — Docker never re-copies into an existing named volume, so a
+# rebuilt image alone won't update settings.json for an existing container.
+# entrypoint.sh re-syncs this file from the bind-mounted repo on every
+# container start, so a plain restart is enough to pick up a change here.
 COPY docker/antigravity_settings.json /home/agent/.gemini/antigravity-cli/settings.json
 RUN chown -R "${USER_UID}:${USER_GID}" /home/agent/.gemini
 # <!-- SECTION:docker_agent_antigravity:end -->
 # <!-- SECTION:docker_herdr:start -->
 # Herdr (herdr.dev) — terminal workspace manager for AI coding agents.
 # Installed unconditionally rather than gated on ADAPTERS_ENABLED: it wraps
-# whichever agent CLI(s) happen to be on PATH rather than being tied to one,
-# and is the container's default foreground process (see CMD below).
+# whichever agent CLI(s) happen to be on PATH rather than being tied to one.
+# Not the container's default foreground process (see CMD below) — run it
+# by hand from a shell when you want it.
 RUN su - agent -c 'curl -fsSL https://herdr.dev/install.sh | sh'
 
 # Mount point for the herdr-config volume — see the ownership note above.
@@ -171,8 +193,11 @@ USER agent
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-# Drop straight into herdr rather than a plain shell — it's the
-# container's intended entry point, from which claude/agy get launched as
-# managed panes. Override with `docker compose run harness bash` for a
-# plain shell when needed.
-CMD ["herdr"]
+# Plain shell by default, not herdr: herdr is the container's own foreground
+# process when launched this way, so detaching from `docker compose attach`
+# (rather than backgrounding herdr from within it) kills herdr — and with it
+# the container. Run `herdr` by hand from the shell when you want it; a
+# `docker compose exec harness bash` shell in another terminal is unaffected
+# either way, since exec sessions are independent of the container's main
+# process.
+CMD ["bash"]
