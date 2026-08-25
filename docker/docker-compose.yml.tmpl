@@ -1,3 +1,10 @@
+# Pin the compose project name rather than inheriting it from the directory
+# basename. Named volumes and the container name are all prefixed with it, so
+# two checkouts whose directories happen to share a basename would otherwise
+# share one set of auth/cache volumes. This also keeps the prefix consistent
+# with the `image:` tag below, which is derived from the same config key.
+name: [SET AT SETUP: PROJECT_NAME_LOWER]
+
 services:
   harness:
     build:
@@ -12,11 +19,13 @@ services:
       - .:/workspace
       - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
       - ~/.gitconfig:/home/agent/.gitconfig:ro
+      # <!-- SECTION:docker_agent_claude_compose:start -->
       - claude-config:/home/agent/.claude
-      - claude-cache:/home/agent/.cache
-      # <!-- SECTION:docker_agent_antigravity_volumes:start -->
+      # <!-- SECTION:docker_agent_claude_compose:end -->
+      # <!-- SECTION:docker_agent_antigravity_compose:start -->
       - gemini-config:/home/agent/.gemini
-      # <!-- SECTION:docker_agent_antigravity_volumes:end -->
+      # <!-- SECTION:docker_agent_antigravity_compose:end -->
+      - agent-cache:/home/agent/.cache
       # --- user-added volumes (managed by init_harness.py) ---
       # --- end user-added volumes ---
       # --- Future device/port passthrough placeholder -----------------------
@@ -28,6 +37,14 @@ services:
       # ------------------------------------------------------------------------
     environment:
       - SSH_AUTH_SOCK=/ssh-agent
+      # <!-- SECTION:docker_agent_antigravity_compose:start -->
+      # Switches .agents/hooks/command_guard.py into container mode: its
+      # deny list still applies, but the force-ask prompts are skipped so an
+      # agent can run unattended. Only meaningful where that hook is wired,
+      # which is the Antigravity adapter. See USER_GUIDE.md §5.
+      - ANTIGRAVITY_CONTAINER=1
+      - CONTAINER_AUTO_ALLOW=1
+      # <!-- SECTION:docker_agent_antigravity_compose:end -->
     env_file:
       - path: .env
         required: false
@@ -47,8 +64,10 @@ services:
     # <!-- SECTION:docker_gpu:end -->
 
 volumes:
+  # <!-- SECTION:docker_agent_claude_compose:start -->
   claude-config:
-  claude-cache:
-  # <!-- SECTION:docker_agent_antigravity_volumes:start -->
+  # <!-- SECTION:docker_agent_claude_compose:end -->
+  # <!-- SECTION:docker_agent_antigravity_compose:start -->
   gemini-config:
-  # <!-- SECTION:docker_agent_antigravity_volumes:end -->
+  # <!-- SECTION:docker_agent_antigravity_compose:end -->
+  agent-cache:

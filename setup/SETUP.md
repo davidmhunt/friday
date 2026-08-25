@@ -169,13 +169,28 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 `DOCKER_EXTRA_VOLUMES` in `harness.config.env` directly and re-run
 `init_harness.py` — no need to redo the whole interview.
 
-No new question here shapes the image itself — `Dockerfile` and
-`docker/entrypoint.sh` are rendered from answers already collected earlier
-in this interview: `PACKAGE_MANAGER` (§3) picks the package-manager install
-block, `ADAPTERS_ENABLED` (§6) picks which agent CLI(s) get installed and
-auto-launched, `LATEX_DRAFTING_ENABLED` (§9) gates the LaTeX toolchain, and
+No new question here shapes the image itself — `Dockerfile`,
+`docker/entrypoint.sh` and `docker/antigravity_settings.json` are rendered
+from answers already collected earlier in this interview: `PACKAGE_MANAGER`
+(§3) picks the package-manager install block, `ADAPTERS_ENABLED` (§6) picks
+which agent CLI(s) get installed and auto-launched,
+`LATEX_DRAFTING_ENABLED` (§9) gates the LaTeX toolchain, and
 `ACCELERATORS_ENABLED` (§4) gates the GPU reservation in
 `docker-compose.yml`.
+
+Each adapter is gated symmetrically across both files: enabling `claude`
+adds its CLI, its `claude-config` volume and its `~/.claude` mount point;
+enabling `antigravity` adds its CLI, its `gemini-config` volume, the
+pre-seeded `docker/antigravity_settings.json`, and the
+`ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables.
+
+> **Worth telling the user about, if Docker and the Antigravity adapter are
+> both on:** those two environment variables put `command_guard.py` into
+> container mode, where its deny list still applies but force-ask prompts do
+> not — an agent runs unattended. Because `docker-compose.yml` also
+> bind-mounts the repo and forwards the host `ssh-agent`, that's a real
+> posture change, not just a convenience. See USER_GUIDE.md §5; it can be
+> turned off by deleting the two `environment:` entries.
 
 ## 8. Detached background jobs
 

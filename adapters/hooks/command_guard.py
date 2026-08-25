@@ -24,6 +24,7 @@ regresses.
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -171,13 +172,36 @@ def build_dynamic_patterns(config: Dict[str, str]) -> Tuple[List[str], List[Tupl
 _PROJECT_COMMAND_CONFIG = _load_project_command_config()
 _EXTRA_ALLOW_PATTERNS, _EXTRA_FORCE_ASK_PATTERNS = build_dynamic_patterns(_PROJECT_COMMAND_CONFIG)
 
+# DENY is the ONLY layer that still applies in container mode (see
+# evaluate_subcommand), so every hole here is a hole in the container's whole
+# policy. Several of these patterns exist specifically because container mode
+# removed the force-ask net that used to catch them incidentally on the host.
 DENY_PATTERNS = [
     (r"\b(sudo|su|doas)\b", "Privilege escalation is forbidden."),
     (r"\bchmod\s+(-R\s+)?(777|a\+rwx)\b", "Insecure permissions change (777) is forbidden."),
-    (r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+([/~]|\.\s*$|\.\/|\/\*)", "Destructive filesystem wipe is forbidden."),
+    # Targets that wipe something the caller almost certainly didn't scope:
+    # an absolute path, $HOME, the cwd, the PARENT of the cwd, or a bare
+    # leading glob. `..` and `*` matter more than they look inside the dev
+    # container: the host repo is bind-mounted at /workspace, so `rm -rf ..`
+    # from any subdirectory deletes real host files. Interposed flags
+    # (e.g. `--no-preserve-root`) must not let the target slip past.
+    (r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+(?:--?\S+\s+)*([/~]|\.\.|\.\s*$|\.\/(?:\*|\s|$)|\*)", "Destructive filesystem wipe is forbidden."),
     (r"\bgit\s+push\b.*(\s+--force\b|\s+-f\b)", "Force-pushing to git remote is forbidden."),
+    # `git push origin +main` is a force-push in refspec notation — same
+    # destructive effect as --force, none of the same spelling.
+    (r"\bgit\s+push\b[^|;&]*\s\+[\w./*-]+", "Force-pushing via +refspec is forbidden."),
+    # The container forwards the HOST's ssh-agent socket and ~/.gitconfig, so
+    # a push to a newly added remote exfiltrates the repo under the operator's
+    # real identity. Adding the remote is the step worth stopping.
+    (r"\bgit\s+remote\s+add\b", "Adding a new git remote is forbidden (the container carries the host's ssh identity)."),
     (r"\bgit\s+clean\b.*(\s+-f|\s+--force)", "Destructive git clean is forbidden."),
-    (r"\b(curl|wget)\b.*\|\s*(bash|sh)\b", "Piping remote web scripts to shell is forbidden."),
+    # Remote-code-execution shapes. The literal `curl ... | bash` pipe was the
+    # only form caught before, and split_compound_commands defeated it: the
+    # halves of `curl -o /tmp/x && sh /tmp/x` are innocuous on their own, so
+    # only a check against the RAW command line can see the pair. These run
+    # top-level in evaluate_command_line, before any splitting.
+    (r"(?s)\b(curl|wget)\b.*(\||;|&&)\s*(bash|sh|zsh)\b", "Piping or chaining remote web scripts into a shell is forbidden."),
+    (r"(?s)\beval\b.*\$\(.*\b(curl|wget)\b", "Evaluating the output of a remote fetch is forbidden."),
     (r"\b(mkfs|dd\s+if=)", "Direct disk formatting / raw writing is forbidden."),
 ]
 
@@ -239,31 +263,53 @@ def split_compound_commands(cmd: str) -> List[str]:
     return sub_commands
 
 
-def evaluate_subcommand(sub_cmd: str) -> Tuple[str, Optional[str]]:
+def is_container_environment() -> bool:
+    """Whether to run in container mode: deny-list only, no force-ask.
+
+    Deliberately keyed ONLY to environment variables this project's own
+    docker-compose.yml sets. An earlier version also treated the presence of
+    /.dockerenv as sufficient, which is wrong: that file exists in *any*
+    container — a VS Code devcontainer, a Docker-based CI job, a nested
+    `docker run` — and each of those would have silently dropped the guard to
+    deny-list-only somewhere the operator never opted in.
+    """
+    return (
+        os.getenv("ANTIGRAVITY_CONTAINER") == "1"
+        or os.getenv("CONTAINER_AUTO_ALLOW") == "1"
+    )
+
+
+def evaluate_subcommand(sub_cmd: str, in_container: bool = False) -> Tuple[str, Optional[str]]:
     """Evaluate a single sub-command and return (decision, reason)."""
-    # 1. Deny check
+    # 1. Deny check (always active, in container and on host)
     for pattern, reason in DENY_PATTERNS:
         if re.search(pattern, sub_cmd):
             return "deny", reason
 
-    # 2. Force-ask check
+    # In container mode: all non-denied commands are auto-allowed for autonomous execution
+    if in_container:
+        return "allow", None
+
+    # 2. Force-ask check (host mode)
     for pattern, reason in FORCE_ASK_PATTERNS:
         if re.search(pattern, sub_cmd):
             return "force_ask", reason
 
-    # 3. Allow check
+    # 3. Allow check (host mode)
     for pattern in ALLOW_COMMAND_PATTERNS:
         if re.match(pattern, sub_cmd):
             return "allow", None
 
-    # 4. Default for unrecognized commands
+    # 4. Default for unrecognized commands (host mode)
     return "force_ask", f"Command '{sub_cmd}' is not in the auto-allow list and requires confirmation."
 
 
-def evaluate_command_line(command_line: str) -> Dict[str, str]:
+def evaluate_command_line(command_line: str, in_container: Optional[bool] = None) -> Dict[str, str]:
     """Evaluate the entire command line."""
     if not command_line or not command_line.strip():
         return {"decision": "allow"}
+
+    container_mode = is_container_environment() if in_container is None else in_container
 
     # 1. Top-level Deny check across entire raw string (catches pipelines like curl | bash)
     for pattern, reason in DENY_PATTERNS:
@@ -277,7 +323,7 @@ def evaluate_command_line(command_line: str) -> Dict[str, str]:
     highest_ask_reason = None
 
     for sub_cmd in sub_commands:
-        decision, reason = evaluate_subcommand(sub_cmd)
+        decision, reason = evaluate_subcommand(sub_cmd, in_container=container_mode)
         if decision == "deny":
             return {"decision": "deny", "reason": reason or "Command is strictly forbidden by policy."}
         if decision == "force_ask":

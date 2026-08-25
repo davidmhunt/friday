@@ -1,0 +1,70 @@
+{
+  "enableTelemetry": false,
+  "model": "Gemini 3.7 Flash (Medium)",
+  "permissions": {
+    "allow": [
+      "command(git status)",
+      "command(git diff *)",
+      "command(git log *)",
+      "command(git branch)",
+      "command(git checkout *)",
+      "command([SET AT SETUP: TEST_CMD])",
+      "command([SET AT SETUP: PACKAGE_MANAGER_SYNC_CMD])",
+      "command([SET AT SETUP: PACKAGE_MANAGER_RUN_CMD] *)",
+      "command(ls)",
+      "command(pwd)",
+      "command(cat *)",
+      "command(rg *)",
+      "command(grep *)",
+      "read_url(github.com)",
+      "read_url(*.github.com)",
+      "read_url(docs.rs)",
+      "read_url(*.python.org)",
+      "read_url(npmjs.com)",
+      "mcp(context7/*)",
+      "mcp(filesystem/read_file)"
+    ],
+    "deny": [
+      "read_file(~/.ssh/**)",
+      "read_file(~/.gnupg/**)",
+      "read_file(~/.aws/**)",
+      "read_file(~/.config/gcloud/**)",
+      "read_file(**/.env*)",
+      "read_file(**/*.pem)",
+      "read_file(**/*.key)",
+      "read_file(**/id_rsa*)",
+      "read_file(/etc/shadow)",
+      "read_file(/etc/sudoers)",
+      "write_file(~/.ssh/**)",
+      "write_file(~/.bashrc)",
+      "write_file(~/.zshrc)",
+      "write_file(.git/**)",
+      "command(sudo *)",
+      "command(su *)",
+      "command(rm -rf /)",
+      "command(rm -rf /*)",
+      "command(mkfs *)",
+      "command(dd *)",
+      "command(chmod 777 *)",
+      "command(chown *)",
+      "command(curl * | bash)",
+      "command(wget * | bash)"
+    ],
+    "ask": [
+      "command(git push *)",
+      "command(git reset --hard *)",
+      "command([SET AT SETUP: PACKAGE_MANAGER_ADD_CMD] *)",
+      "command(docker run *)",
+      "write_file(package.json)",
+      "write_file(pyproject.toml)",
+      "write_file(Cargo.toml)",
+      "mcp(database/execute_query)"
+    ]
+  },
+  "statusLine": {
+    "type": "",
+    "command": "",
+    "enabled": true
+  },
+  "toolPermission": "always-proceed"
+}

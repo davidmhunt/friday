@@ -1,5 +1,106 @@
 # Changelog
 
+## v0.9.0
+
+Adapters are now gated symmetrically in the dev container, the Antigravity
+CLI gets a real permission policy, and `command_guard.py`'s container mode
+is documented and considerably harder to walk around.
+
+**Symmetric adapter gating.** `claude` previously contributed to
+`docker-compose.yml` unconditionally: an `ADAPTERS_ENABLED=antigravity`
+project still got a `claude-config` volume it could never use, while
+`gemini-config` was correctly gated. Both adapters now sit behind matching
+gates — `docker_agent_claude_compose` and `docker_agent_antigravity_compose`
+(renamed from `docker_agent_antigravity_volumes`, since it now covers
+environment variables too) — each controlling that adapter's config volume,
+its `~/.claude` or `~/.gemini` mount point in `Dockerfile`, and for
+antigravity the `ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` variables.
+The Dockerfile's config-directory pre-creation moved into the per-adapter
+blocks alongside each CLI install.
+
+**`claude-cache` is now `agent-cache`.** It mounts `/home/agent/.cache`,
+which uv, pip and npm all write — the name was misleading, and it is
+deliberately ungated, which also guarantees the top-level `volumes:` map is
+never empty on a project with no adapters enabled.
+
+**The compose project name is pinned.** `docker-compose.yml` now sets
+`name:` from `PROJECT_NAME_LOWER`. Compose otherwise derives it from the
+directory basename, so two checkouts in same-named directories would share
+one set of auth/cache volumes and one container name. This also makes the
+volume prefix agree with the `image:` tag, which already used that key.
+
+**`command_guard.py` container mode: same posture, fewer holes.** Container
+mode (introduced alongside the container work) reduces the policy to its
+deny list, skipping force-ask so an agent can run unattended. That is
+intentional and unchanged — but the deny list was carrying more weight than
+it was built for, and several commands were silently allowed inside a
+container whose `/workspace` is a bind mount of the host repo and whose
+`ssh-agent` socket is the host's. Now denied, in both modes:
+
+- `rm -rf` aimed at `..`, a bare `*`, `.`, `./`, `~`, or an absolute path,
+  including with interposed flags such as `--no-preserve-root`. `rm -rf ..`
+  from a subdirectory of `/workspace` deletes host files.
+- `git push origin +main` — a force-push in refspec notation, matching
+  neither `--force` nor `-f`.
+- `git remote add`, which combined with an ordinary `git push` exfiltrates
+  the repo under the host's forwarded git identity.
+- `curl … && sh …` and `eval "$(curl …)"`. Only the literal `curl … | bash`
+  pipe was caught before; `split_compound_commands` evaluates the halves of
+  a chained form separately, and neither half is suspicious alone, so these
+  are checked against the raw command line before splitting.
+
+Also fixed a long-standing false positive: `rm -rf ./build` was denied by an
+over-broad `./` alternative. `./` and `./*` are still denied.
+
+**Container detection no longer keys on `/.dockerenv`.** That file exists in
+*any* container — a VS Code devcontainer, a Docker-based CI job, a nested
+`docker run` — each of which would have silently dropped the guard to
+deny-list-only somewhere the operator never opted in. Detection is now the
+two environment variables `docker-compose.yml` sets deliberately.
+
+**The test suite is hermetic against its own feature.** Host-mode
+assertions relied on ambient detection, so `ANTIGRAVITY_CONTAINER=1 pytest`
+— i.e. running the suite inside the very container this targets, or in any
+Docker-based CI — failed 7 pre-existing regression tests. Every host-mode
+call now pins `in_container=False`, and the subprocess-based helper scrubs
+both variables from the child environment. 24 tests pass identically with
+neither variable set, with `ANTIGRAVITY_CONTAINER=1`, and with
+`CONTAINER_AUTO_ALLOW=1`.
+
+**`docker/antigravity_settings.json` is a new materialized file** (gated on
+`DOCKER_ENABLED` **and** the `antigravity` adapter), copied into the image
+at `~/.gemini/antigravity-cli/settings.json`. It carries the CLI's own
+permission policy: flat `permissions.allow`/`.ask`/`.deny` arrays of
+`command(...)`, `read_file(...)`, `write_file(...)`, `read_url(...)` and
+`mcp(...)` rules. This is a **second, independent layer** from
+`command_guard.py`, covering what the hook cannot see — reads of
+`~/.ssh/**`, `~/.aws/**`, `**/.env*` and `**/*.pem`, writes to `.git/**` and
+shell rc files, and URL fetches. Build/test commands render from
+`TEST_CMD`/`PACKAGE_MANAGER_*_CMD` rather than being hardcoded.
+
+### Upgrading
+
+Re-render, then rebuild:
+
+```bash
+python3 .friday/setup/init_harness.py \
+  --force-materialize=docker-compose.yml \
+  --force-materialize=Dockerfile
+docker compose down -v && docker compose build && docker compose up -d
+```
+
+`down -v` is required, not optional, for two reasons: `claude-cache` is
+renamed (the old volume is orphaned, not migrated — no data loss, just a
+cold cache), and a named volume is initialized from image content **only on
+first creation**, so a pre-existing `gemini-config` volume will shadow the
+new `settings.json` no matter how many times you rebuild. It also discards
+stored logins, so expect to re-authenticate once.
+
+If your project directory basename differs from `PROJECT_NAME_LOWER`, the
+new `name:` pin changes your volume prefix; the old volumes are left in
+place, orphaned, and can be removed with `docker volume rm` once you're
+satisfied the new ones work.
+
 ## v0.8.1
 
 Antigravity is now a fully wired adapter inside the dev container: its

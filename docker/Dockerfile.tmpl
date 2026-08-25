@@ -50,11 +50,16 @@ RUN set -eu; \
 # Docker initializes a fresh named volume from the image's content at that
 # path — but when the path does NOT exist in the image, it creates the
 # volume root-owned, which the non-root `agent` user can then never write.
-# That silently breaks `claude login` persistence (the whole point of the
-# claude-config volume) and the caches. Creating them here, owned by agent,
-# makes the volume inherit that ownership on first mount.
-RUN mkdir -p /home/agent/.cache /home/agent/.claude /home/agent/.gemini \
-    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.cache /home/agent/.claude /home/agent/.gemini
+# That silently breaks agent-CLI login persistence and the caches. Creating
+# them here, owned by agent, makes the volume inherit that ownership on
+# first mount.
+#
+# ~/.cache is shared (uv, pip and npm all write there), so it is created
+# unconditionally. The per-adapter config directories are created inside
+# their own adapter's section below, alongside that adapter's CLI install —
+# each one exists in the image exactly when compose declares its volume.
+RUN mkdir -p /home/agent/.cache \
+    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.cache
 # <!-- SECTION:docker_latex:start -->
 # LaTeX toolchain (this project's LATEX_DRAFTING_ENABLED=true) — costs
 # several GB, only present when the project's harness.config.env asked for
@@ -120,11 +125,27 @@ RUN corepack enable \
 # <!-- SECTION:docker_agent_claude:start -->
 # Claude Code CLI (Node comes from the docker_node_runtime block above).
 RUN npm install -g @anthropic-ai/claude-code
+
+# Mount point for the claude-config volume — see the ownership note above.
+RUN mkdir -p /home/agent/.claude \
+    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.claude
 # <!-- SECTION:docker_agent_claude:end -->
 # <!-- SECTION:docker_agent_antigravity:start -->
 # Antigravity CLI, via the official installer. Run as `agent` so anything
 # it drops under a home directory lands in /home/agent, not /root.
 RUN su - agent -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
+
+# Mount point for the gemini-config volume (see the ownership note above),
+# pre-seeded with this project's default CLI permissions. The settings path
+# is fixed: the `agy` binary carries `~/.gemini/antigravity-cli/settings.json`
+# hardcoded.
+#
+# NOTE: a named volume is initialized from image content only when it is
+# FIRST created. Rebuilding the image does not update settings.json inside an
+# existing gemini-config volume — `docker compose down -v` is required to
+# pick up a change here. See USER_GUIDE.md §12.5.
+COPY docker/antigravity_settings.json /home/agent/.gemini/antigravity-cli/settings.json
+RUN chown -R "${USER_UID}:${USER_GID}" /home/agent/.gemini
 # <!-- SECTION:docker_agent_antigravity:end -->
 
 # Covers every per-user install location used above: uv, pipx/poetry, and

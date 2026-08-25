@@ -90,7 +90,8 @@
     { "src": "adapters/antigravity/hooks.json.tmpl", "dest": ".agents/hooks.json", "adapter": "antigravity" },
     { "src": "docker/docker-compose.yml.tmpl", "dest": "docker-compose.yml", "docker": true },
     { "src": "docker/Dockerfile.tmpl", "dest": "Dockerfile", "docker": true },
-    { "src": "docker/entrypoint.sh.tmpl", "dest": "docker/entrypoint.sh", "docker": true }
+    { "src": "docker/entrypoint.sh.tmpl", "dest": "docker/entrypoint.sh", "docker": true },
+    { "src": "docker/antigravity_settings.json.tmpl", "dest": "docker/antigravity_settings.json", "docker": true, "adapter": "antigravity" }
   ],
   "git_hooks": {
     "anchor": ".claude/hooks",

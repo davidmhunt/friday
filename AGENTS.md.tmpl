@@ -107,6 +107,15 @@ Command execution is programmatically guarded by `.agents/hooks.json` via
   `git push`, `git checkout`, `git switch`, `git reset`), background jobs (`systemd-run`,
   `setsid`), dependency modifications (`[SET AT SETUP: PACKAGE_MANAGER_ADD_CMD]` and its
   remove counterpart), file deletions (`rm`, `unlink`), and unclassified commands.
-- **Strictly forbidden (`deny`)**: Privilege escalation (`sudo`, `su`), force pushes (`git push --force`),
-  destructive wipes (`rm -rf /`), and piping remote web scripts to shell (`curl | sh`).
+- **Strictly forbidden (`deny`)**: Privilege escalation (`sudo`, `su`), force pushes
+  (`git push --force`, and the `git push origin +main` refspec spelling), adding a new
+  git remote, unscoped destructive wipes (`rm -rf` aimed at `/`, `~`, `.`, `..`, or a bare
+  `*`), and fetching remote scripts into a shell (`curl | sh`, `curl … && sh …`,
+  `eval "$(curl …)"`).
+
+**Inside the Docker dev container this policy is reduced to its deny list.**
+`docker-compose.yml` sets `ANTIGRAVITY_CONTAINER=1`, which switches the guard into
+container mode: deny still applies, but force-ask and the allow list are skipped and
+anything unrecognized runs without confirmation. Do not read a successful command in
+the container as evidence that it would have been permitted on the host.
 

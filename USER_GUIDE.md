@@ -323,6 +323,61 @@ it's advisory, not a stop-work order. If you see a hook firing when it
 shouldn't (or silent when it should have fired), see the troubleshooting
 table in §12.
 
+### Container mode: `command_guard.py` behaves differently inside Docker
+
+`command_guard.py` has two modes, and the difference is significant enough
+that you should know which one you're in before letting an agent run
+unattended.
+
+| | Host | Container |
+|---|---|---|
+| Deny list | applies | applies |
+| Force-ask list | applies | **skipped** |
+| Allow list | applies | **skipped** |
+| Unrecognized command | force-ask | **allowed** |
+
+Container mode is switched on by `ANTIGRAVITY_CONTAINER=1` or
+`CONTAINER_AUTO_ALLOW=1`, both of which this project's `docker-compose.yml`
+sets automatically when the Antigravity adapter is enabled. The point is
+autonomy: an agent working in a disposable container shouldn't stop every
+few minutes for a confirmation you'd grant anyway.
+
+> [!WARNING]
+> **The container is isolated from the host, but not sealed off from it.**
+> `docker-compose.yml` bind-mounts the project directory at `/workspace`,
+> forwards your host `ssh-agent` socket, and mounts your `~/.gitconfig`. So
+> a command running unattended in container mode can delete real files in
+> your repo and can reach the network with your real git identity. Container
+> mode is a reasonable trade for a scratch project; think twice before
+> enabling it somewhere the working tree holds uncommitted work you can't
+> reproduce.
+
+Because the deny list is the *only* layer left in container mode, it carries
+weight it didn't have before, and it is deliberately broader than the
+minimum: it blocks `rm -rf` aimed at `..`, a bare `*`, `.`, `~` or an
+absolute path; `git push` force-pushes spelled either `--force` or as a
+`+refspec`; `git remote add` (the container carries your ssh identity); and
+remote-code-execution shapes including `curl … | bash`, the `curl … && sh …`
+form that splits across two sub-commands, and `eval "$(curl …)"`.
+
+It cannot catch everything. In particular, a fetch in one tool call and a
+`sh /tmp/x.sh` in the *next* one are two separate command lines, and nothing
+links them. Container mode assumes the agent is not adversarial — it defends
+against plausible mistakes, not against a determined attacker.
+
+**Turning it off.** Delete the two `environment:` entries from
+`docker-compose.yml` and `docker compose up -d` again. You'll get host
+behavior — force-ask prompts — inside the container.
+
+For Antigravity specifically there is a *second*, independent policy layer:
+`docker/antigravity_settings.json`, pre-seeded into the image at
+`~/.gemini/antigravity-cli/settings.json`. That is the CLI's own permission
+system (`permissions.allow` / `.ask` / `.deny`, with `command(...)`,
+`read_file(...)`, `write_file(...)`, `read_url(...)` and `mcp(...)` rules),
+and it covers things the hook cannot see at all — reading `~/.ssh/**`,
+writing `.git/**`, fetching a URL. The two layers are complementary, not
+redundant, and neither is a substitute for the other.
+
 ---
 
 ## 6. State Files: `log.md` and `status_history.md`
@@ -596,10 +651,20 @@ already covers:
   > recognize), the `none` branch of `Dockerfile` carries a comment with a
   > ready-made Miniforge install snippet — copy it in and add its `bin`
   > directory to the image's `PATH` by hand.
-- **`ADAPTERS_ENABLED`** installs the matching agent CLI(s): `claude`
-  installs Node.js and `@anthropic-ai/claude-code`; `antigravity` installs
-  via `curl -fsSL https://antigravity.google/cli/install.sh | bash`. Both,
-  either, or neither.
+- **`ADAPTERS_ENABLED`** selects the agent CLI(s) — and each adapter is
+  gated symmetrically, contributing to both `Dockerfile` and
+  `docker-compose.yml` only when it's enabled. Both, either, or neither:
+
+  | | `claude` | `antigravity` |
+  |---|---|---|
+  | CLI install | Node.js + `@anthropic-ai/claude-code` (lands at `/usr/bin/claude`) | official install script (lands at `/home/agent/.local/bin/agy` — the binary is `agy`, there is no `antigravity` binary) |
+  | Config volume | `claude-config` → `/home/agent/.claude` | `gemini-config` → `/home/agent/.gemini` |
+  | Pre-seeded config | none | `docker/antigravity_settings.json` → `~/.gemini/antigravity-cli/settings.json` |
+  | Environment | none | `ANTIGRAVITY_CONTAINER=1`, `CONTAINER_AUTO_ALLOW=1` (see §5) |
+
+  The `agent-cache` volume (`/home/agent/.cache`) is **not** adapter-gated —
+  uv, pip and npm all write there, so every project gets it regardless of
+  which agent CLI, if any, is installed.
 - **`LATEX_DRAFTING_ENABLED`** gates the TeX Live install
   (`texlive-latex-extra`, fonts, `latexmk`) — several GB, only pulled in
   when this project's config asks for it. (Previously this installed
@@ -635,7 +700,8 @@ writes come out owned by your host user, not root — plus whichever package
 manager and agent CLI(s) this project's `PACKAGE_MANAGER` and
 `ADAPTERS_ENABLED` selected (§12.3). `uv`, when selected, lands at
 `/home/agent/.local/bin/uv`; the Claude Code CLI, when selected, lands at
-`/usr/bin/claude`. Expect a few minutes the first time; rebuilds after
+`/usr/bin/claude`; the Antigravity CLI, when selected, lands at
+`/home/agent/.local/bin/agy`. Expect a few minutes the first time; rebuilds after
 that are cached and fast unless `Dockerfile` itself changed.
 
 `docker compose config` works even with no `.env` file present and
@@ -665,23 +731,36 @@ claude login                  # first time only, if not using ANTHROPIC_API_KEY
 ```
 
 **Auth persistence**: named volumes (`claude-config` at `/home/agent/.claude`,
-`gemini-config` at `/home/agent/.gemini`) persist your `claude login` and
-`agy` credentials and sessions across `docker compose down`/`up` cycles, so
-you only authenticate once per machine. The image pre-creates
-`/home/agent/.claude`, `/home/agent/.gemini`, and `/home/agent/.cache` owned
-by the `agent` user before those volumes ever mount — a named volume mounted
-onto a path the image doesn't already own is otherwise created root-owned
-by Docker, which the non-root `agent` user can't write, silently breaking
-persistence. Both directories are writable with fresh volumes.
-Alternatively, set `ANTHROPIC_API_KEY` (or relevant API keys) in `.env` at
-the repo root for non-interactive auth.
+`gemini-config` at `/home/agent/.gemini`, each present only when its adapter
+is enabled) persist your `claude login` and `agy` credentials and sessions
+across `docker compose down`/`up` cycles, so you only authenticate once per
+machine. The image pre-creates each of those paths, plus `/home/agent/.cache`,
+owned by the `agent` user before the volumes ever mount — a named volume
+mounted onto a path the image doesn't already own is otherwise created
+root-owned by Docker, which the non-root `agent` user can't write, silently
+breaking persistence. Alternatively, set `ANTHROPIC_API_KEY` (or relevant API
+keys) in `.env` at the repo root for non-interactive auth.
+
+**Volume names are per-project.** Compose prefixes every named volume with
+the project name, which `docker-compose.yml` pins to `PROJECT_NAME_LOWER`
+(`heimdall_claude-config`, and so on). Two projects on the same machine never
+share auth or cache volumes, and you don't need to name them uniquely
+yourself. The pin matters because Compose's *default* project name is the
+directory basename — without it, two checkouts in directories that happen to
+share a basename would silently share one set of volumes and one container
+name.
 
 > [!WARNING]
-> If this project had a Docker dev container **before** this fix, its
-> existing `claude-config`/`claude-cache`/`gemini-config` volumes may still
-> be root-owned from before the image started pre-creating those paths. Run
-> `docker compose down -v` once to discard old root-owned volumes, then `up -d`
-> again to get fresh, correctly-owned ones.
+> **A named volume is initialized from image content only the first time it
+> is created.** Rebuilding the image does *not* refresh files inside a volume
+> that already exists — most visibly, a change to
+> `docker/antigravity_settings.json` will not reach
+> `~/.gemini/antigravity-cli/settings.json` in an existing `gemini-config`
+> volume, no matter how many times you `docker compose build`. Run
+> `docker compose down -v` to discard the volumes and `up -d` to get fresh
+> ones. The same applies if this project had a container before the image
+> started pre-creating those paths: old volumes may still be root-owned, and
+> `down -v` is the fix. Note `down -v` also discards your stored logins.
 
 ### 12.6 Day-to-day workflow
 

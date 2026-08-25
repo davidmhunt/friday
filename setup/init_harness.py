@@ -290,11 +290,19 @@ def sections_to_drop(cfg: dict[str, str]) -> set[str]:
         drop.add("docker_pm_node")
     if not pm_none:
         drop.add("docker_pm_none")
+    # Two gates per adapter, one per file: `docker_agent_<x>` covers the
+    # Dockerfile's install + home-directory pre-creation, `..._compose` covers
+    # everything that adapter contributes to docker-compose.yml (its config
+    # volume, and any environment variables only its tooling reads). Claude
+    # gets exactly the same treatment as Antigravity here — it previously had
+    # an ungated config volume, so an antigravity-only project still got a
+    # claude-config volume it could never use.
     if not agent_claude:
         drop.add("docker_agent_claude")
+        drop.add("docker_agent_claude_compose")
     if not agent_antigravity:
         drop.add("docker_agent_antigravity")
-        drop.add("docker_agent_antigravity_volumes")
+        drop.add("docker_agent_antigravity_compose")
     if cfg.get("LATEX_DRAFTING_ENABLED", "false") != "true":
         drop.add("docker_latex")
     if cfg.get("ACCELERATORS_ENABLED", "false") != "true":
