@@ -13,6 +13,12 @@ Docker container workflow — is `USER_GUIDE.md` in this repo. It's the same
 file for every project (symlinked in as `harness/USER_GUIDE.md`, never
 templated), so read it here or in any consumer project.
 
+**Doc split**: this `README.md` covers installing, updating, and porting
+friday itself (installer + maintainer concerns). `harness/USER_GUIDE.md`
+covers operating an already-installed harness day to day (the operator
+manual). If you're looking for how to *use* the harness rather than set
+it up, go there instead.
+
 ## Getting started in a new project
 
 1. **Add the submodule** at the consumer project's repo root:
@@ -36,8 +42,9 @@ templated), so read it here or in any consumer project.
    every project, plus real materialized copies of anything needing
    project-specific customization (`harness.md`, the three project-facing
    rules docs, the Researcher/Author/Reviewer role contracts, `AGENTS.md`,
-   `README.md`, and `docker-compose.yml`/`gpu.md` if Docker/accelerators
-   are enabled) — plus a starter `docs/` and `harness/{coding,plans}/`
+   `README.md`, and — if Docker/accelerators are enabled —
+   `docker-compose.yml`, `Dockerfile`, `docker/entrypoint.sh`, and
+   `gpu.md`) — plus a starter `docs/` and `harness/{coding,plans}/`
    scaffold (empty working-state files with the right headers, `docs/
    references/` with its inbox + `needs_pdf.md`, and `docs/theory/`/`docs/
    report/` if the LaTeX suite is on), the three core state files
@@ -163,7 +170,7 @@ about them is ever rendered or project-specific.
 | `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
 | `.agents/agents/{author,coder,coder-heavy,controller,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `adapters/antigravity/agents/` | Antigravity role + tier-variant adapter files — present only if `ADAPTERS_ENABLED` includes `antigravity` |
 | `.agents/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.agents/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same canonical files as the `.claude/hooks/*` row above |
-| `Dockerfile`, `docker/entrypoint.sh`, `.dockerignore` | `docker/` | only present if `DOCKER_ENABLED=true` |
+| `.dockerignore` | `docker/` | only present if `DOCKER_ENABLED=true` — the only Docker file that's still a plain symlink; `Dockerfile` and `docker/entrypoint.sh` are materialized (see below) since they now render per-project |
 | `.git/hooks/{pre-commit,commit-msg}` | *(anchored to `.claude/hooks/`, per `MANIFEST.json`'s `git_hooks` key — not a manifest `symlinks` entry)* | a second-order symlink: `.git/hooks/*` → `.claude/hooks/*` → `.friday/adapters/hooks/*`; installed by `install_git_hooks()` |
 
 ### Materialized (real per-project copies, rendered once)
@@ -200,7 +207,9 @@ one that already exists and differs from a fresh render; use
 | `README.md` | `README.md.tmpl` | — |
 | `.claude/settings.json` | `adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
 | `.agents/hooks.json` | `adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
-| `docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true` |
+| `docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true`; the `docker_gpu` section (an NVIDIA GPU device reservation) is further gated on `ACCELERATORS_ENABLED=true`. `.env` is mounted as an optional `env_file` (`required: false`) and `SSH_AUTH_SOCK` falls back to `/dev/null` when unset, so `docker compose config` succeeds on a fresh project with neither present |
+| `Dockerfile` | `docker/Dockerfile.tmpl` | `DOCKER_ENABLED=true`; the image is otherwise driven entirely by existing config keys, no new interview questions. `PACKAGE_MANAGER` selects one package-manager install branch (`uv`, `poetry` via pipx, `pip` via apt python3-pip+venv, or `npm`/`pnpm`/`yarn` via NodeSource + corepack; anything else drops in a "none" branch with a comment on hand-adding conda/Miniforge). `ADAPTERS_ENABLED` selects agent CLI installs (`claude` → NodeSource Node + `npm install -g @anthropic-ai/claude-code`; `antigravity` → its official install script; both, either, or neither). `LATEX_DRAFTING_ENABLED` gates the TeX Live install (several GB, off by default). See `docker_pm_*`/`docker_agent_*`/`docker_latex`/`docker_node_runtime` in `sections_to_drop()` |
+| `docker/entrypoint.sh` | `docker/entrypoint.sh.tmpl` | `DOCKER_ENABLED=true`; not internally gated by config — `AUTO_LAUNCH_AGENT=1` probes `PATH` at runtime for `claude` then `antigravity` and execs whichever is found, rather than being gated at render time on `ADAPTERS_ENABLED` (a render-time gate with no adapter enabled used to render an empty `if ...; then fi`, a bash syntax error that broke the entrypoint outright) |
 
 ### Real project data (never touched by friday)
 

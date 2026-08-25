@@ -1,0 +1,142 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:24.04
+
+# Ubuntu LTS (not a slim Debian image) so this base doubles as a ROS-ready
+# environment for future robotics projects without a base-image migration.
+
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        openssh-client \
+        curl \
+        ca-certificates \
+        build-essential \
+        gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user, UID/GID matched to the host so bind-mounted files aren't
+# owned by a mismatched UID. Created early, before any per-user tool
+# installer below, so those installers can run as `agent` (via `su -`) and
+# land in /home/agent/..., not /root/... where the `agent` user could never
+# reach them.
+RUN set -eu; \
+    # Ubuntu 24.04 ships a default `ubuntu` user/group already occupying
+    # UID/GID 1000 — which is exactly the default USER_UID/USER_GID here,
+    # and the UID/GID of most Linux desktop users. A plain `groupadd -g
+    # 1000` therefore fails with exit 4 on the most common configuration.
+    # Rename the incumbent onto the name we want instead of fighting it,
+    # and only create a fresh user/group when the slot is genuinely free.
+    existing_group="$(getent group "${USER_GID}" | cut -d: -f1 || true)"; \
+    if [ -n "$existing_group" ]; then \
+        [ "$existing_group" = agent ] || groupmod -n agent "$existing_group"; \
+    else \
+        groupadd -g "${USER_GID}" agent; \
+    fi; \
+    existing_user="$(getent passwd "${USER_UID}" | cut -d: -f1 || true)"; \
+    if [ -n "$existing_user" ]; then \
+        [ "$existing_user" = agent ] || usermod -l agent -d /home/agent -m -s /bin/bash "$existing_user"; \
+    else \
+        useradd -m -u "${USER_UID}" -g "${USER_GID}" -s /bin/bash agent; \
+    fi; \
+    mkdir -p /home/agent; \
+    chown -R "${USER_UID}:${USER_GID}" /home/agent
+
+# Pre-create the directories docker-compose.yml mounts named volumes onto.
+# Docker initializes a fresh named volume from the image's content at that
+# path — but when the path does NOT exist in the image, it creates the
+# volume root-owned, which the non-root `agent` user can then never write.
+# That silently breaks `claude login` persistence (the whole point of the
+# claude-config volume) and the caches. Creating them here, owned by agent,
+# makes the volume inherit that ownership on first mount.
+RUN mkdir -p /home/agent/.cache /home/agent/.claude \
+    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.cache /home/agent/.claude
+# <!-- SECTION:docker_latex:start -->
+# LaTeX toolchain (this project's LATEX_DRAFTING_ENABLED=true) — costs
+# several GB, only present when the project's harness.config.env asked for
+# it.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        texlive-latex-extra \
+        texlive-fonts-recommended \
+        texlive-latex-recommended \
+        latexmk \
+    && rm -rf /var/lib/apt/lists/*
+# <!-- SECTION:docker_latex:end -->
+# <!-- SECTION:docker_node_runtime:start -->
+# Node.js, via NodeSource — Ubuntu's bundled nodejs is usually too old for
+# current requirements. Installed once here, shared by a Node-based
+# PACKAGE_MANAGER (npm/pnpm/yarn) and/or the Claude Code CLI below,
+# whichever pulled this section in.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+# <!-- SECTION:docker_node_runtime:end -->
+# <!-- SECTION:docker_pm_uv:start -->
+# uv, via the official installer (matches this project's own quickstart).
+# Run as the `agent` user so it lands in /home/agent/.local/bin, not
+# /root/.local/bin where `agent` could never reach it.
+RUN su - agent -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+# <!-- SECTION:docker_pm_uv:end -->
+# <!-- SECTION:docker_pm_poetry:start -->
+# Poetry, via pipx. pipx itself is an apt package (system-wide, root), but
+# the `pipx install poetry` step runs as `agent` so poetry's venv lands
+# under /home/agent/.local, not /root/.local.
+RUN apt-get update && apt-get install -y --no-install-recommends pipx \
+    && rm -rf /var/lib/apt/lists/*
+RUN su - agent -c 'pipx install poetry'
+# <!-- SECTION:docker_pm_poetry:end -->
+# <!-- SECTION:docker_pm_pip:start -->
+# pip/venv from apt — system-wide, no per-user install step needed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-pip \
+        python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+# <!-- SECTION:docker_pm_pip:end -->
+# <!-- SECTION:docker_pm_node:start -->
+# Enable corepack for the configured Node package manager (npm ships with
+# Node already, nothing further needed for it). Node itself comes from the
+# docker_node_runtime block above.
+RUN corepack enable \
+    && corepack prepare pnpm@latest --activate \
+    && corepack prepare yarn@stable --activate
+# <!-- SECTION:docker_pm_node:end -->
+# <!-- SECTION:docker_pm_none:start -->
+# No PACKAGE_MANAGER was configured for this project (harness.config.env's
+# PACKAGE_MANAGER is blank, "none", or something this template doesn't
+# recognize out of the box — e.g. "conda"). Add its install step here by
+# hand. Example, for Miniforge/conda:
+#
+#   RUN curl -fsSL -o /tmp/miniforge.sh \
+#           https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+#       && su - agent -c 'bash /tmp/miniforge.sh -b -p /home/agent/miniforge3' \
+#       && rm /tmp/miniforge.sh
+#
+# ...and add /home/agent/miniforge3/bin to the ENV PATH line below.
+# <!-- SECTION:docker_pm_none:end -->
+# <!-- SECTION:docker_agent_claude:start -->
+# Claude Code CLI (Node comes from the docker_node_runtime block above).
+RUN npm install -g @anthropic-ai/claude-code
+# <!-- SECTION:docker_agent_claude:end -->
+# <!-- SECTION:docker_agent_antigravity:start -->
+# Antigravity CLI, via the official installer. Run as `agent` so anything
+# it drops under a home directory lands in /home/agent, not /root.
+RUN su - agent -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
+# <!-- SECTION:docker_agent_antigravity:end -->
+
+# Covers every per-user install location used above: uv, pipx/poetry, and
+# (defensively, since its exact layout isn't documented) the Antigravity
+# installer.
+ENV PATH="/home/agent/.local/bin:${PATH}"
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER agent
+WORKDIR /workspace
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash"]

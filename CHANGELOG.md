@@ -1,5 +1,74 @@
 # Changelog
 
+## v0.8.0
+
+Docker setup is now config-driven instead of one-size-fits-all, plus a
+`USER_GUIDE.md` expansion landing in the same release.
+
+**`Dockerfile` and `docker/entrypoint.sh` move from `symlinks` to
+`materialize` in `MANIFEST.json`** — they're now rendered per-project
+from `docker/Dockerfile.tmpl`/`docker/entrypoint.sh.tmpl`, not shared
+byte-identical files. No new interview questions were added; the image
+is driven entirely by existing `harness.config.env` keys:
+
+- `PACKAGE_MANAGER` selects one package-manager install branch: `uv`,
+  `poetry` (via pipx), `pip` (apt `python3-pip`+venv), or
+  `npm`/`pnpm`/`yarn` (NodeSource + corepack). Anything else falls
+  through to a "none" branch carrying a comment on where to hand-add
+  conda/Miniforge.
+- `ADAPTERS_ENABLED` selects agent CLI installs: `claude` pulls in
+  NodeSource Node + `npm install -g @anthropic-ai/claude-code`;
+  `antigravity` pulls in its official install script. Both, either, or
+  neither.
+- `LATEX_DRAFTING_ENABLED` now gates the TeX Live install, which used to
+  default on via a host env var — several GB nobody outside the LaTeX
+  suite wanted.
+- `ACCELERATORS_ENABLED` gates the compose NVIDIA GPU device
+  reservation.
+- `docker-compose.yml`'s `.env` is now an optional `env_file`
+  (`required: false`) and `SSH_AUTH_SOCK` tolerates being unset, so
+  `docker compose config` succeeds on a fresh project with neither
+  present.
+
+Two real bugs were caught during verification and fixed:
+
+- **Ubuntu 24.04 ships a default `ubuntu` user/group already at
+  UID/GID 1000** — the default `USER_UID`/`USER_GID` here, and the UID/
+  GID of most Linux desktop users. The old bare `groupadd -g 1000`
+  build step collided with it and failed with exit 4. The Dockerfile
+  now renames the incumbent user/group onto `agent` when the slot is
+  taken, and only creates a fresh one when it's free.
+- **The entrypoint's agent-CLI launch was render-time gated on
+  `ADAPTERS_ENABLED`**, which produced an empty `if ...; then fi` — a
+  bash syntax error that broke the container's entrypoint outright —
+  whenever no adapter was enabled. It now probes `PATH` at runtime
+  instead (`AUTO_LAUNCH_AGENT=1` tries `claude` then `antigravity`),
+  which also means a CLI installed later is picked up without
+  re-rendering.
+
+- **Named volumes mounted root-owned.** `claude-config` and
+  `claude-cache` mount at `/home/agent/.claude` and `/home/agent/.cache`,
+  but neither path existed in the image — so Docker created both volumes
+  owned by `root`, and the non-root `agent` user could never write them.
+  `claude login` persistence, the documented reason the volume exists,
+  had never actually worked. The image now pre-creates both directories
+  owned by `agent` so the volume inherits that ownership on first mount.
+  A project with pre-existing root-owned volumes needs one
+  `docker compose down -v` to discard them.
+
+**Existing Docker-enabled projects**: because `Dockerfile` and
+`docker/entrypoint.sh` move from symlinked to materialized, pulling
+this release alone does not update them in a project that already has
+Docker enabled — `init_harness.py` never overwrites a materialized file
+that already exists. Run `--force-materialize=Dockerfile
+--force-materialize=docker/entrypoint.sh` (or reconfigure) to pick up
+the new, parameterized versions, then `docker compose build` again.
+
+`README.md`, `README.md.tmpl`, and `AGENTS.md.tmpl` updated to describe
+the new materialized Docker files and their gating; `harness/
+USER_GUIDE.md` gained a corresponding operator-facing expansion in this
+same release, covering day-to-day use of the now-configurable image.
+
 ## v0.7.0
 
 Alignment pass closing the gap between a freshly generated friday harness

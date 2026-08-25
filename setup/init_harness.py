@@ -45,9 +45,20 @@ PLACEHOLDER_RE = re.compile(r"\[SET AT SETUP:\s*([A-Z0-9_]+)(?:[^\]]*)\]")
 # — they're for a human/agent to write prose into by hand). Used only for
 # the closing-checklist leftover scan, never for substitution.
 LEFTOVER_RE = re.compile(r"\[SET AT SETUP:[^\]]*\]")
+# The optional `(?:^[ \t]*#[ \t]*)?` before each marker lets a source file
+# whose native comment syntax is '#' (Dockerfile, docker-compose.yml,
+# entrypoint.sh — none of which tolerate a bare HTML comment) write its
+# markers as e.g. `# <!-- SECTION:name:start -->`: when KEPT, that '#'
+# prefix is part of the match and comes back out verbatim (still a valid
+# comment); when DROPPED, it's removed along with everything else instead
+# of being left behind as an orphaned '#' merged into the next line. Plain
+# `<!-- SECTION:... -->` markers (no '#' prefix, the .md.tmpl convention)
+# still match exactly as before — the whole group is optional.
 SECTION_RE = re.compile(
-    r"<!--\s*SECTION:([a-zA-Z0-9_]+):start\s*-->.*?<!--\s*SECTION:\1:end\s*-->\n?",
-    re.DOTALL,
+    r"(?:^[ \t]*#[ \t]*)?<!--\s*SECTION:([a-zA-Z0-9_]+):start\s*-->"
+    r".*?"
+    r"(?:^[ \t]*#[ \t]*)?<!--\s*SECTION:\1:end\s*-->\n?",
+    re.DOTALL | re.MULTILINE,
 )
 # Same gating idea as SECTION_RE, but for files that can't carry HTML
 # comments (.gitignore, .gitattributes) — uses '#' comment markers instead.
@@ -251,6 +262,42 @@ def sections_to_drop(cfg: dict[str, str]) -> set[str]:
     # arise from the LaTeX/Beamer drafting suite (docs/theory/, docs/report/).
     if cfg.get("LATEX_DRAFTING_ENABLED", "false") != "true":
         drop.add("lfs_policy")
+    # Dockerfile.tmpl / entrypoint.sh.tmpl / docker-compose.yml.tmpl: which
+    # package-manager install and agent-CLI install blocks are relevant is
+    # entirely config-driven, derived from PACKAGE_MANAGER and
+    # ADAPTERS_ENABLED (already answered in earlier interview sections) —
+    # no separate Docker-specific question is asked for any of this.
+    package_manager = cfg.get("PACKAGE_MANAGER", "").strip().lower()
+    adapters_enabled = {
+        a.strip() for a in cfg.get("ADAPTERS_ENABLED", "").split(",") if a.strip()
+    }
+    pm_uv = package_manager == "uv"
+    pm_poetry = package_manager == "poetry"
+    pm_pip = package_manager in ("pip", "pip3")
+    pm_node = package_manager in ("npm", "pnpm", "yarn")
+    pm_none = not (pm_uv or pm_poetry or pm_pip or pm_node)
+    agent_claude = "claude" in adapters_enabled
+    agent_antigravity = "antigravity" in adapters_enabled
+    if not (pm_node or agent_claude):
+        drop.add("docker_node_runtime")
+    if not pm_uv:
+        drop.add("docker_pm_uv")
+    if not pm_poetry:
+        drop.add("docker_pm_poetry")
+    if not pm_pip:
+        drop.add("docker_pm_pip")
+    if not pm_node:
+        drop.add("docker_pm_node")
+    if not pm_none:
+        drop.add("docker_pm_none")
+    if not agent_claude:
+        drop.add("docker_agent_claude")
+    if not agent_antigravity:
+        drop.add("docker_agent_antigravity")
+    if cfg.get("LATEX_DRAFTING_ENABLED", "false") != "true":
+        drop.add("docker_latex")
+    if cfg.get("ACCELERATORS_ENABLED", "false") != "true":
+        drop.add("docker_gpu")
     return drop
 
 

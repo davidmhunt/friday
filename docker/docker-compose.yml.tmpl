@@ -6,12 +6,11 @@ services:
       args:
         USER_UID: "${USER_UID:-1000}"
         USER_GID: "${USER_GID:-1000}"
-        INSTALL_LATEX: "${INSTALL_LATEX:-true}"
     image: [SET AT SETUP: PROJECT_NAME_LOWER]-harness:latest
     working_dir: /workspace
     volumes:
       - .:/workspace
-      - ${SSH_AUTH_SOCK}:/ssh-agent
+      - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
       - ~/.gitconfig:/home/agent/.gitconfig:ro
       - claude-config:/home/agent/.claude
       - claude-cache:/home/agent/.cache
@@ -27,10 +26,22 @@ services:
     environment:
       - SSH_AUTH_SOCK=/ssh-agent
     env_file:
-      - .env
+      - path: .env
+        required: false
     stdin_open: true
     tty: true
     init: true
+    # <!-- SECTION:docker_gpu:start -->
+    # Requires the NVIDIA Container Toolkit on the host:
+    # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # <!-- SECTION:docker_gpu:end -->
 
 volumes:
   claude-config:

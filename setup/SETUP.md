@@ -169,6 +169,14 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 `DOCKER_EXTRA_VOLUMES` in `harness.config.env` directly and re-run
 `init_harness.py` — no need to redo the whole interview.
 
+No new question here shapes the image itself — `Dockerfile` and
+`docker/entrypoint.sh` are rendered from answers already collected earlier
+in this interview: `PACKAGE_MANAGER` (§3) picks the package-manager install
+block, `ADAPTERS_ENABLED` (§6) picks which agent CLI(s) get installed and
+auto-launched, `LATEX_DRAFTING_ENABLED` (§9) gates the LaTeX toolchain, and
+`ACCELERATORS_ENABLED` (§4) gates the GPU reservation in
+`docker-compose.yml`.
+
 ## 8. Detached background jobs
 
 - Does this machine have a user systemd manager (survives a dropped

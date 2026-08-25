@@ -56,8 +56,6 @@
     { "src": "adapters/hooks/commit-msg", "dest": ".agents/hooks/commit-msg", "adapter": "antigravity" },
     { "src": "adapters/hooks/README.md", "dest": ".claude/hooks/README.md" },
     { "src": "adapters/hooks/README.md", "dest": ".agents/hooks/README.md", "adapter": "antigravity" },
-    { "src": "docker/Dockerfile", "dest": "Dockerfile", "docker": true },
-    { "src": "docker/entrypoint.sh", "dest": "docker/entrypoint.sh", "docker": true },
     { "src": "docker/.dockerignore", "dest": ".dockerignore", "docker": true }
   ],
   "materialize": [
@@ -90,7 +88,9 @@
     { "src": "README.md.tmpl", "dest": "README.md" },
     { "src": "adapters/claude/settings.json.tmpl", "dest": ".claude/settings.json" },
     { "src": "adapters/antigravity/hooks.json.tmpl", "dest": ".agents/hooks.json", "adapter": "antigravity" },
-    { "src": "docker/docker-compose.yml.tmpl", "dest": "docker-compose.yml", "docker": true }
+    { "src": "docker/docker-compose.yml.tmpl", "dest": "docker-compose.yml", "docker": true },
+    { "src": "docker/Dockerfile.tmpl", "dest": "Dockerfile", "docker": true },
+    { "src": "docker/entrypoint.sh.tmpl", "dest": "docker/entrypoint.sh", "docker": true }
   ],
   "git_hooks": {
     "anchor": ".claude/hooks",

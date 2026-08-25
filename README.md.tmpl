@@ -70,8 +70,11 @@ This project uses `[SET AT SETUP: PACKAGE_MANAGER]` for dependency/environment m
 
 This project runs its agent tooling inside a container. The bind-mounted
 project directory is your host filesystem; named volumes keep auth and
-caches across restarts. See `harness/USER_GUIDE.md` §6 for the full
-workflow, including reconfiguring mounts.
+caches across restarts. The image follows this project's own
+`harness.config.env` (package manager, agent CLI, LaTeX, GPU) — after
+re-running `init_harness.py` to reconfigure, run `docker compose build`
+again to pick up a changed `Dockerfile`. See `harness/USER_GUIDE.md` §12
+for the full workflow, including reconfiguring mounts.
 
 ```bash
 docker compose build                # build the image

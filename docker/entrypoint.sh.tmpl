@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e
+
+# Set AUTO_LAUNCH_AGENT=1 (e.g. in .env) to drop straight into an agent CLI
+# instead of a plain shell.
+#
+# This probes PATH at runtime rather than being gated at render time on
+# ADAPTERS_ENABLED, deliberately: a render-time `if/fi` whose body is a
+# gated section becomes an empty `if ...; then fi` — a bash syntax error
+# that breaks the container's entrypoint outright — whenever no adapter is
+# enabled. Probing also means a CLI installed later (by hand, or by a
+# reconfigure that adds an adapter) is picked up without re-rendering.
+#
+# First match wins; the order below is the preference order.
+if [ "${AUTO_LAUNCH_AGENT:-}" = "1" ]; then
+  for cli in claude antigravity; do
+    if command -v "$cli" >/dev/null 2>&1; then
+      exec "$cli" "$@"
+    fi
+  done
+  echo "entrypoint: AUTO_LAUNCH_AGENT=1 but no agent CLI found on PATH;" \
+       "starting the default command instead." >&2
+fi
+
+exec "$@"
