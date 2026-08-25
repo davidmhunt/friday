@@ -658,29 +658,30 @@ copied. From that shell:
 
 ```bash
 claude                        # start Claude Code inside the container
+# or:
+agy                           # start Antigravity CLI inside the container
 # or, non-interactively:
 claude login                  # first time only, if not using ANTHROPIC_API_KEY
 ```
 
-**Auth persistence**: a named volume (`claude-config`, mounted at
-`/home/agent/.claude`) persists your `claude login` session across
-`docker compose down`/`up` cycles, so you only log in once per machine.
-The image pre-creates `/home/agent/.claude` and `/home/agent/.cache`
-owned by the `agent` user before those volumes ever mount — a named
-volume mounted onto a path the image doesn't already own is otherwise
-created root-owned by Docker, which the non-root `agent` user can't write,
-silently breaking persistence. Both directories are writable with a fresh
-volume. Alternatively, set `ANTHROPIC_API_KEY` in `.env` at the repo root
-for non-interactive auth — either path works, and you can use both
-(interactive login is tried first).
+**Auth persistence**: named volumes (`claude-config` at `/home/agent/.claude`,
+`gemini-config` at `/home/agent/.gemini`) persist your `claude login` and
+`agy` credentials and sessions across `docker compose down`/`up` cycles, so
+you only authenticate once per machine. The image pre-creates
+`/home/agent/.claude`, `/home/agent/.gemini`, and `/home/agent/.cache` owned
+by the `agent` user before those volumes ever mount — a named volume mounted
+onto a path the image doesn't already own is otherwise created root-owned
+by Docker, which the non-root `agent` user can't write, silently breaking
+persistence. Both directories are writable with fresh volumes.
+Alternatively, set `ANTHROPIC_API_KEY` (or relevant API keys) in `.env` at
+the repo root for non-interactive auth.
 
 > [!WARNING]
 > If this project had a Docker dev container **before** this fix, its
-> existing `claude-config`/`claude-cache` volumes may still be root-owned
-> from before the image started pre-creating those paths. Run `docker
-> compose down -v` once to discard the old root-owned volumes, then `up
-> -d` again to get fresh, correctly-owned ones — you'll need to `claude
-> login` again after that one-time reset.
+> existing `claude-config`/`claude-cache`/`gemini-config` volumes may still
+> be root-owned from before the image started pre-creating those paths. Run
+> `docker compose down -v` once to discard old root-owned volumes, then `up -d`
+> again to get fresh, correctly-owned ones.
 
 ### 12.6 Day-to-day workflow
 

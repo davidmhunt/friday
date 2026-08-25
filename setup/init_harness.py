@@ -294,6 +294,7 @@ def sections_to_drop(cfg: dict[str, str]) -> set[str]:
         drop.add("docker_agent_claude")
     if not agent_antigravity:
         drop.add("docker_agent_antigravity")
+        drop.add("docker_agent_antigravity_volumes")
     if cfg.get("LATEX_DRAFTING_ENABLED", "false") != "true":
         drop.add("docker_latex")
     if cfg.get("ACCELERATORS_ENABLED", "false") != "true":
@@ -356,6 +357,14 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
 
 
 def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force: set[str]) -> None:
+    # --force-materialize accepts either an absolute path or one relative to
+    # the repo root, because both forms appear in the docs and neither is
+    # obviously the "right" one to a user reading a SKIP line. Normalize to
+    # absolute up front, and track which entries actually match something —
+    # an unmatched --force-materialize used to be ignored in total silence,
+    # so a typo (or the wrong path flavor) looked exactly like success.
+    force_abs = {str((REPO_ROOT / f).resolve()) for f in force}
+    force_used: set[str] = set()
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
     latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
@@ -376,7 +385,11 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
             print(f"  WARN: template source missing: {src}")
             continue
         rendered = render(src.read_text(), cfg, drop_sections=sections_to_drop(cfg))
-        if dest.exists() and str(dest) not in force:
+        dest_key = str(dest.resolve()) if dest.exists() else str(dest)
+        forced = dest_key in force_abs
+        if forced:
+            force_used.add(dest_key)
+        if dest.exists() and not forced:
             if dest.read_text() != rendered:
                 print(f"  SKIP (already materialized, differs from fresh render — use --force-materialize={dest} to overwrite): {dest}")
             continue
@@ -386,6 +399,8 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
             dest.write_text(rendered)
             if src.name in ("pre-commit", "commit-msg") or os.access(src, os.X_OK):
                 dest.chmod(dest.stat().st_mode | stat.S_IEXEC)
+    for unmatched in sorted(force_abs - force_used):
+        print(f"  WARN: --force-materialize={unmatched} matched no materialized file (typo? wrong path? gated off by config?)")
 
 
 def create_running_dirs(dry_run: bool) -> None:

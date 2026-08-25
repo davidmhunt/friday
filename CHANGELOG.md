@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.8.1
+
+Antigravity is now a fully wired adapter inside the dev container: its
+credentials persist, and `AUTO_LAUNCH_AGENT` can actually launch it.
+
+**Antigravity config persistence.** A `gemini-config` named volume is
+mounted at `/home/agent/.gemini`, gated on a new
+`docker_agent_antigravity_volumes` section so it appears in both the
+service mount list and the top-level `volumes:` key only when
+`ADAPTERS_ENABLED` includes `antigravity`. (A mount naming an undeclared
+top-level volume is a hard `docker compose config` error, so the two must
+be gated together.) `Dockerfile.tmpl` pre-creates `/home/agent/.gemini`
+owned by `agent` for the same reason it already pre-creates `.claude` and
+`.cache`: a named volume mounted onto a path the image doesn't own is
+created root-owned by Docker and the non-root `agent` user can never
+write it. `~/.gemini` is confirmed as the CLI's config root — the `agy`
+binary carries hardcoded `/.gemini/antigravity-cli/settings.json` paths.
+
+**Fixed: `AUTO_LAUNCH_AGENT=1` could never launch Antigravity.**
+`docker/entrypoint.sh.tmpl` probed `PATH` for a binary named
+`antigravity`, but the official installer creates exactly one binary and
+names it **`agy`** (at `/home/agent/.local/bin/agy`); nothing named
+`antigravity` is ever installed. On an antigravity-only project the probe
+therefore always fell through to "no agent CLI found on PATH" and dropped
+to a plain shell, with a working `agy` sitting on `PATH`. The probe list
+is now `claude agy`, with a comment noting these are binary names rather
+than adapter names. Projects with both adapters never saw this — `claude`
+matches first and masks it.
+
+`README.md`'s materialized-files table carried the same wrong binary
+name and has been corrected.
+
+**`--force-materialize` now accepts a repo-root-relative path**, not only
+an absolute one, and **warns when an entry matches nothing**. Previously a
+relative path — the form used in `USER_GUIDE.md` §12 and the v0.8.0 upgrade
+note — was compared against an absolute `dest` and so never matched, and
+the mismatch was reported in total silence: the run looked exactly like a
+successful re-render while the file was left untouched. A typo behaved the
+same way.
+
+**Existing Docker-enabled projects** need `docker compose down` and a
+re-render (`python3 .friday/setup/init_harness.py`) to pick up the new
+entrypoint and volume; add `--force-materialize=docker/entrypoint.sh` if
+a copy already exists, since materialized files are never overwritten in
+place. No rebuild is required for the entrypoint alone, but adding the
+`.gemini` pre-creation does need `docker compose build`.
+
 ## v0.8.0
 
 Docker setup is now config-driven instead of one-size-fits-all, plus a

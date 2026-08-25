@@ -14,6 +14,9 @@ services:
       - ~/.gitconfig:/home/agent/.gitconfig:ro
       - claude-config:/home/agent/.claude
       - claude-cache:/home/agent/.cache
+      # <!-- SECTION:docker_agent_antigravity_volumes:start -->
+      - gemini-config:/home/agent/.gemini
+      # <!-- SECTION:docker_agent_antigravity_volumes:end -->
       # --- user-added volumes (managed by init_harness.py) ---
       # --- end user-added volumes ---
       # --- Future device/port passthrough placeholder -----------------------
@@ -46,3 +49,6 @@ services:
 volumes:
   claude-config:
   claude-cache:
+  # <!-- SECTION:docker_agent_antigravity_volumes:start -->
+  gemini-config:
+  # <!-- SECTION:docker_agent_antigravity_volumes:end -->

@@ -11,9 +11,12 @@ set -e
 # enabled. Probing also means a CLI installed later (by hand, or by a
 # reconfigure that adds an adapter) is picked up without re-rendering.
 #
-# First match wins; the order below is the preference order.
+# First match wins; the order below is the preference order. Note these are
+# BINARY names, not adapter names: the Antigravity adapter's CLI installs as
+# `agy` (at /home/agent/.local/bin/agy), and no binary named `antigravity`
+# is ever created — probing for the adapter name silently never matches.
 if [ "${AUTO_LAUNCH_AGENT:-}" = "1" ]; then
-  for cli in claude antigravity; do
+  for cli in claude agy; do
     if command -v "$cli" >/dev/null 2>&1; then
       exec "$cli" "$@"
     fi
