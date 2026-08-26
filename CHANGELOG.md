@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.12.0 (in progress — code landed, docs pending)
+
+Two related changes toward a harness that can be dropped into a project
+without committing itself to that project's repo. **The documentation pass
+for both is not written yet**, and no project has been untracked yet — see
+"Remaining" below.
+
+**HARNESS_TRACKING: the harness can exclude its own files from git.**
+Tracking harness output as symlinks into an optional submodule was already
+a latent bug: anyone cloning a consumer repo without `--recurse-submodules`
+got dangling symlinks — silently broken git hooks, and a broken Docker
+build via `.dockerignore`. Every `MANIFEST.json` materialize entry now
+carries a `tier` (`tooling` / `state` / `durable` / `project`); symlink
+entries are implicitly `tooling`. A new `HARNESS_TRACKING` config key picks
+how much to exclude, written to `.git/info/exclude` rather than
+`.gitignore` so the harness leaves nothing in the repo's history.
+
+The default is `tooling`: generated role/rule docs, hooks, adapter configs
+and every symlink are excluded, while `status.md`, `log.md`, `plans/*` and
+`tasks_*` stay tracked. Excluding derived tooling is pure upside; excluding
+harness *state* trades away cross-machine continuity, so that's opt-in
+(`state`) rather than default. A project with no task tracker configured
+falls back to `full` instead — with no external durable record, excluding
+state would leave in-flight work with no copy surviving a fresh clone. An
+explicit value is always honoured; the interview warns when you choose
+`state`/`none` without a tracker.
+
+`--untrack-harness` runs `git rm --cached` over exactly the files that are
+both in the manifest-derived exclude set and currently tracked. It never
+touches anything outside that set, never commits, and is idempotent.
+
+One sharp edge worth knowing: `.gitignore` beats `.git/info/exclude`, so a
+`!path` negation defeats the exclusion for that path. `init_harness.py`
+drops such negations from its own managed block automatically, but it will
+not rewrite content a project wrote by hand outside that block — deleting
+someone's line silently is worse than leaving it. It prints a WARN naming
+the file and line instead.
+
+**Docker splits into a `dev` stage and a `harness` stage.** `Dockerfile` is
+now `FROM ubuntu AS dev` (base packages, the `agent` user, LaTeX, the
+package manager, herdr, `CMD bash`, no ENTRYPOINT) and `FROM dev AS
+harness` (Claude Code, Antigravity, `entrypoint.sh`). `docker-compose.yml`
+is project-owned and tracked, builds `target: dev`, and carries only the
+volumes a plain dev container needs; `docker-compose.harness.yml` is a
+gitignored Compose override adding `target: harness`, the agent config
+volumes and the Antigravity env vars. A teammate without the submodule runs
+`docker compose -f docker/docker-compose.yml up -d` and gets a working
+container with no agent tooling on it.
+
+`init_harness.py` writes `COMPOSE_FILE` into the gitignored root `.env`, so
+harness users get plain `docker compose up -d` back — the explicit
+`-f docker/docker-compose.yml` that v0.11.0 required is no longer needed.
+
+Node needed splitting to make this work: it was one section pulled in by
+either a Node package manager or Claude Code. It's now two mutually
+exclusive gates, `docker_node_runtime_dev` and `docker_node_runtime_harness`,
+so exactly one ever emits and a non-Node project's clean image doesn't
+carry a Node runtime it will never use. `.dockerignore` is now materialized
+rather than symlinked, since as a symlink it dangled without the submodule
+and broke the build itself.
+
+**Remaining for v0.12.0:** the documentation pass (USER_GUIDE section on
+the tiers, §12 rewrite for the dev/harness split, README tables, SETUP.md,
+`version_control.md`, a `HARNESS.md` pointer doc, and making `harness.sh`
+explain itself when the submodule is missing), then running
+`--untrack-harness` on a real project and verifying a fresh clone made
+without `--recurse-submodules` is fully functional.
+
 ## v0.11.0
 
 Container layout change: all Docker inputs now live in `docker/`, and the

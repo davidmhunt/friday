@@ -6,13 +6,22 @@
 #     repo root — hence the `..` in `context:` and the bind mount. The build
 #     context is still the repo root, because the Dockerfile does
 #     `COPY docker/entrypoint.sh`, and .dockerignore is read from the context
-#     root (so it stays at the repo root, where init_harness.py symlinks it).
+#     root (so it stays at the repo root, where init_harness.py materializes it).
 #   * Compose reads `.env` from the project directory, which defaults to this
 #     file's directory — NOT the repo root. A root-only .env would therefore be
 #     ignored and `${USER_UID}` would silently fall back to 1000, breaking
 #     bind-mount ownership for anyone whose UID isn't 1000. init_harness.py
 #     symlinks docker/.env -> ../.env so the root .env is found either way,
 #     whether you run from the repo root or from inside docker/.
+#
+# This is the PROJECT-owned base file — builds the `dev` Dockerfile stage
+# (no agent CLIs), so it works standalone for a teammate who cloned the repo
+# WITHOUT the .friday/ harness submodule. docker/docker-compose.harness.yml
+# is a tier "tooling" (gitignored) override that layers the `harness` stage
+# on top when the submodule IS present — see that file's header for how the
+# two stack together. Nothing in this file may depend on anything the
+# harness override provides: this file must always be a complete, working
+# subset on its own.
 #
 # Pin the compose project name rather than inheriting it from the directory
 # basename. Named volumes and the container name are all prefixed with it, so
@@ -26,10 +35,13 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      # Builds the project-only stage. docker-compose.harness.yml overrides
+      # this to `harness` when the tooling submodule is present.
+      target: dev
       args:
         USER_UID: "${USER_UID:-1000}"
         USER_GID: "${USER_GID:-1000}"
-    image: [SET AT SETUP: PROJECT_NAME_LOWER]-harness:latest
+    image: [SET AT SETUP: PROJECT_NAME_LOWER]-dev:latest
     # The repo is mounted at /<project name>, not a generic /workspace, so the
     # path inside the container matches the project it holds. Derived from the
     # same config key as `name:` and `image:` above, so it stays correct for
@@ -39,12 +51,6 @@ services:
       - ..:/[SET AT SETUP: PROJECT_NAME_LOWER]
       - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
       - ~/.gitconfig:/home/agent/.gitconfig:ro
-      # <!-- SECTION:docker_agent_claude_compose:start -->
-      - claude-config:/home/agent/.claude
-      # <!-- SECTION:docker_agent_claude_compose:end -->
-      # <!-- SECTION:docker_agent_antigravity_compose:start -->
-      - gemini-config:/home/agent/.gemini
-      # <!-- SECTION:docker_agent_antigravity_compose:end -->
       - herdr-config:/home/agent/.config/herdr
       - agent-cache:/home/agent/.cache
       # --- user-added volumes (managed by init_harness.py) ---
@@ -58,14 +64,6 @@ services:
       # ------------------------------------------------------------------------
     environment:
       - SSH_AUTH_SOCK=/ssh-agent
-      # <!-- SECTION:docker_agent_antigravity_compose:start -->
-      # Switches .agents/hooks/command_guard.py into container mode: its
-      # deny list still applies, but the force-ask prompts are skipped so an
-      # agent can run unattended. Only meaningful where that hook is wired,
-      # which is the Antigravity adapter. See USER_GUIDE.md §5.
-      - ANTIGRAVITY_CONTAINER=1
-      - CONTAINER_AUTO_ALLOW=1
-      # <!-- SECTION:docker_agent_antigravity_compose:end -->
     env_file:
       - path: ../.env
         required: false
@@ -85,11 +83,5 @@ services:
     # <!-- SECTION:docker_gpu:end -->
 
 volumes:
-  # <!-- SECTION:docker_agent_claude_compose:start -->
-  claude-config:
-  # <!-- SECTION:docker_agent_claude_compose:end -->
-  # <!-- SECTION:docker_agent_antigravity_compose:start -->
-  gemini-config:
-  # <!-- SECTION:docker_agent_antigravity_compose:end -->
   herdr-config:
   agent-cache:

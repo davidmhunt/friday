@@ -1,0 +1,55 @@
+# Compose override, not a standalone file: it only makes sense stacked on
+# top of docker/docker-compose.yml, e.g. via
+#
+#   COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.harness.yml
+#
+# in .env — which is exactly what init_harness.py writes there when
+# DOCKER_ENABLED=true, so a plain `docker compose up -d` picks up both files
+# automatically for anyone who ran setup with the .friday/ submodule present.
+# A teammate with no .env (no submodule, never ran setup) gets ONLY the base
+# file and its `dev` image — see that file's header.
+#
+# This file is tier "tooling" (gitignored, materialized fresh from
+# .friday/docker/docker-compose.harness.yml.tmpl on every sync) — it is
+# harness-only, never meant to be hand-edited or committed by a project that
+# doesn't have the submodule.
+#
+# Compose MERGES override files onto the base rather than replacing it, and
+# it can only ADD or override keys — it cannot remove something the base
+# declares. That makes the split asymmetric: everything agent-CLI-specific
+# (config volumes, env vars) must live ONLY here, never in the base file,
+# or a submodule-less teammate would inherit it too. Keep the base file the
+# strict subset; this file is additive-only on top of it.
+services:
+  harness:
+    build:
+      # Overrides just the `target:` key from the base service's `build:`
+      # block — Compose merges build sub-keys the same way it merges the
+      # rest of the service, so `context:`/`dockerfile:`/`args:` from the
+      # base still apply unchanged.
+      target: harness
+    image: [SET AT SETUP: PROJECT_NAME_LOWER]-harness:latest
+    volumes:
+      # <!-- SECTION:docker_agent_claude_compose:start -->
+      - claude-config:/home/agent/.claude
+      # <!-- SECTION:docker_agent_claude_compose:end -->
+      # <!-- SECTION:docker_agent_antigravity_compose:start -->
+      - gemini-config:/home/agent/.gemini
+      # <!-- SECTION:docker_agent_antigravity_compose:end -->
+    environment:
+      # <!-- SECTION:docker_agent_antigravity_compose:start -->
+      # Switches .agents/hooks/command_guard.py into container mode: its
+      # deny list still applies, but the force-ask prompts are skipped so an
+      # agent can run unattended. Only meaningful where that hook is wired,
+      # which is the Antigravity adapter. See USER_GUIDE.md §5.
+      - ANTIGRAVITY_CONTAINER=1
+      - CONTAINER_AUTO_ALLOW=1
+      # <!-- SECTION:docker_agent_antigravity_compose:end -->
+
+volumes:
+  # <!-- SECTION:docker_agent_claude_compose:start -->
+  claude-config:
+  # <!-- SECTION:docker_agent_claude_compose:end -->
+  # <!-- SECTION:docker_agent_antigravity_compose:start -->
+  gemini-config:
+  # <!-- SECTION:docker_agent_antigravity_compose:end -->

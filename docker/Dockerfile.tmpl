@@ -1,5 +1,16 @@
 # syntax=docker/dockerfile:1
-FROM ubuntu:24.04
+
+# Two-stage build: `dev` is the project-owned image — everything a teammate
+# needs to build/test this project in a container, with NO agent CLI on it.
+# `harness` layers the agent tooling (Claude Code, Antigravity, herdr's
+# entrypoint) on top. This split exists so a teammate who clones the repo
+# WITHOUT the .friday/ harness submodule still gets a working dev container:
+# docker/docker-compose.yml alone builds and runs `dev` fine, since nothing
+# in it references anything harness-specific. The harness stage — and the
+# docker/docker-compose.harness.yml override that builds it — is tier
+# "tooling"/gitignored, so it only exists for someone who actually has the
+# submodule.
+FROM ubuntu:24.04 AS dev
 
 # Ubuntu LTS (not a slim Debian image) so this base doubles as a ROS-ready
 # environment for future robotics projects without a base-image migration.
@@ -56,8 +67,9 @@ RUN set -eu; \
 #
 # ~/.cache is shared (uv, pip and npm all write there), so it is created
 # unconditionally. The per-adapter config directories are created inside
-# their own adapter's section below, alongside that adapter's CLI install —
-# each one exists in the image exactly when compose declares its volume.
+# their own adapter's section in the `harness` stage below, alongside that
+# adapter's CLI install — each one exists in the image exactly when compose
+# declares its volume.
 RUN mkdir -p /home/agent/.cache \
     && chown -R "${USER_UID}:${USER_GID}" /home/agent/.cache
 # <!-- SECTION:docker_latex:start -->
@@ -71,15 +83,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         latexmk \
     && rm -rf /var/lib/apt/lists/*
 # <!-- SECTION:docker_latex:end -->
-# <!-- SECTION:docker_node_runtime:start -->
+# <!-- SECTION:docker_node_runtime_dev:start -->
 # Node.js, via NodeSource — Ubuntu's bundled nodejs is usually too old for
-# current requirements. Installed once here, shared by a Node-based
-# PACKAGE_MANAGER (npm/pnpm/yarn) and/or the Claude Code CLI below,
-# whichever pulled this section in.
+# current requirements. This is the PROJECT's own copy: it's here because
+# PACKAGE_MANAGER is Node-based (npm/pnpm/yarn), so it must be present even
+# for a teammate building `dev` alone, without the harness submodule.
+#
+# Mutually exclusive with docker_node_runtime_harness in the `harness` stage
+# below: that one installs the SAME runtime for the Claude Code CLI, but
+# only when this section is absent (i.e. PACKAGE_MANAGER isn't already
+# Node-based) — never both, to avoid installing Node twice.
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
-# <!-- SECTION:docker_node_runtime:end -->
+# <!-- SECTION:docker_node_runtime_dev:end -->
 # <!-- SECTION:docker_pm_uv:start -->
 # uv, via the official installer (matches this project's own quickstart).
 # Run as the `agent` user so it lands in /home/agent/.local/bin, not
@@ -104,7 +121,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # <!-- SECTION:docker_pm_node:start -->
 # Enable corepack for the configured Node package manager (npm ships with
 # Node already, nothing further needed for it). Node itself comes from the
-# docker_node_runtime block above.
+# docker_node_runtime_dev block above.
 RUN corepack enable \
     && corepack prepare pnpm@latest --activate \
     && corepack prepare yarn@stable --activate
@@ -122,8 +139,66 @@ RUN corepack enable \
 #
 # ...and add /home/agent/miniforge3/bin to the ENV PATH line below.
 # <!-- SECTION:docker_pm_none:end -->
+# <!-- SECTION:docker_herdr:start -->
+# Herdr (herdr.dev) — terminal workspace manager for AI coding agents.
+# Installed unconditionally rather than gated on ADAPTERS_ENABLED: it wraps
+# whichever agent CLI(s) happen to be on PATH rather than being tied to one.
+# It lives in the `dev` stage (not `harness`) because it is a general
+# terminal workspace manager, not agent-specific tooling — a teammate
+# without the harness submodule still benefits from it. Not the container's
+# default foreground process (see CMD below) — run it by hand from a shell
+# when you want it.
+RUN su - agent -c 'curl -fsSL https://herdr.dev/install.sh | sh'
+
+# Mount point for the herdr-config volume — see the ownership note above.
+RUN mkdir -p /home/agent/.config/herdr \
+    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.config/herdr
+# <!-- SECTION:docker_herdr:end -->
+
+# Covers every per-user install location used above: uv, pipx/poetry, herdr,
+# and (defensively, since its exact layout isn't documented) the Antigravity
+# installer.
+ENV PATH="/home/agent/.local/bin:${PATH}"
+
+# The repo is bind-mounted at /<project name> rather than a generic /workspace,
+# so the in-container path matches the project it holds. Derived from the same
+# config key that pins the compose project name and image tag. Note that agent
+# CLIs key their conversation history on cwd, so changing this starts a fresh
+# history bucket — see USER_GUIDE.md §12.5.
+WORKDIR /[SET AT SETUP: PROJECT_NAME_LOWER]
+
+USER agent
+
+# Plain shell, and no ENTRYPOINT: `dev` has no agent CLI to auto-launch and
+# no per-adapter config volume to re-sync on start (that's all entrypoint.sh,
+# which only exists in the `harness` stage below). A plain `CMD` keeps this
+# stage buildable and runnable entirely on its own.
+CMD ["bash"]
+
+
+# ---------------------------------------------------------------------------
+# harness stage — agent tooling layered on top of `dev`. Only built when the
+# .friday/ submodule is present (see docker/docker-compose.harness.yml,
+# tier "tooling", gitignored) — a project-only checkout never reaches this
+# FROM line.
+# ---------------------------------------------------------------------------
+FROM dev AS harness
+
+# `dev` ends as USER agent (see above); the `su - agent` installs and the
+# COPY below need root.
+USER root
+# <!-- SECTION:docker_node_runtime_harness:start -->
+# Node.js, via NodeSource — needed by the Claude Code CLI below. Only
+# installed here when docker_node_runtime_dev (in the `dev` stage above)
+# did NOT already install it, i.e. PACKAGE_MANAGER isn't Node-based. See
+# that section's comment for why these two are mutually exclusive.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+# <!-- SECTION:docker_node_runtime_harness:end -->
 # <!-- SECTION:docker_agent_claude:start -->
-# Claude Code CLI (Node comes from the docker_node_runtime block above).
+# Claude Code CLI (Node comes from one of the docker_node_runtime_* blocks
+# above, whichever one was active).
 #
 # Installed as `agent` into a per-user npm prefix (~/.npm-global), not the
 # default `npm install -g` location under /usr. That default is root-owned,
@@ -168,34 +243,11 @@ RUN su - agent -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
 COPY docker/antigravity_settings.json /home/agent/.gemini/antigravity-cli/settings.json
 RUN chown -R "${USER_UID}:${USER_GID}" /home/agent/.gemini
 # <!-- SECTION:docker_agent_antigravity:end -->
-# <!-- SECTION:docker_herdr:start -->
-# Herdr (herdr.dev) — terminal workspace manager for AI coding agents.
-# Installed unconditionally rather than gated on ADAPTERS_ENABLED: it wraps
-# whichever agent CLI(s) happen to be on PATH rather than being tied to one.
-# Not the container's default foreground process (see CMD below) — run it
-# by hand from a shell when you want it.
-RUN su - agent -c 'curl -fsSL https://herdr.dev/install.sh | sh'
-
-# Mount point for the herdr-config volume — see the ownership note above.
-RUN mkdir -p /home/agent/.config/herdr \
-    && chown -R "${USER_UID}:${USER_GID}" /home/agent/.config/herdr
-# <!-- SECTION:docker_herdr:end -->
-
-# Covers every per-user install location used above: uv, pipx/poetry, herdr,
-# and (defensively, since its exact layout isn't documented) the Antigravity
-# installer.
-ENV PATH="/home/agent/.local/bin:${PATH}"
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER agent
-# The repo is bind-mounted at /<project name> rather than a generic /workspace,
-# so the in-container path matches the project it holds. Derived from the same
-# config key that pins the compose project name and image tag. Note that agent
-# CLIs key their conversation history on cwd, so changing this starts a fresh
-# history bucket — see USER_GUIDE.md §12.5.
-WORKDIR /[SET AT SETUP: PROJECT_NAME_LOWER]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Plain shell by default, not herdr: herdr is the container's own foreground
