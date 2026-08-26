@@ -337,15 +337,17 @@ unattended.
 | Unrecognized command | force-ask | **allowed** |
 
 Container mode is switched on by `ANTIGRAVITY_CONTAINER=1` or
-`CONTAINER_AUTO_ALLOW=1`, both of which this project's `docker-compose.yml`
-sets automatically when the Antigravity adapter is enabled. The point is
-autonomy: an agent working in a disposable container shouldn't stop every
-few minutes for a confirmation you'd grant anyway.
+`CONTAINER_AUTO_ALLOW=1`, both of which this project's
+`docker/docker-compose.yml` sets automatically when the Antigravity adapter
+is enabled. The point is autonomy: an agent working in a disposable
+container shouldn't stop every few minutes for a confirmation you'd grant
+anyway.
 
 > [!WARNING]
 > **The container is isolated from the host, but not sealed off from it.**
-> `docker-compose.yml` bind-mounts the project directory at `/workspace`,
-> forwards your host `ssh-agent` socket, and mounts your `~/.gitconfig`. So
+> `docker/docker-compose.yml` bind-mounts the project directory at
+> `/<project name>`, forwards your host `ssh-agent` socket, and mounts your
+> `~/.gitconfig`. So
 > a command running unattended in container mode can delete real files in
 > your repo and can reach the network with your real git identity. Container
 > mode is a reasonable trade for a scratch project; think twice before
@@ -366,7 +368,8 @@ links them. Container mode assumes the agent is not adversarial — it defends
 against plausible mistakes, not against a determined attacker.
 
 **Turning it off.** Delete the two `environment:` entries from
-`docker-compose.yml` and `docker compose up -d` again. You'll get host
+`docker/docker-compose.yml` and `docker compose -f docker/docker-compose.yml
+up -d` again. You'll get host
 behavior — force-ask prompts — inside the container.
 
 For Antigravity specifically there is a *second*, independent policy layer:
@@ -563,7 +566,7 @@ a separate, short operation from day-to-day use:
 
 This project's symlinked files (roles, generic rules, adapters, hooks,
 tools, this guide) update the moment `.friday/` moves to a newer commit —
-no render step. Materialized files (`harness.md`, `Dockerfile`,
+no render step. Materialized files (`harness.md`, `docker/Dockerfile`,
 `AGENTS.md`, `README.md`, and a few others) don't auto-update, since
 they're real per-project copies that may carry hand-edits; `init_harness.py`
 reports which ones differ from a fresh render without overwriting them,
@@ -616,19 +619,24 @@ Skip this if `docker --version` and `docker compose version` already work.
 `.friday/setup/SETUP.md` and go through §7 (Docker). It asks whether to set
 up Docker, any extra host volumes to mount beyond the project directory
 itself (a datasets dir, a shared model cache), and whether to build the
-image right away. It renders `Dockerfile` and `docker/entrypoint.sh`, and
-writes `docker-compose.yml`, at the repo root for you.
+image right away. It renders `docker/Dockerfile` and `docker/entrypoint.sh`,
+writes `docker/docker-compose.yml`, and creates the `docker/.env` symlink
+(see below) — all Docker inputs end up together under `docker/` at the
+repo root.
 
-**By hand instead:** copy `.friday/docker/.dockerignore` as-is (it stays
-symlinked, never rendered), and render
-`.friday/docker/{Dockerfile.tmpl,entrypoint.sh.tmpl,docker-compose.yml.tmpl}`
-to `Dockerfile`, `docker/entrypoint.sh`, and `docker-compose.yml` at the
-repo root — filling in setup-time placeholder tokens and dropping the
+**By hand instead:** copy `.friday/docker/.dockerignore` to `.dockerignore`
+at the repo root as-is (it stays symlinked, never rendered — Compose reads
+`.dockerignore` from the build-context root, not from `docker/`), and
+render `.friday/docker/{Dockerfile.tmpl,entrypoint.sh.tmpl,docker-compose.yml.tmpl}`
+to `docker/Dockerfile`, `docker/entrypoint.sh`, and `docker/docker-compose.yml`
+— filling in setup-time placeholder tokens and dropping the
 `<!-- SECTION -->` blocks that don't match this project's `PACKAGE_MANAGER`,
 `ADAPTERS_ENABLED`, `LATEX_DRAFTING_ENABLED`, and `ACCELERATORS_ENABLED` by
-hand. `Dockerfile` and `entrypoint.sh` are materialized (real per-project
-files, not symlinks) precisely so those choices can be baked in per
-project — see §12.3.
+hand. Also symlink `docker/.env` to `../.env` (see the warning in §12.4) —
+`init_harness.py` does this automatically on the interview path.
+`docker/Dockerfile` and `docker/entrypoint.sh` are materialized (real
+per-project files, not symlinks) precisely so those choices can be baked in
+per project — see §12.3.
 
 Before starting the container for the first time, run `ssh-add` on the
 **host** so the container's forwarded SSH agent can authenticate to your
@@ -644,16 +652,17 @@ already covers:
 - **`PACKAGE_MANAGER`** installs the matching toolchain: `uv` (official
   installer), `poetry` (via pipx), `pip` (apt `python3-pip` + `venv`), or
   `npm`/`pnpm`/`yarn` (NodeSource Node.js + corepack). `none` leaves a
-  commented placeholder in `Dockerfile` marking where to add one.
+  commented placeholder in `docker/Dockerfile` marking where to add one.
   > [!WARNING]
   > **conda is a deliberate manual edit, not an auto-generated option.**
   > If `PACKAGE_MANAGER` is conda (or anything else the template doesn't
-  > recognize), the `none` branch of `Dockerfile` carries a comment with a
-  > ready-made Miniforge install snippet — copy it in and add its `bin`
-  > directory to the image's `PATH` by hand.
+  > recognize), the `none` branch of `docker/Dockerfile` carries a comment
+  > with a ready-made Miniforge install snippet — copy it in and add its
+  > `bin` directory to the image's `PATH` by hand.
 - **`ADAPTERS_ENABLED`** selects the agent CLI(s) — and each adapter is
-  gated symmetrically, contributing to both `Dockerfile` and
-  `docker-compose.yml` only when it's enabled. Both, either, or neither:
+  gated symmetrically, contributing to both `docker/Dockerfile` and
+  `docker/docker-compose.yml` only when it's enabled. Both, either, or
+  neither:
 
   | | `claude` | `antigravity` |
   |---|---|---|
@@ -671,34 +680,35 @@ already covers:
   unconditionally via a host environment variable on every project
   regardless of need; it now strictly follows the config.)
 - **`ACCELERATORS_ENABLED`** gates an NVIDIA GPU device reservation in
-  `docker-compose.yml` — see §12.7.
+  `docker/docker-compose.yml` — see §12.7.
 - **Herdr** (`herdr.dev`, a terminal workspace manager for AI coding agents)
   installs **unconditionally** — unlike the adapter CLIs above it isn't
   gated on any `harness.config.env` key, since it wraps whichever agent
   CLI(s) happen to be on `PATH` rather than being tied to one. It gets its
   own `herdr-config` volume (`/home/agent/.config/herdr`) so sessions and
-  settings persist across `docker compose down`/`up`. It is not the
-  container's default foreground process — run it by hand — see §12.5.
+  settings persist across `docker compose -f docker/docker-compose.yml
+  down`/`up`. It is not the container's default foreground process — run it
+  by hand — see §12.5.
 
 > [!WARNING]
 > **Reconfiguring requires a rebuild — and a re-render first.** These
-> choices are baked into `Dockerfile` at *render* time, not chosen at
+> choices are baked into `docker/Dockerfile` at *render* time, not chosen at
 > `docker compose build` time. Changing `harness.config.env` alone does
-> nothing to an already-rendered `Dockerfile`. After changing config:
+> nothing to an already-rendered `docker/Dockerfile`. After changing config:
 > ```bash
-> python3 .friday/setup/init_harness.py --force-materialize=Dockerfile
-> docker compose build
+> python3 .friday/setup/init_harness.py --force-materialize=docker/Dockerfile
+> docker compose -f docker/docker-compose.yml build
 > ```
-> (`--force-materialize` is needed because `Dockerfile` is a materialized,
-> per-project file that may carry hand-edits — see §11 — so a plain re-run
-> won't silently overwrite it.)
+> (`--force-materialize` is needed because `docker/Dockerfile` is a
+> materialized, per-project file that may carry hand-edits — see §11 — so a
+> plain re-run won't silently overwrite it.)
 
 ### 12.4 Build the image
 
 From the repo root:
 
 ```bash
-docker compose build
+docker compose -f docker/docker-compose.yml build
 ```
 
 This installs Ubuntu 24.04, git, build tooling, and creates a non-root
@@ -710,20 +720,34 @@ lands at `/home/agent/.local/bin/uv`; the Claude Code CLI, when selected,
 lands at `/usr/bin/claude`; the Antigravity CLI, when selected, lands at
 `/home/agent/.local/bin/agy`; herdr lands at `/home/agent/.local/bin/herdr`.
 Expect a few minutes the first time; rebuilds after
-that are cached and fast unless `Dockerfile` itself changed.
+that are cached and fast unless `docker/Dockerfile` itself changed.
 
-`docker compose config` works even with no `.env` file present and
-`SSH_AUTH_SOCK` unset on the host — `.env` is loaded as `required: false`,
-so a fresh checkout with neither doesn't block you from at least
-validating the compose file before you set either up.
+`docker compose -f docker/docker-compose.yml config` works even with no
+`.env` file present and `SSH_AUTH_SOCK` unset on the host — `.env` is
+loaded as `required: false`, so a fresh checkout with neither doesn't block
+you from at least validating the compose file before you set either up.
+
+> [!WARNING]
+> **`.env` lives at the repo root, but Compose looks for it next to the
+> compose file.** All Docker inputs — `Dockerfile`, `docker-compose.yml`,
+> `entrypoint.sh`, `antigravity_settings.json` — live together under
+> `docker/`, and Compose resolves relative paths (and a bare `.env`)
+> against that directory, not the repo root. Without `docker/.env`
+> resolving to the real `.env` at the repo root, a project's `.env` would
+> be silently ignored: `${USER_UID}` falls back to `1000`, breaking
+> bind-mount file ownership for any host user whose UID isn't 1000. Setup
+> handles this for you — `init_harness.py` creates `docker/.env` as a
+> relative symlink to `../.env` whenever `DOCKER_ENABLED=true` — so this
+> only matters if you're wiring the Docker files up by hand (§12.2) or the
+> symlink has gone missing.
 
 ### 12.5 Start and enter the container
 
 The container's default foreground process is a **plain shell**, not herdr:
 
 ```bash
-docker compose up -d          # start the container, detached
-docker compose attach harness # attach to the shell
+docker compose -f docker/docker-compose.yml up -d          # start the container, detached
+docker compose -f docker/docker-compose.yml attach harness # attach to the shell
 ```
 
 Detach from `attach` with the usual Docker sequence (`Ctrl-p Ctrl-q`), or
@@ -733,11 +757,11 @@ requires a real terminal on the host — it refuses to attach when stdin isn't
 a TTY (e.g. run from a script). Equivalently, from another terminal:
 
 ```bash
-docker compose exec harness bash
+docker compose -f docker/docker-compose.yml exec harness bash
 ```
 
 Inside the container, the project directory is bind-mounted at
-`/workspace` and is writable — edits made on the host appear instantly
+`/<project name>` and is writable — edits made on the host appear instantly
 inside the container and vice versa, files written from inside the
 container come out owned by your host user (not root), and nothing is
 copied. From the shell:
@@ -773,13 +797,13 @@ breaking persistence. Alternatively, set `ANTHROPIC_API_KEY` (or relevant API
 keys) in `.env` at the repo root for non-interactive auth.
 
 **Volume names are per-project.** Compose prefixes every named volume with
-the project name, which `docker-compose.yml` pins to `PROJECT_NAME_LOWER`
-(`heimdall_claude-config`, and so on). Two projects on the same machine never
-share auth or cache volumes, and you don't need to name them uniquely
-yourself. The pin matters because Compose's *default* project name is the
-directory basename — without it, two checkouts in directories that happen to
-share a basename would silently share one set of volumes and one container
-name.
+the project name, which `docker/docker-compose.yml` pins to
+`PROJECT_NAME_LOWER` (`heimdall_claude-config`, and so on). Two projects on
+the same machine never share auth or cache volumes, and you don't need to
+name them uniquely yourself. The pin matters because Compose's *default*
+project name is the directory basename — without it, two checkouts in
+directories that happen to share a basename would silently share one set of
+volumes and one container name.
 
 > [!WARNING]
 > **A named volume is initialized from image content only the first time it
@@ -787,29 +811,35 @@ name.
 > that already exists — most visibly, a change to
 > `docker/antigravity_settings.json` won't reach
 > `~/.gemini/antigravity-cli/settings.json` in an existing `gemini-config`
-> volume just by rebuilding the image. `entrypoint.sh` works around this for
-> `antigravity_settings.json` specifically: it re-syncs that one file from
-> the bind-mounted repo on every container start, so a plain
-> `docker compose up -d` (or a restart) is enough to pick up a change there.
-> Anything else seeded into a named volume at build time doesn't get that
-> treatment — if a change elsewhere in a volume isn't taking effect, or if
-> this project had a container before the image started pre-creating those
-> paths (old volumes may still be root-owned), run `docker compose down -v`
-> to discard the volumes and `up -d` to get fresh ones. Note `down -v` also
-> discards your stored logins.
+> volume just by rebuilding the image. This is not the problem it sounds
+> like in practice: `entrypoint.sh` re-syncs that one file from the
+> bind-mounted repo on every container start, so a plain
+> `docker compose -f docker/docker-compose.yml up -d` (or a restart) is
+> enough to pick up a change there — **do not reach for `down -v`** for
+> this or any other "a volume isn't picking up a change" situation. `-v`
+> discards the named volumes, and those volumes hold **all** Claude Code
+> and Antigravity conversation history for this project, plus your stored
+> logins — there is no undo. The one case that still legitimately needs it
+> is a volume left **root-owned** from before this project's ownership fix
+> (§12.5) was in place, since nothing short of discarding it fixes that.
+> If you're in that situation:
+> ```bash
+> docker compose -f docker/docker-compose.yml down -v   # DESTROYS all conversation history and logins in these volumes — no undo
+> docker compose -f docker/docker-compose.yml up -d
+> ```
 
 ### 12.6 Day-to-day workflow
 
-- **Resume work**: `docker compose up -d && docker compose attach harness` — the container and its named volumes (auth, caches, herdr session state) persist between sessions; you're not rebuilding or re-authenticating each time. Run `herdr` from the shell this drops you into if you want it.
+- **Resume work**: `docker compose -f docker/docker-compose.yml up -d && docker compose -f docker/docker-compose.yml attach harness` — the container and its named volumes (auth, caches, herdr session state) persist between sessions; you're not rebuilding or re-authenticating each time. Run `herdr` from the shell this drops you into if you want it.
 - **Detached background jobs** (training runs, long evals) inside the container use the same `setsid nohup ... & disown` pattern as a bare SSH box (see `harness/rules/environment.md`) — the container has no systemd user manager, but Compose's `init: true` runs tini as PID 1, which reaps zombies from detached jobs the same way systemd would on a bare host.
-- **Stop the container**: `docker compose down` — the bind-mounted project directory is untouched (it's your host filesystem), and named volumes (auth, caches) survive; only the container itself is removed.
-- **Rebuild after a Dockerfile change**: `docker compose build && docker compose up -d`.
-- **Multiple shells**: `docker compose exec harness bash` again from another terminal — you're not limited to one shell per running container.
+- **Stop the container**: `docker compose -f docker/docker-compose.yml down` — the bind-mounted project directory is untouched (it's your host filesystem), and named volumes (auth, caches) survive; only the container itself is removed. Never add `-v` here out of habit — see the warning in §12.5.
+- **Pick up a `docker/Dockerfile` or `docker/antigravity_settings.json` change**: for `antigravity_settings.json`, a plain `docker compose -f docker/docker-compose.yml up -d` (or a restart) is enough — `entrypoint.sh` re-syncs it. For `Dockerfile`: `docker compose -f docker/docker-compose.yml build && docker compose -f docker/docker-compose.yml up -d`.
+- **Multiple shells**: `docker compose -f docker/docker-compose.yml exec harness bash` again from another terminal — you're not limited to one shell per running container.
 
 ### 12.7 GPU passthrough
 
 Gated on `ACCELERATORS_ENABLED` in `harness.config.env` (§12.3) — when on,
-`docker-compose.yml` requests an NVIDIA GPU device reservation for the
+`docker/docker-compose.yml` requests an NVIDIA GPU device reservation for the
 container.
 
 Requirements on the **host** (not inside the container): the [NVIDIA
@@ -837,9 +867,30 @@ A correctly configured host prints the GPU list.
 A datasets directory, a shared model cache, anything outside the project
 directory: either re-run the SETUP.md interview's Docker section, or edit
 the `# --- user-added volumes (managed by init_harness.py) ---` block in
-`docker-compose.yml` directly — the same block `init_harness.py
+`docker/docker-compose.yml` directly — the same block `init_harness.py
 --reconfigure` manages, so manual edits and future re-runs don't fight
 each other.
+
+### 12.9 Conversation history: host vs. container are separate
+
+Claude Code and Antigravity both key their stored conversation history off
+the current working directory, and inside the container that config lives
+in the named volumes from §12.5 (`claude-config`, `gemini-config`) — not in
+your host `~/.claude`/`~/.gemini`. A conversation started **inside** the
+container is bucketed under the container's own path (`/<project name>`)
+and stored in the container's volumes; a conversation started **on the
+host** is bucketed under the host's path and stored in your host home
+directory. The two are deliberately isolated: neither copy is lost, but
+neither shows up in the other's `--resume`/`--continue` list, because the
+bucket key (the working-directory path) differs even though it's "the same
+project" to you.
+
+Concretely: don't read an empty history on first entering a fresh container
+as data loss. Your host-side history is still exactly where it was; the
+container simply hasn't accumulated any of its own yet. Likewise, work done
+inside the container stays there across `docker compose down`/`up` (the
+volumes persist — see §12.5) but won't appear if you run `claude --resume`
+or `agy`'s equivalent from the host.
 
 ---
 
@@ -852,6 +903,7 @@ each other.
 | Hygiene/commit-message hooks print a WARN but the commit still went through | Expected — `check_md_hygiene.py` and `check_commit_msg.py` are warn-only by design (§5); they never block. Fix the flagged file/message on your next edit. |
 | `[SET AT SETUP: ...]` tokens still visible in a rendered file after setup | The setup interview didn't finish, or a template was re-rendered without going through `init_harness.py`'s prompts. Re-run `.friday/setup/SETUP.md` with an agent, or hand-edit the specific placeholder and remove the bracketed instruction text with it. |
 | `harness/status.md` shows a directive as `in progress` that's actually done, or a job as running that already finished | Rule 3/Rule 7 (§4) violation — whoever picked up the directive or launched the job should have updated it in the same pass. Fix the row by hand and treat it as a signal to remind whichever role touches this next to update state in-pass. |
-| Container won't start / `docker compose up` fails | Run `docker compose config` first to catch a bad `docker-compose.yml` render before worrying about the daemon; confirm `docker --version`/`docker compose version` work (§12.1); if it built previously and now fails, check whether `Dockerfile` changed without a rebuild (§12.3/§12.6). |
-| `claude login` doesn't persist across `docker compose down`/`up` | If this project's Docker setup predates the ownership fix in §12.5, its named volumes may be stale and root-owned — `docker compose down -v` once, then `up -d` and log in again. |
+| Container won't start / `docker compose up` fails | Run `docker compose -f docker/docker-compose.yml config` first to catch a bad `docker-compose.yml` render before worrying about the daemon; confirm `docker --version`/`docker compose version` work (§12.1); if it built previously and now fails, check whether `docker/Dockerfile` changed without a rebuild (§12.3/§12.6). |
+| `claude login` doesn't persist across `docker compose down`/`up` | If this project's Docker setup predates the ownership fix in §12.5, its named volumes may be stale and root-owned. This is the one case where `docker compose -f docker/docker-compose.yml down -v` is still the right call — but it **permanently destroys** all Claude Code/Antigravity conversation history and stored logins in those volumes, so make sure that's actually the cause (not, e.g., a stale `docker/antigravity_settings.json` — see the §12.5 warning) before running it; then `up -d` and log in again. |
+| Container-side conversation history looks empty right after entering a fresh container | Not data loss — Claude Code/Antigravity key history on the working-directory path, and the container's path differs from the host's, so container and host sessions are stored separately and neither's `--resume` list shows the other's. See §12.9. |
 | `docker info` shows no `nvidia` runtime even though the host has a GPU | Not necessarily broken — modern toolkit versions use CDI and don't register a runtime `docker info` can see. Use the verification command in §12.7 instead. |

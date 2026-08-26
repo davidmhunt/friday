@@ -69,23 +69,28 @@ This project uses `[SET AT SETUP: PACKAGE_MANAGER]` for dependency/environment m
 ### Docker Dev Container
 
 This project runs its agent tooling inside a container. The bind-mounted
-project directory is your host filesystem; named volumes keep auth and
-caches across restarts. The image follows this project's own
-`harness.config.env` (package manager, agent CLI, LaTeX, GPU) — after
-re-running `init_harness.py` to reconfigure, run `docker compose build`
-again to pick up a changed `Dockerfile`. The container's default foreground
-process is [herdr](https://herdr.dev), a terminal workspace manager for AI
-coding agents, installed unconditionally alongside whichever agent CLI(s)
-this project enabled. See `harness/USER_GUIDE.md` §12 for the full
-workflow, including reconfiguring mounts.
+project directory is your host filesystem, mounted at
+`/[SET AT SETUP: PROJECT_NAME_LOWER]`; named volumes keep auth and caches
+across restarts. The image follows this project's own `harness.config.env`
+(package manager, agent CLI, LaTeX, GPU) — after re-running
+`init_harness.py` to reconfigure, run the `build` command below again to
+pick up a changed `docker/Dockerfile`. The container starts a plain shell;
+[herdr](https://herdr.dev), a terminal workspace manager for AI coding
+agents, is installed unconditionally alongside whichever agent CLI(s) this
+project enabled — run `herdr` by hand from that shell when you want it. See
+`harness/USER_GUIDE.md` §12 for the full workflow, including reconfiguring
+mounts.
+
+Every Docker input lives in `docker/`, so Compose needs `-f` to find its
+file:
 
 ```bash
-docker compose build                # build the image
-docker compose up -d                # start the container, detached
-docker compose attach harness       # attach to the running herdr TUI
-# or, for a plain shell instead:
-docker compose exec harness bash
-docker compose down                 # stop it (project dir untouched)
+docker compose -f docker/docker-compose.yml build            # build the image
+docker compose -f docker/docker-compose.yml up -d            # start the container, detached
+docker compose -f docker/docker-compose.yml attach harness   # attach to the container's shell
+# or, from another terminal (independent of the container's main process):
+docker compose -f docker/docker-compose.yml exec harness bash
+docker compose -f docker/docker-compose.yml down             # stop it (project dir untouched)
 ```
 <!-- SECTION:docker_quickstart:end -->
 <!-- SECTION:latex_on:start -->

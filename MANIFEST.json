@@ -88,8 +88,8 @@
     { "src": "README.md.tmpl", "dest": "README.md" },
     { "src": "adapters/claude/settings.json.tmpl", "dest": ".claude/settings.json" },
     { "src": "adapters/antigravity/hooks.json.tmpl", "dest": ".agents/hooks.json", "adapter": "antigravity" },
-    { "src": "docker/docker-compose.yml.tmpl", "dest": "docker-compose.yml", "docker": true },
-    { "src": "docker/Dockerfile.tmpl", "dest": "Dockerfile", "docker": true },
+    { "src": "docker/docker-compose.yml.tmpl", "dest": "docker/docker-compose.yml", "docker": true },
+    { "src": "docker/Dockerfile.tmpl", "dest": "docker/Dockerfile", "docker": true },
     { "src": "docker/entrypoint.sh.tmpl", "dest": "docker/entrypoint.sh", "docker": true },
     { "src": "docker/antigravity_settings.json.tmpl", "dest": "docker/antigravity_settings.json", "docker": true, "adapter": "antigravity" }
   ],

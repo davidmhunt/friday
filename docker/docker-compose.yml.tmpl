@@ -1,3 +1,19 @@
+# This file lives in docker/, alongside every other Docker input, so the whole
+# container surface is one directory rather than two files at the repo root.
+# Two consequences worth knowing:
+#
+#   * Every relative path below resolves against THIS file's directory, not the
+#     repo root — hence the `..` in `context:` and the bind mount. The build
+#     context is still the repo root, because the Dockerfile does
+#     `COPY docker/entrypoint.sh`, and .dockerignore is read from the context
+#     root (so it stays at the repo root, where init_harness.py symlinks it).
+#   * Compose reads `.env` from the project directory, which defaults to this
+#     file's directory — NOT the repo root. A root-only .env would therefore be
+#     ignored and `${USER_UID}` would silently fall back to 1000, breaking
+#     bind-mount ownership for anyone whose UID isn't 1000. init_harness.py
+#     symlinks docker/.env -> ../.env so the root .env is found either way,
+#     whether you run from the repo root or from inside docker/.
+#
 # Pin the compose project name rather than inheriting it from the directory
 # basename. Named volumes and the container name are all prefixed with it, so
 # two checkouts whose directories happen to share a basename would otherwise
@@ -8,15 +24,19 @@ name: [SET AT SETUP: PROJECT_NAME_LOWER]
 services:
   harness:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         USER_UID: "${USER_UID:-1000}"
         USER_GID: "${USER_GID:-1000}"
     image: [SET AT SETUP: PROJECT_NAME_LOWER]-harness:latest
-    working_dir: /workspace
+    # The repo is mounted at /<project name>, not a generic /workspace, so the
+    # path inside the container matches the project it holds. Derived from the
+    # same config key as `name:` and `image:` above, so it stays correct for
+    # whatever project this harness is generated into.
+    working_dir: /[SET AT SETUP: PROJECT_NAME_LOWER]
     volumes:
-      - .:/workspace
+      - ..:/[SET AT SETUP: PROJECT_NAME_LOWER]
       - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
       - ~/.gitconfig:/home/agent/.gitconfig:ro
       # <!-- SECTION:docker_agent_claude_compose:start -->
@@ -47,7 +67,7 @@ services:
       - CONTAINER_AUTO_ALLOW=1
       # <!-- SECTION:docker_agent_antigravity_compose:end -->
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
     stdin_open: true
     tty: true

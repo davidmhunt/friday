@@ -190,7 +190,12 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER agent
-WORKDIR /workspace
+# The repo is bind-mounted at /<project name> rather than a generic /workspace,
+# so the in-container path matches the project it holds. Derived from the same
+# config key that pins the compose project name and image tag. Note that agent
+# CLIs key their conversation history on cwd, so changing this starts a fresh
+# history bucket — see USER_GUIDE.md §12.5.
+WORKDIR /[SET AT SETUP: PROJECT_NAME_LOWER]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Plain shell by default, not herdr: herdr is the container's own foreground

@@ -32,7 +32,7 @@ Because `harness.config.env` already exists at that point, the script
 skips its own interactive interview entirely and just does the mechanical
 work: creates the symlink tree, materializes templated docs (substituting
 every `[SET AT SETUP: ...]` token), wires the git hooks, and — if
-`DOCKER_ENABLED=true` — writes `docker-compose.yml`'s volumes and offers to
+`DOCKER_ENABLED=true` — writes `docker/docker-compose.yml`'s volumes and offers to
 build the image. That part is intentionally boring and deterministic; the
 judgment belongs in the interview, not the script.
 
@@ -169,14 +169,14 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 `DOCKER_EXTRA_VOLUMES` in `harness.config.env` directly and re-run
 `init_harness.py` — no need to redo the whole interview.
 
-No new question here shapes the image itself — `Dockerfile`,
+No new question here shapes the image itself — `docker/Dockerfile`,
 `docker/entrypoint.sh` and `docker/antigravity_settings.json` are rendered
 from answers already collected earlier in this interview: `PACKAGE_MANAGER`
 (§3) picks the package-manager install block, `ADAPTERS_ENABLED` (§6) picks
 which agent CLI(s) get installed and auto-launched,
 `LATEX_DRAFTING_ENABLED` (§9) gates the LaTeX toolchain, and
 `ACCELERATORS_ENABLED` (§4) gates the GPU reservation in
-`docker-compose.yml`.
+`docker/docker-compose.yml`.
 
 Each adapter is gated symmetrically across both files: enabling `claude`
 adds its CLI, its `claude-config` volume and its `~/.claude` mount point;
@@ -187,7 +187,7 @@ pre-seeded `docker/antigravity_settings.json`, and the
 > **Worth telling the user about, if Docker and the Antigravity adapter are
 > both on:** those two environment variables put `command_guard.py` into
 > container mode, where its deny list still applies but force-ask prompts do
-> not — an agent runs unattended. Because `docker-compose.yml` also
+> not — an agent runs unattended. Because `docker/docker-compose.yml` also
 > bind-mounts the repo and forwards the host `ssh-agent`, that's a real
 > posture change, not just a convenience. See USER_GUIDE.md §5; it can be
 > turned off by deleting the two `environment:` entries.

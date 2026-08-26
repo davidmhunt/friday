@@ -445,8 +445,40 @@ def install_git_hooks(manifest: dict, dry_run: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
+# Every Docker input lives in docker/, including the compose file and the
+# Dockerfile — see the header comment in docker/docker-compose.yml.
+COMPOSE_PATH = Path("docker/docker-compose.yml")
+
+
+def ensure_docker_env_symlink(cfg: dict[str, str], dry_run: bool) -> None:
+    """Point docker/.env at the repo-root .env.
+
+    Compose resolves `.env` against the project directory, which defaults to
+    the compose file's own directory — docker/, not the repo root. Without
+    this symlink a root-only .env is silently ignored, so `${USER_UID}` falls
+    back to 1000 and bind-mounted files come out owned by the wrong UID on any
+    host where the user isn't 1000. The symlink is relative and is fine to
+    leave dangling: Compose treats a missing .env as "no overrides", so a
+    project that never created one still works.
+    """
+    if cfg.get("DOCKER_ENABLED", "false") != "true":
+        return
+    link = REPO_ROOT / "docker" / ".env"
+    if link.is_symlink() and os.readlink(link) == "../.env":
+        return
+    if link.exists() and not link.is_symlink():
+        print(f"  REFUSE (real file exists, not overwriting): {link}")
+        return
+    print(f"  symlink {link} -> ../.env")
+    if not dry_run:
+        link.parent.mkdir(parents=True, exist_ok=True)
+        if link.is_symlink():
+            link.unlink()
+        link.symlink_to("../.env")
+
+
 def apply_docker_volumes(cfg: dict[str, str]) -> None:
-    compose_path = REPO_ROOT / "docker-compose.yml"
+    compose_path = REPO_ROOT / COMPOSE_PATH
     if not compose_path.exists():
         return
     extra = [v for v in cfg.get("DOCKER_EXTRA_VOLUMES", "").split(";") if v]
@@ -476,11 +508,17 @@ def apply_docker_volumes(cfg: dict[str, str]) -> None:
 def maybe_build_docker(cfg: dict[str, str], dry_run: bool) -> None:
     if cfg.get("DOCKER_BUILD_NOW") != "true":
         return
-    print("  running: docker compose build")
+    # -f is required now that the compose file lives in docker/. Deliberately
+    # NOT paired with --project-directory: the compose file's relative paths
+    # are written against docker/ (its own directory, which is the default
+    # project directory), and the docker/.env symlink is what keeps the root
+    # .env reachable. Overriding the project directory would break both.
+    cmd = ["docker", "compose", "-f", str(COMPOSE_PATH), "build"]
+    print(f"  running: {' '.join(cmd)}")
     if dry_run:
         return
     try:
-        subprocess.run(["docker", "compose", "build"], cwd=REPO_ROOT, check=True)
+        subprocess.run(cmd, cwd=REPO_ROOT, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"  WARN: docker compose build failed: {e}")
 
@@ -716,6 +754,9 @@ def main() -> int:
 
     if cfg.get("DOCKER_ENABLED") == "true":
         print("\n=== Docker ===")
+        # Runs in dry-run too: it only prints there, and it's the one Docker
+        # step whose effect a user would want previewed.
+        ensure_docker_env_symlink(cfg, args.dry_run)
         if not args.dry_run:
             apply_docker_volumes(cfg)
             maybe_build_docker(cfg, args.dry_run)

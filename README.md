@@ -43,8 +43,8 @@ it up, go there instead.
    project-specific customization (`harness.md`, the three project-facing
    rules docs, the Researcher/Author/Reviewer role contracts, `AGENTS.md`,
    `README.md`, and — if Docker/accelerators are enabled —
-   `docker-compose.yml`, `Dockerfile`, `docker/entrypoint.sh`, and
-   `gpu.md`) — plus a starter `docs/` and `harness/{coding,plans}/`
+   `docker/docker-compose.yml`, `docker/Dockerfile`, `docker/entrypoint.sh`,
+   and `gpu.md`) — plus a starter `docs/` and `harness/{coding,plans}/`
    scaffold (empty working-state files with the right headers, `docs/
    references/` with its inbox + `needs_pdf.md`, and `docs/theory/`/`docs/
    report/` if the LaTeX suite is on), the three core state files
@@ -89,7 +89,7 @@ The symlinked files (roles, generic rules, adapters, hooks, tools,
 `USER_GUIDE.md`) update automatically the moment a consumer project's
 `.friday/` checkout moves to a newer commit — there's no re-render step for
 those. The materialized files (`harness.md`, the project-facing rules
-docs, `AGENTS.md`, `README.md`, `docker-compose.yml`) don't auto-update —
+docs, `AGENTS.md`, `README.md`, `docker/docker-compose.yml`) don't auto-update —
 they're real per-project copies that may carry hand-edits, so a friday-side
 template change needs an explicit `--force-materialize` to land.
 
@@ -170,7 +170,7 @@ about them is ever rendered or project-specific.
 | `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
 | `.agents/agents/{author,coder,coder-heavy,controller,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `adapters/antigravity/agents/` | Antigravity role + tier-variant adapter files — present only if `ADAPTERS_ENABLED` includes `antigravity` |
 | `.agents/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.agents/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same canonical files as the `.claude/hooks/*` row above |
-| `.dockerignore` | `docker/` | only present if `DOCKER_ENABLED=true` — the only Docker file that's still a plain symlink; `Dockerfile`, `docker/entrypoint.sh` and `docker/antigravity_settings.json` are materialized (see below) since they now render per-project |
+| `.dockerignore` | `docker/` | only present if `DOCKER_ENABLED=true` — the only Docker file that's still a plain symlink, and the only one that stays at the repo root rather than moving into `docker/`: Compose reads `.dockerignore` from the build-context root, not from the compose file's directory; `docker/Dockerfile`, `docker/entrypoint.sh` and `docker/antigravity_settings.json` are materialized (see below) since they now render per-project |
 | `.git/hooks/{pre-commit,commit-msg}` | *(anchored to `.claude/hooks/`, per `MANIFEST.json`'s `git_hooks` key — not a manifest `symlinks` entry)* | a second-order symlink: `.git/hooks/*` → `.claude/hooks/*` → `.friday/adapters/hooks/*`; installed by `install_git_hooks()` |
 
 ### Materialized (real per-project copies, rendered once)
@@ -207,10 +207,20 @@ one that already exists and differs from a fresh render; use
 | `README.md` | `README.md.tmpl` | — |
 | `.claude/settings.json` | `adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
 | `.agents/hooks.json` | `adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
-| `docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true`; the `docker_gpu` section (an NVIDIA GPU device reservation) is further gated on `ACCELERATORS_ENABLED=true`. Each adapter's contribution is gated by `docker_agent_claude_compose` / `docker_agent_antigravity_compose`: its config volume (`claude-config`, `gemini-config`) and, for antigravity, the `ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables that put `command_guard.py` in container mode. `agent-cache` is ungated (uv/pip/npm all use `~/.cache`), which also keeps the top-level `volumes:` map non-empty when no adapter is enabled. `name:` is pinned to `PROJECT_NAME_LOWER` so volume/container prefixes don't fall back to the directory basename. `.env` is mounted as an optional `env_file` (`required: false`) and `SSH_AUTH_SOCK` falls back to `/dev/null` when unset, so `docker compose config` succeeds on a fresh project with neither present |
-| `Dockerfile` | `docker/Dockerfile.tmpl` | `DOCKER_ENABLED=true`; the image is otherwise driven entirely by existing config keys, no new interview questions. `PACKAGE_MANAGER` selects one package-manager install branch (`uv`, `poetry` via pipx, `pip` via apt python3-pip+venv, or `npm`/`pnpm`/`yarn` via NodeSource + corepack; anything else drops in a "none" branch with a comment on hand-adding conda/Miniforge). `ADAPTERS_ENABLED` selects agent CLI installs (`claude` → NodeSource Node + `npm install -g @anthropic-ai/claude-code`; `antigravity` → its official install script). Each adapter's block also pre-creates its own config directory (`/home/agent/.claude`, `/home/agent/.gemini`) owned by `agent`, so the matching named volume doesn't come up root-owned; `~/.cache` is created unconditionally. `LATEX_DRAFTING_ENABLED` gates the TeX Live install (several GB, off by default). See `docker_pm_*`/`docker_agent_*`/`docker_latex`/`docker_node_runtime` in `sections_to_drop()` |
-| `docker/antigravity_settings.json` | `docker/antigravity_settings.json.tmpl` | `DOCKER_ENABLED=true` **and** `ADAPTERS_ENABLED` includes `antigravity`. Copied into the image at `~/.gemini/antigravity-cli/settings.json` (a path hardcoded in the `agy` binary). Carries the CLI's own permission policy — flat `permissions.allow`/`.ask`/`.deny` arrays of `command(...)`, `read_file(...)`, `write_file(...)`, `read_url(...)`, `mcp(...)` rules — which is a **separate layer** from `command_guard.py` and covers things the hook can't see (reading `~/.ssh/**`, writing `.git/**`, fetching a URL). Because a named volume is only initialized on first creation, changing this file needs `docker compose down -v`, not just a rebuild |
+| `docker/docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true`; the `docker_gpu` section (an NVIDIA GPU device reservation) is further gated on `ACCELERATORS_ENABLED=true`. Each adapter's contribution is gated by `docker_agent_claude_compose` / `docker_agent_antigravity_compose`: its config volume (`claude-config`, `gemini-config`) and, for antigravity, the `ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables that put `command_guard.py` in container mode. `agent-cache` is ungated (uv/pip/npm all use `~/.cache`), which also keeps the top-level `volumes:` map non-empty when no adapter is enabled. `name:` is pinned to `PROJECT_NAME_LOWER` so volume/container prefixes don't fall back to the directory basename. `.env` is mounted as an optional `env_file` (`required: false`) and `SSH_AUTH_SOCK` falls back to `/dev/null` when unset, so `docker compose config` succeeds on a fresh project with neither present |
+| `docker/Dockerfile` | `docker/Dockerfile.tmpl` | `DOCKER_ENABLED=true`; the image is otherwise driven entirely by existing config keys, no new interview questions. `PACKAGE_MANAGER` selects one package-manager install branch (`uv`, `poetry` via pipx, `pip` via apt python3-pip+venv, or `npm`/`pnpm`/`yarn` via NodeSource + corepack; anything else drops in a "none" branch with a comment on hand-adding conda/Miniforge). `ADAPTERS_ENABLED` selects agent CLI installs (`claude` → NodeSource Node + `npm install -g @anthropic-ai/claude-code`; `antigravity` → its official install script). Each adapter's block also pre-creates its own config directory (`/home/agent/.claude`, `/home/agent/.gemini`) owned by `agent`, so the matching named volume doesn't come up root-owned; `~/.cache` is created unconditionally. `LATEX_DRAFTING_ENABLED` gates the TeX Live install (several GB, off by default). See `docker_pm_*`/`docker_agent_*`/`docker_latex`/`docker_node_runtime` in `sections_to_drop()` |
+| `docker/antigravity_settings.json` | `docker/antigravity_settings.json.tmpl` | `DOCKER_ENABLED=true` **and** `ADAPTERS_ENABLED` includes `antigravity`. Copied into the image at `~/.gemini/antigravity-cli/settings.json` (a path hardcoded in the `agy` binary). Carries the CLI's own permission policy — flat `permissions.allow`/`.ask`/`.deny` arrays of `command(...)`, `read_file(...)`, `write_file(...)`, `read_url(...)`, `mcp(...)` rules — which is a **separate layer** from `command_guard.py` and covers things the hook can't see (reading `~/.ssh/**`, writing `.git/**`, fetching a URL). Because a named volume is only initialized on first creation, a rebuild alone won't push a changed copy into an existing `gemini-config` volume — but `entrypoint.sh` re-syncs this one file from the bind-mounted repo on every container start, so a plain restart (`docker compose -f docker/docker-compose.yml up -d`) is enough to pick up the change; `down -v` is not needed |
 | `docker/entrypoint.sh` | `docker/entrypoint.sh.tmpl` | `DOCKER_ENABLED=true`; not internally gated by config — `AUTO_LAUNCH_AGENT=1` probes `PATH` at runtime for `claude` then `agy` (the Antigravity CLI's actual binary name — no `antigravity` binary is ever installed) and execs whichever is found, rather than being gated at render time on `ADAPTERS_ENABLED` (a render-time gate with no adapter enabled used to render an empty `if ...; then fi`, a bash syntax error that broke the entrypoint outright) |
+
+Not a `MANIFEST.json` entry: `docker/.env`, a relative symlink to `../.env`
+that `init_harness.py` creates (and re-creates on every sync) whenever
+`DOCKER_ENABLED=true`. Compose resolves a bare `.env` against the compose
+file's own directory (`docker/`, now that all Docker inputs live there),
+not the repo root, so without this symlink a root-only `.env` is silently
+ignored and `${USER_UID}` falls back to `1000` — breaking bind-mount file
+ownership for any host user whose UID isn't 1000. The symlink is allowed to
+dangle: Compose treats a missing `.env` as "no overrides," so a project
+that has never created one still works.
 
 ### Real project data (never touched by friday)
 

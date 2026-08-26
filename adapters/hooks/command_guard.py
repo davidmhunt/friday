@@ -182,7 +182,7 @@ DENY_PATTERNS = [
     # Targets that wipe something the caller almost certainly didn't scope:
     # an absolute path, $HOME, the cwd, the PARENT of the cwd, or a bare
     # leading glob. `..` and `*` matter more than they look inside the dev
-    # container: the host repo is bind-mounted at /workspace, so `rm -rf ..`
+    # container: the host repo is bind-mounted at /<project name>, so `rm -rf ..`
     # from any subdirectory deletes real host files. Interposed flags
     # (e.g. `--no-preserve-root`) must not let the target slip past.
     (r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+(?:--?\S+\s+)*([/~]|\.\.|\.\s*$|\.\/(?:\*|\s|$)|\*)", "Destructive filesystem wipe is forbidden."),

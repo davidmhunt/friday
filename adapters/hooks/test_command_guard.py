@@ -409,14 +409,14 @@ class TestDenyHolesClosedInBothModes(unittest.TestCase):
 
     Container mode auto-allows anything DENY_PATTERNS misses, so each of these
     was a silent `allow` inside the dev container — where the host repo is
-    bind-mounted at /workspace and the host's ssh-agent socket and ~/.gitconfig
+    bind-mounted at /<project name> and the host's ssh-agent socket and ~/.gitconfig
     are mounted in. Every case is asserted in BOTH modes: the deny list is
     supposed to be the one layer that does not vary.
     """
 
     MUST_DENY = [
         # Wipes that escape the caller's intended scope. `..` reaches out of
-        # /workspace-relative cwd into the rest of the bind-mounted host repo.
+        # /<project name>-relative cwd into the rest of the bind-mounted host repo.
         "rm -rf ..",
         "rm -rf ../build",
         "rm -rf *",

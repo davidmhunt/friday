@@ -1,5 +1,62 @@
 # Changelog
 
+## v0.11.0
+
+Container layout change: all Docker inputs now live in `docker/`, and the
+repo is mounted at a path named for the project rather than `/workspace`.
+
+**`Dockerfile` and `docker-compose.yml` moved into `docker/`.** The
+templates already sat together in `.friday/docker/`, but the materializer
+scattered two of them to the repo root while leaving the other two in
+`docker/`. `MANIFEST.json` now materializes all four to `docker/`, so the
+generated layout mirrors the template layout and the whole container
+surface is one directory. Compose commands become
+`docker compose -f docker/docker-compose.yml ...`.
+
+Two consequences are handled in the compose file itself. Relative paths now
+resolve against `docker/`, so the build context is `..` (it must stay the
+repo root — the Dockerfile does `COPY docker/entrypoint.sh`) and the bind
+mount is `..:/<project>`. `.dockerignore` stays at the repo root, because
+Docker reads it from the context root.
+
+**New `docker/.env` symlink.** Compose resolves `.env` against the compose
+file's own directory, which is now `docker/` rather than the repo root — so
+a root-only `.env` would have been silently ignored, `${USER_UID}` would
+have fallen back to `1000`, and bind-mounted files would come out owned by
+the wrong UID on any host where the user isn't 1000. `init_harness.py` now
+symlinks `docker/.env -> ../.env`, which makes the root `.env` reachable
+whether you run Compose from the repo root or from inside `docker/`. The
+symlink is safe to leave dangling: Compose treats a missing `.env` as "no
+overrides".
+
+**The workspace path is derived from `PROJECT_NAME_LOWER`.** `/workspace`
+was a hardcoded literal in all three templates; it is now the same
+`[SET AT SETUP: PROJECT_NAME_LOWER]` token that already pinned the Compose
+project name and image tag, so the repo mounts at `/<project name>` and the
+in-container path matches the project it holds. `entrypoint.sh`'s two
+hardcoded settings-sync paths move in lockstep — had they not, the
+Antigravity settings re-sync added in v0.10.1 would have silently no-opped
+on every container start.
+
+Note that agent CLIs key conversation history on the current working
+directory, so this change starts a fresh history bucket. Existing
+container-side conversations remain on disk in the volume under the old
+bucket name; migrating them means renaming the bucket directory *and*
+rewriting the `cwd` field recorded inside each session file, since the CLI
+filters sessions by that field rather than by directory name.
+
+**`docker compose down -v` guidance removed.** It was both obsolete and
+dangerous: obsolete because v0.10.1's entrypoint re-sync means a plain
+restart picks up `antigravity_settings.json` changes, and dangerous because
+`-v` destroys the named volumes — which hold every stored login *and* all
+Claude Code and Antigravity conversation history. The remaining legitimate
+use (discarding volumes left root-owned by a pre-ownership-fix setup) now
+carries an explicit warning.
+
+`USER_GUIDE.md` and `README.md` updated throughout; the `/workspace`
+references in `command_guard.py`'s comments were prose-only and its
+deny-list regexes are path-agnostic, so guard behaviour is unchanged.
+
 ## v0.10.1
 
 Four persistence/permission bugs found running the v0.10.0 dev container

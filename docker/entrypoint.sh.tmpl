@@ -10,9 +10,9 @@ set -e
 # dir existence) rather than gated at render time, for the same reason the
 # AUTO_LAUNCH_AGENT probe below is: this file has no per-adapter variants to
 # keep in sync with ADAPTERS_ENABLED.
-if [ -f /workspace/docker/antigravity_settings.json ] \
+if [ -f /[SET AT SETUP: PROJECT_NAME_LOWER]/docker/antigravity_settings.json ] \
   && [ -d /home/agent/.gemini/antigravity-cli ]; then
-  cp /workspace/docker/antigravity_settings.json \
+  cp /[SET AT SETUP: PROJECT_NAME_LOWER]/docker/antigravity_settings.json \
     /home/agent/.gemini/antigravity-cli/settings.json
 fi
 
