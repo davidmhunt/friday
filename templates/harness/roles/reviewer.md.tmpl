@@ -8,8 +8,10 @@ reviews and closures stay at mid tier.
 **Namespace:** `.friday/active/harness/review/` (write), `.friday/active/harness/plans/suggestions.md`
 (write), `.friday/active/harness/coding/tasks_finished.md` (write), `.friday/active/harness/status.md` +
 `.friday/active/harness/status_history.md` (write, directive-status rows only), and
-deletion rights on `.friday/active/harness/plans/directives/<ID>.md` at close-out (it's
-gitignored — deleting it needs no commit).
+deletion rights on `.friday/active/harness/plans/directives/<ID>.md` at close-out
+(`.friday/active/` is not part of either the project repo or `.friday` —
+it lives in a directory neither repo tracks, so deleting the file needs no
+commit).
 
 ## Constraints
 
@@ -41,9 +43,18 @@ gitignored — deleting it needs no commit).
    `tasks_finished.md` to current + prior cycle. Escalate second-pass WARNs to
    `.friday/active/harness/plans/suggestions.md`. Detail: `.friday/active/harness/rules/md_hygiene.md`.
 2. Commit finished work (rule 12): for each task verified `[DONE]` this
-   pass, `git commit` with a `Role: description` message attributed to
-   whoever did the work (never sign as Reviewer unless it's your own
-   close-out edit). Paste the resulting hash into `tasks_finished.md`.
+   pass, check `git status --porcelain -- . ':!.friday'`. If non-empty,
+   `git commit -- . ':!.friday'` (that explicit pathspec is required — it
+   keeps a `.friday` submodule-pointer bump, if one is sitting in the
+   working tree, out of this commit; a pointer bump gets its own
+   `Harness:`-attributed commit) with a `Role: description` first line
+   attributed to whoever did the work (never sign as Reviewer unless it's
+   your own close-out edit), plus a body carrying a `Directive: <id>` and a
+   tracker reference (issue/MR, or `no tracker`) — this body is now the
+   durable record of *why*, since `.friday/active/` is tracked by neither
+   repo. Paste the resulting hash into `tasks_finished.md`. If the porcelain
+   check is empty (no project-repo diff this pass), make no commit — write
+   the literal token `no code changes` into `tasks_finished.md` instead.
    Detail: `.friday/active/harness/rules/version_control.md`.
 3. Sync the external issue tracker mirror (rule 13, if configured): every done-but-open WARN is
    yours to resolve THIS pass — close the issue, or confirm a multi-phase
@@ -56,9 +67,14 @@ gitignored — deleting it needs no commit).
    update if you bounce it back to the producer with gaps to fix. For
    anything you just closed this pass: REMOVE its row from
    `.friday/active/harness/status.md` and append it to `.friday/active/harness/status_history.md` (title, closing
-   date, tracker issue (if any), worked-by, and the closing evidence — commit hash or
-   artifact path), then delete `.friday/active/harness/plans/directives/<ID>.md` (it's
-   gitignored, so no commit is needed for the deletion itself). Do this in
+   date, tracker issue (if any), worked-by, and the closing evidence — one
+   of the two literal forms from rule 12: a commit hash, or the token
+   `no code changes`), then delete `.friday/active/harness/plans/directives/<ID>.md`
+   (`.friday/active/` sits in a directory neither the project repo nor
+   `.friday` tracks, so no commit is needed for the deletion itself — but
+   note `status_history.md` isn't durable either; the commit message and
+   tracker issue are the real record, see `.friday/active/harness/rules/
+   version_control.md`). Do this in
    the SAME pass as steps 2-3 — a directive is not `[DONE]` until its row
    has moved.
 4. Run your artifact-freshness checker (rule 5), if you have one: flags a

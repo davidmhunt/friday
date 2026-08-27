@@ -9,7 +9,12 @@ Whatever system you use, three things must be true:
 
 1. **Finished work leaves a durable, referenceable record.** Not "the files
    are on disk" — a record with an identifier another agent can cite later.
-   Here: a git commit, referenced by its hash (short hash is fine).
+   Here: a git commit, referenced by its hash (short hash is fine) — **or**,
+   when the pass produced no project-repo diff (review-only, a bounce-back,
+   a decision with no code to show for it), the literal token
+   `no code changes`. Either way, that reference is recorded in two places:
+   `.friday/active/harness/status_history.md` and next to the task in
+   `.friday/active/harness/coding/tasks_finished.md`.
 2. **The record is attributable to the role that did the work.** Two agents'
    changes must never sit mingled in one unrecorded blob — an
    un-attributable working state turns a one-line revert into archaeology.
@@ -23,6 +28,31 @@ Working state between passes stays uncommitted (or in the Reviewer's own
 staging) — this keeps history clean at the cost of the Reviewer needing to
 attribute correctly (see below): never sign a commit as itself when it's
 recording another role's work.
+
+## What the Reviewer commits
+
+Since v0.13.0, harness working state (`.friday/active/harness/status.md`,
+`plans/`, `coding/tasks_*.md`, etc.) lives in `.friday/active/` — a
+directory that belongs to neither the project repo nor `.friday` itself,
+tracked by nothing. A close-out commit in the project repo can therefore
+only ever contain **project-repo content**: source, tests, and `docs/`.
+Harness state is never staged — it is not in this repo, and there is
+nothing to `git add` there even by mistake as long as you scope your
+commits as below.
+
+- Before committing, check `git status --porcelain -- . ':!.friday'`. If
+  that is empty, the pass produced no project-repo diff — **make no
+  commit.** Record the literal token `no code changes` in
+  `tasks_finished.md` and `status_history.md` instead (still write the
+  commit-message-shaped record described below into those files' notes,
+  so the directive/tracker trail survives even without a commit).
+- If it's non-empty, commit with `git commit -- . ':!.friday'` —
+  **always pass this pathspec explicitly.** Without it, a `.friday`
+  submodule-pointer bump sitting in the working tree rides along silently
+  inside a `Reviewer:` commit. A pointer bump is a legitimate project-repo
+  change (it IS tracked, unlike everything under `.friday/active/`), but it
+  is a distinct kind of change and belongs in its own `Harness:`-attributed
+  commit, never folded into a `Reviewer:` close-out.
 
 ## Attribution format
 
@@ -38,6 +68,30 @@ Examples:
 - `Coder: implement incremental state update in the core pipeline`
 - `Researcher: draft formal model memo for the trust-scoring approach`
 - `Reviewer: close directive 3, verify eval provenance`
+
+**Reviewer commits carry a mandatory body**, because the commit message is
+now the durable record of *why* — `status_history.md` isn't tracked by
+either repo (see the durability note below). The body must include:
+- a directive reference: `Directive: <id>` (or an inline `directive <id>`
+  mention), and
+- a tracker reference: the issue/MR (`#123`, `!45`, `ABC-12`) this closes,
+  or the literal `no tracker` if the project has none configured.
+
+Worked examples:
+
+```
+Reviewer: close directive D-12, verify eval provenance
+
+Directive: D-12
+Tracker: #123
+```
+
+```
+Reviewer: bounce review-only pass back with no project-repo diff, no code changes
+
+Directive: D-14
+no tracker
+```
 
 ## Prohibitions
 
@@ -68,9 +122,28 @@ Both adapters (`.claude/hooks/check_commit_msg.py` and
 `.agents/hooks/check_commit_msg.py`) symlink to the same shared
 implementation, wired via each adapter's `commit-msg` hook, which itself
 symlinks to `.git/hooks/commit-msg` — warn-only, exits 0 always, exempts
-merges and `fixup!`/`squash!` commits; anything not matching a role prefix
-is simply flagged, never rejected. `ROLE_PREFIX_RE` matches: Planner, Coder,
-Runner, Reviewer, Author, Researcher.
+merges and `fixup!`/`squash!` commits. It runs two checks:
+
+1. **Role-prefix check (all commits):** anything whose first line doesn't
+   match `ROLE_PREFIX_RE` (Planner, Coder, Runner, Reviewer, Author,
+   Researcher, Controller, Harness) is flagged, never rejected.
+2. **Reviewer body check (Reviewer commits only):** when the first line's
+   role is `Reviewer`, the body (whole message, minus git's own trailing
+   `#`-comment block) is checked for a directive reference and a tracker
+   reference per "Attribution format" above. Missing either prints a WARN;
+   it still never blocks — `commit-msg` is symlinked straight into
+   `.git/hooks/commit-msg`, and a blocking check here would strand a
+   Reviewer mid-pass with no escape hatch.
+
+## Durability note
+
+`status_history.md` (like the rest of `.friday/active/`) is tracked by
+**neither** the project repo nor `.friday` — a fresh clone of either will
+never have it. Treat it as a convenience index, not a source of truth: the
+genuinely durable carriers of a close-out are the **commit message** (this
+file's format above) and the **tracker issue**, both of which live in
+systems that survive a clone. A future reader reconstructing history should
+follow commit hashes and tracker references, not `status_history.md`.
 
 ## Remote
 
