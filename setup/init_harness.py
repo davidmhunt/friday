@@ -594,7 +594,10 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
             force_used_args.update(
                 arg for arg, cands in force_candidates.items() if dest_key in cands
             )
-        if dest.exists() and not forced:
+        is_symlink = dest.is_symlink()
+        if is_symlink:
+            forced = True
+        elif dest.exists() and not forced:
             # seed_once entries (currently just README.md) are a one-time
             # scaffold, not harness-owned churn: the project starts editing
             # it the moment setup finishes, so "differs from fresh render"
@@ -603,9 +606,11 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
             if not entry.get("seed_once") and dest.read_text() != rendered:
                 print(f"  SKIP (already materialized, differs from fresh render — use --force-materialize={dest} to overwrite): {dest}")
             continue
-        print(f"  {'overwrite' if dest.exists() else 'materialize'} {dest}")
+        print(f"  {'re-materialize (replacing symlink)' if is_symlink else 'overwrite' if dest.exists() else 'materialize'} {dest}")
         if not dry_run:
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if is_symlink:
+                dest.unlink()
             dest.write_text(rendered)
             if src.name in ("pre-commit", "commit-msg") or os.access(src, os.X_OK):
                 dest.chmod(dest.stat().st_mode | stat.S_IEXEC)

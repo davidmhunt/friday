@@ -5,6 +5,14 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.14.2
+
+Materializes Antigravity subagent definition files as concrete files instead of symlinks and adds robust symlink handling to file materialization.
+
+**Materialize Antigravity subagent definition files.** Antigravity CLI's subagent loader scans `.agents/agents/*.md` at session startup but ignores symbolic links, which resulted in `invoke_subagent` failing with `subagent "<name>" not found or not allowed to be invoked`. Moved all 13 Antigravity agent adapter definitions in `MANIFEST.json` from `symlinks` to `materialize` so they are created as concrete regular markdown files.
+
+**Symlink cleanup in `init_harness.py`.** Updated `materialize_files()` in `setup/init_harness.py` to detect if an existing destination is a symbolic link and safely unlink it before materializing the concrete file, preventing writes through symlinks into source templates and cleanly upgrading existing workspaces.
+
 ## v0.14.1
 
 Fixes Google Antigravity adapter compatibility for lifecycle hooks and enables top-level interactive agent selection for key roles.
