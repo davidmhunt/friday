@@ -12,7 +12,7 @@ tools:
   - manage_subagents
   - run_command
 subagent: true
-mainAgent: false
+mainAgent: true
 model: inherit  # Mid tier stand-in — see .friday/active/harness/harness.md tier table and the note below
 commandExecutionPolicy: sandbox
 ---

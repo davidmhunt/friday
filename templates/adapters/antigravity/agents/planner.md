@@ -11,7 +11,7 @@ tools:
   - run_command
   - invoke_subagent
 subagent: true
-mainAgent: false
+mainAgent: true
 model: inherit  # Mid tier stand-in; [heavy] pass -> invoke `planner-heavy` instead (see below)
 commandExecutionPolicy: sandbox
 ---

@@ -5,6 +5,24 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.14.1
+
+Fixes Google Antigravity adapter compatibility for lifecycle hooks and enables top-level interactive agent selection for key roles.
+
+**Antigravity `hooks.json` schema and execution path fixes.** Antigravity's Go
+parser (`jsonhook.JSONHookSpec`) expects `hooks.json` to be a map of named hook
+specifications (`map[string]JSONHookSpec`). The previous flat `{"PreToolUse": [...]}`
+caused fatal JSON unmarshaling errors on startup and tool calls, disabling
+`command_guard.py` and `check_agent_spawn.py`. Wrapped the hooks under `"friday-guard": { ... }`
+and updated execution paths (`python3 hooks/*.py`) to match Antigravity's `.agents/`
+working directory context. Added `test_antigravity_hooks_json_structure()` regression
+tests.
+
+**Enable `mainAgent: true` for interactive roles.** Updated Antigravity role
+adapters for `planner`, `planner-heavy`, `controller`, `reviewer`, and `reviewer-heavy`
+to set `mainAgent: true` alongside `subagent: true`, allowing them to appear in the
+`/agents` interactive selector while retaining full support for `invoke_subagent` delegation.
+
 ## v0.14.0
 
 Closes out the restructure: the tier system that v0.13.0 made redundant is

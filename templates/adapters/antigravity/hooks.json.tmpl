@@ -1,24 +1,26 @@
 {
-  "PreToolUse": [
-    {
-      "matcher": "invoke_subagent",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "python3 .agents/hooks/check_agent_spawn.py",
-          "timeout": 10
-        }
-      ]
-    },
-    {
-      "matcher": "run_command",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "python3 .agents/hooks/command_guard.py",
-          "timeout": 10
-        }
-      ]
-    }
-  ]
+  "friday-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "invoke_subagent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/check_agent_spawn.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/command_guard.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }

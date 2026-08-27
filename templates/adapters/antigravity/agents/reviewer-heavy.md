@@ -11,7 +11,7 @@ tools:
   - run_command
   - read_url_content
 subagent: true
-mainAgent: false
+mainAgent: true
 model: pro  # High tier
 commandExecutionPolicy: sandbox
 ---

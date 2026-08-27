@@ -11,7 +11,7 @@ tools:
   - run_command
   - invoke_subagent
 subagent: true
-mainAgent: false
+mainAgent: true
 model: pro  # High tier
 commandExecutionPolicy: sandbox
 ---

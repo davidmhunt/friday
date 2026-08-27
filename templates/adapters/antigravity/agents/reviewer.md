@@ -11,7 +11,7 @@ tools:
   - run_command
   - read_url_content
 subagent: true
-mainAgent: false
+mainAgent: true
 model: inherit  # Mid tier stand-in; [heavy] pass -> invoke `reviewer-heavy` instead (see below)
 commandExecutionPolicy: sandbox
 ---

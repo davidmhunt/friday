@@ -145,3 +145,28 @@ def test_utility_spawn_exempt():
     result = evaluate(payload)
     assert result["decision"] == "allow"
     assert "reason" not in result
+
+
+def test_antigravity_hooks_json_structure():
+    """Verify hooks.json conforms to Antigravity's map[string]JSONHookSpec structure."""
+    import json
+    repo_root = Path(__file__).resolve().parents[4]
+    for rel_path in (".agents/hooks.json", ".friday/templates/adapters/antigravity/hooks.json.tmpl"):
+        hook_file = repo_root / rel_path
+        if not hook_file.exists():
+            continue
+        data = json.loads(hook_file.read_text())
+        assert isinstance(data, dict), f"{rel_path} must be a JSON object"
+        # Must not have event names like PreToolUse at top level (must be wrapped under hook name)
+        assert "PreToolUse" not in data, f"{rel_path} has PreToolUse at root; must be under a named hook key"
+        assert "PostToolUse" not in data, f"{rel_path} has PostToolUse at root; must be under a named hook key"
+        for hook_name, spec in data.items():
+            assert isinstance(spec, dict), f"Hook spec {hook_name} in {rel_path} must be an object"
+            for event_name in ("PreToolUse", "PostToolUse"):
+                if event_name in spec:
+                    assert isinstance(spec[event_name], list), f"{event_name} in {hook_name} must be a list"
+                    for group in spec[event_name]:
+                        assert "matcher" in group, f"Matcher group in {hook_name} missing 'matcher'"
+                        assert "hooks" in group, f"Matcher group in {hook_name} missing 'hooks'"
+                        assert isinstance(group["hooks"], list)
+
