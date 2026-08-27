@@ -1,0 +1,59 @@
+# Mechanical backstops
+
+Dependency-free checkers and security guards behind project policies and
+rules. All are advisory except the spawn-title format check and command
+permission guard, which gate/block.
+
+These implementations live once, here in `adapters/hooks/` (this repo).
+In a consumer project both `.claude/hooks/*` and `.agents/hooks/*` are
+symlinks to these same files, so editing hook logic here updates both
+adapters simultaneously — there is exactly one implementation to maintain,
+not two that can drift apart.
+
+| File | Rule | Posture | Wired up by |
+|------|------|---------|-------------|
+| `check_agent_spawn.py` | Dispatch / spawn titles | **Blocks** a malformed role-spawn title; warns on an un-escalated `[heavy]` spawn | `.claude/settings.json` (`PreToolUse` on `Agent`/`Task`) and `.agents/hooks.json` (`PreToolUse` on `invoke_subagent`) |
+| `command_guard.py` | Command execution policy | **Allows** safe/read-only commands, **Prompts/Forces Ask** on state changes/modifications, **Denies** destructive actions | `.agents/hooks.json` (`PreToolUse` on `run_command`) |
+| `check_md_hygiene.py` | markdown hygiene | Warn-only | `pre-commit` wrapper + Planner/Reviewer pass start |
+| `check_commit_msg.py` | work-record attribution | Warn-only | `commit-msg` wrapper — **git only** |
+
+## Install the git hooks
+
+**Only if this project uses git.** If work is recorded some other way (see
+`.friday/active/harness/rules/version_control.md`), delete `check_commit_msg.py`,
+`commit-msg`, and `pre-commit`, and run `check_md_hygiene.py` from the
+Planner/Reviewer pass protocols instead.
+
+`init_harness.py` installs these automatically, anchored consistently at
+`.claude/hooks/` (which is itself a symlink into this directory) — this is
+the one canonical anchor; don't also anchor `.git/hooks/` at `.agents/hooks/`,
+or the two can drift out of sync with whichever the docs describe. To do it
+by hand from the repo root:
+
+```bash
+ln -sf ../../.claude/hooks/pre-commit  .git/hooks/pre-commit
+ln -sf ../../.claude/hooks/commit-msg  .git/hooks/commit-msg
+```
+
+Both wrappers always exit 0 — a violation prints, it never blocks a commit.
+
+## Configure before relying on them
+
+- `check_agent_spawn.py`: Validates subagent spawn calls against the `role(model): task` convention and checks `[heavy]` tier escalation. `HIGH_TIER_KEYWORDS` is read automatically from the consumer project's `harness.config.env` (`HIGH_TIER_MODEL_KEYWORDS`) at hook run time — no manual sync needed. Falls back to `("opus",)` if no config file is found (e.g. before setup has run).
+- `command_guard.py`: Enforces auto-allow, force-ask, and deny command execution policies (configured with `DENY_PATTERNS`, `FORCE_ASK_PATTERNS`, `ALLOW_COMMAND_PATTERNS`) — its allow-list currently assumes a `uv`/`pytest`/`latexmk`-flavored toolchain; extend the patterns if this project uses a different package manager.
+  - **Container mode.** When `ANTIGRAVITY_CONTAINER=1` or `CONTAINER_AUTO_ALLOW=1` is set — this project's `docker-compose.yml` sets both — `evaluate_subcommand` returns `allow` for anything `DENY_PATTERNS` doesn't catch, skipping force-ask and the allow list entirely. `DENY_PATTERNS` is therefore the *only* policy layer inside the container; treat any change to it accordingly. Detection is keyed to those two variables alone and deliberately **not** to `/.dockerenv`, which exists in any container at all (a devcontainer, a CI job, a nested `docker run`) and would silently drop the guard somewhere nobody opted in.
+  - **Tests must pin the mode.** Every host-mode assertion in `test_command_guard.py` passes `in_container=False` explicitly rather than relying on ambient detection, so the suite still passes when run inside the container it targets. If you add a test, pin it the same way — the one exception is `test_env_var_activates_container_mode`, which exercises the ambient path on purpose.
+- `check_md_hygiene.py`: `FILE_CAPS` must match the caps in
+  `.friday/active/harness/rules/md_hygiene.md`.
+- `check_commit_msg.py`: `ROLE_PREFIX_RE` if you renamed any roles.
+
+Each runs standalone, so you can verify behavior without a live session
+(paths below assume the `.claude/` adapter; substitute `.agents/` if
+that's the one you're testing):
+
+```bash
+python3 .claude/hooks/check_md_hygiene.py
+python3 .claude/hooks/test_command_guard.py
+echo '{"toolCall":{"name":"invoke_subagent","args":{"Subagents":[{"TypeName":"coder","Role":"bad title"}]}}}' \
+  | python3 .claude/hooks/check_agent_spawn.py
+```

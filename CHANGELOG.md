@@ -5,6 +5,87 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.13.0
+
+The harness no longer installs itself into the project it serves. Everything
+it generates now lives inside `.friday/`, and a consumer project root keeps
+only what agent tooling genuinely requires to be there: `.claude/`, `.agents/`,
+`docker/`, `.dockerignore`, `AGENTS.md`, `README.md`, `harness.config.env`, and
+`docs/`.
+
+v0.12.0 attacked the same clutter by *hiding* generated files from git — the
+`HARNESS_TRACKING` tiers, a managed `.git/info/exclude` block, and
+`--untrack-harness`. That worked, but it committed the harness to permanently
+managing a boundary between two repos, and the tier machinery was the price.
+This release moves the boundary instead, so most of that machinery stops
+having anything to do.
+
+**`.friday/` splits into `templates/` and `active/`.** All template sources
+(`harness/`, `adapters/`, `docker/`, `docs/`, `AGENTS.md.tmpl`,
+`README.md.tmpl`) moved under `templates/`, tracked as before. The per-project
+live tree is materialized into `active/`, which `.friday/.gitignore` excludes —
+so harness state is invisible to both repos and never rides along on a
+`harness.sh sync push`. `MANIFEST.json` gains `MANIFEST_VERSION: 2` plus two
+per-entry keys: `dest_root` (`repo` or `active`) and `src_root` (`templates` or
+`submodule`). Neither the `src` nor the `dest` strings changed — only the roots
+they resolve against, which keeps the manifest diff small and reviewable.
+
+`src_root` exists because exactly one entry, `USER_GUIDE.md`, names a file that
+deliberately stayed at the submodule root. That was first handled with a
+try-templates-then-fall-back probe, which worked but would silently resolve a
+typo'd `src` at the wrong root; an explicit key is the version that fails
+loudly.
+
+**Every symlink now points inside the submodule.** `active/harness/roles/coder.md`
+→ `../../../templates/harness/roles/coder.md`: both ends in the same repo, so
+it cannot dangle. Combined with `.claude/` and `.agents/` being git-excluded,
+a clone made without `--recurse-submodules` now has **zero** dangling symlinks,
+where before it had roughly 55 — including the ones that silently broke the
+git hooks and the Docker build.
+
+**`docs/` deliberately did not move.** The LaTeX documents must keep compiling
+with the harness deleted, so `docs/RESULTS.md`, `docs/ARCHITECTURE.md`,
+`docs/theory/`, `docs/report/` and `docs/references/` stay in the project repo,
+tracked, with git-LFS unchanged. Research memos moved *to* `docs/research/` for
+the same reason and in the same direction: they are project content that feeds
+`docs/theory/`, and leaving them in gitignored harness state would have made
+the LaTeX depend on files that vanish with the harness. `harness/research/`
+no longer exists anywhere — the biblio tools scan `docs/research/` instead,
+crossing the repo boundary deliberately.
+
+**Two latent bugs surfaced by the move, both fixed.**
+
+`harness/tools/_config.py`'s `find_repo_root()` returned the first ancestor
+holding `harness.config.env` *or* `.git`. Inside a submodule `.git` is a FILE,
+and `Path.exists()` is true for files — so with a cwd anywhere under
+`.friday/`, it stopped there and every bibliography tool computed
+`REFS_DIR = .friday/docs/references`: no error, no exception, just silently
+wrong paths and empty results. Dormant while nothing gave you a reason to `cd
+.friday`; load-bearing now that the whole harness lives there. It now walks the
+full ancestor chain for `harness.config.env` first and only falls back to
+`.git`. `command_guard.py` had already hit and documented this exact trap.
+
+`install_git_hooks()` anchored at `.claude/hooks`, so a project with
+`ADAPTERS_ENABLED=antigravity` got `.git/hooks/pre-commit ->
+../../.claude/hooks/pre-commit` pointing at a file that never existed. The
+anchor is now `.friday/templates/adapters/hooks`, which is adapter-independent.
+
+**`compute_excluded_paths()` only considers repo-rooted entries.** An
+active-rooted dest is not a consumer-repo path, so emitting it into
+`.git/info/exclude` would write entries that can never match anything. The
+generated block drops from 68 paths to 41.
+
+The `HARNESS_TRACKING` tier system still exists and still works; it is deleted
+in v0.14.0, once a real project has completed the migration and no longer needs
+the old `--untrack-harness` as a cross-check alongside `--untrack-legacy`.
+
+**Consumers migrating from v0.12.x** should run `--untrack-legacy` (added in
+v0.12.1) to drop the relocated `harness/**` files from their index. Note it is
+manifest-derived and so cannot reach files the manifest never generated —
+`harness/research/*.md` move to `docs/research/` with `git mv` to preserve
+history, and `harness/running/logs/.gitkeep` needs an explicit
+`git rm --cached`.
+
 ## v0.12.1
 
 Groundwork for the v0.13.0 restructure, which moves every harness-generated

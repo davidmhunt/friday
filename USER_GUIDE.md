@@ -2,7 +2,7 @@
 
 This is the operator manual for a `friday` multi-agent harness. It's the
 same file for every project using this harness — this repo owns it, and
-consumer projects symlink it in (`harness/USER_GUIDE.md` → `.friday/USER_GUIDE.md`),
+consumer projects symlink it in (`.friday/active/harness/USER_GUIDE.md` → `.friday/USER_GUIDE.md`),
 so it never drifts out of date and updates the moment friday syncs. It
 explains how the harness is organized, how to operate it through the
 **Planner → Controller → Reviewer** workflow, where to monitor progress, and
@@ -106,31 +106,31 @@ When starting a new phase, addressing blockers, or planning the next milestone:
    You are the planner agent. Triage suggestions.md and create directives for the next cycle.
    ```
 2. **What the Planner does**:
-   - Reads `harness/plans/suggestions.md` to see what previous Reviewer passes or human operators flagged.
-   - Formulates concrete directives in `harness/plans/next_steps.md` and detailed specifications in `harness/plans/directives/<ID>.md`.
+   - Reads `.friday/active/harness/plans/suggestions.md` to see what previous Reviewer passes or human operators flagged.
+   - Formulates concrete directives in `.friday/active/harness/plans/next_steps.md` and detailed specifications in `.friday/active/harness/plans/directives/<ID>.md`.
    - Assigns each directive:
      - A **tier tag**: `[light]` (standard model) or `[heavy]` (high-tier model for formal derivations or major architecture calls) — see §3 for what this actually controls.
      - A **`Verify:` line**: An explicit shell command or concrete judgment criterion that will prove completion.
      - A tracking issue in this project's task tracker, if one is configured (Rule 13 — see `AGENTS.md` for whether this project uses one).
-     - A registered row in `harness/status.md` (State: `queued` or `blocked`).
+     - A registered row in `.friday/active/harness/status.md` (State: `queued` or `blocked`).
 
 ---
 
 ### Step 2: The Controller Pass (Autonomous Execution)
 
-Once directives are defined in `harness/plans/next_steps.md`:
+Once directives are defined in `.friday/active/harness/plans/next_steps.md`:
 
 1. **Prompt the agent**:
    ```
-   You are the controller agent. Execute the open directives in harness/plans/next_steps.md.
+   You are the controller agent. Execute the open directives in .friday/active/harness/plans/next_steps.md.
    ```
 2. **What the Controller does**:
-   - Inspects `harness/status.md` and `harness/plans/next_steps.md`.
+   - Inspects `.friday/active/harness/status.md` and `.friday/active/harness/plans/next_steps.md`.
    - Dispatches specialized subagents (Coder, Runner, Researcher, Author) using formatted spawn titles: `role(model): task`.
    - Enforces tier escalation (e.g., routing `[heavy]` tasks to high-tier models).
    - Monitors background tasks and detached long-running jobs (Rule 15).
    - Relays any real-time user steering via `User-Feedback:` tags.
-   - Advances directive states in `harness/status.md` from `queued` → `in progress` → `awaiting review`.
+   - Advances directive states in `.friday/active/harness/status.md` from `queued` → `in progress` → `awaiting review`.
 3. **Why you don't need to run Coder/Runner directly**:
    - The Controller enforces role boundaries and coordinates parallel work without executing mutations directly.
 
@@ -146,15 +146,15 @@ When tasks reach `awaiting review`:
    ```
 2. **What the Reviewer does**:
    - **Independent verification**: Executes the exact command specified on each directive's `Verify:` line.
-   - **Mechanical validation** (paths under `harness/tools/` and the adapter's `hooks/` directory — see `harness/tools/README.md`-equivalent below for the full list):
-     - Verifies reference existence and DOIs: `python3 harness/tools/verify_references.py`
-     - Lints research memo formatting: `python3 harness/tools/lint_research_memo.py`
-     - Checks against unavailable sources: `python3 harness/tools/check_unavailable_sources.py`
+   - **Mechanical validation** (paths under `.friday/active/harness/tools/` and the adapter's `hooks/` directory — see `.friday/active/harness/tools/README.md`-equivalent below for the full list):
+     - Verifies reference existence and DOIs: `python3 .friday/active/harness/tools/verify_references.py`
+     - Lints research memo formatting: `python3 .friday/active/harness/tools/lint_research_memo.py`
+     - Checks against unavailable sources: `python3 .friday/active/harness/tools/check_unavailable_sources.py`
      - Checks markdown line caps: `python3 .claude/hooks/check_md_hygiene.py` (or `.agents/hooks/check_md_hygiene.py`, whichever adapter(s) this project uses)
    - **Git commit & attribution** (Rule 12): Commits verified changes under a message attributed to the role (e.g., `Coder: implement data loader batching fix`).
    - **Issue closure** (Rule 13): Closes the associated tracker issue, if this project uses one.
-   - **Status archival** (Rule 3): Removes the closed directive from `harness/status.md` and appends its permanent record to `harness/status_history.md`.
-   - **Feedback loop**: Writes any follow-up recommendations or new research needs into `harness/plans/suggestions.md` to feed the next Planner pass.
+   - **Status archival** (Rule 3): Removes the closed directive from `.friday/active/harness/status.md` and appends its permanent record to `.friday/active/harness/status_history.md`.
+   - **Feedback loop**: Writes any follow-up recommendations or new research needs into `.friday/active/harness/plans/suggestions.md` to feed the next Planner pass.
 
 ---
 
@@ -164,18 +164,18 @@ The three roles in §2 are the ones you drive directly. The full cast is
 seven, and the other four only ever run as subagents dispatched by a
 Controller (or, for Researcher, sometimes invoked by you directly — see
 §8). The authoritative table — including the exact model ID pinned to
-each tier — lives in `harness/harness.md` (rendered from
-`harness/harness.md.tmpl`); don't copy those model IDs into project docs,
-`harness/harness.md` is the one place to update when a model changes.
+each tier — lives in `.friday/active/harness/harness.md` (rendered from
+`templates/harness/harness.md.tmpl`); don't copy those model IDs into project docs,
+`.friday/active/harness/harness.md` is the one place to update when a model changes.
 
 | Role | Owns | Namespace | Invoked by |
 |------|------|-----------|------------|
-| **Planner** | Breaking goals into tagged, verifiable directives | `harness/plans/` | The user, at the start of a cycle |
+| **Planner** | Breaking goals into tagged, verifiable directives | `.friday/active/harness/plans/` | The user, at the start of a cycle |
 | **Controller** | Dispatching and monitoring subagents; never mutates directly | reads all namespaces, writes none | The user, to run a cycle autonomously |
-| **Coder** | Implementing directives — source code, eval scripts, figures | `harness/coding/` | The Controller (or the user directly for a single task) |
-| **Runner** | Executing/monitoring jobs the Coder built — launches, sweeps, log polling | `harness/running/` | The Controller (or the user directly) |
-| **Reviewer** | Independent verification, git commit + attribution, closing directives | `harness/review/` and `harness/status_history.md` | The user, once work reaches "awaiting review" |
-| **Researcher** | Literature/methodology memos; theory drafting if this project's LaTeX suite is enabled | `harness/research/` (and `docs/theory/` if enabled) | The Planner (via the Controller) or the user directly |
+| **Coder** | Implementing directives — source code, eval scripts, figures | `.friday/active/harness/coding/` | The Controller (or the user directly for a single task) |
+| **Runner** | Executing/monitoring jobs the Coder built — launches, sweeps, log polling | `.friday/active/harness/running/` | The Controller (or the user directly) |
+| **Reviewer** | Independent verification, git commit + attribution, closing directives | `.friday/active/harness/review/` and `.friday/active/harness/status_history.md` | The user, once work reaches "awaiting review" |
+| **Researcher** | Literature/methodology memos; theory drafting if this project's LaTeX suite is enabled | `docs/research/` (and `docs/theory/` if enabled) | The Planner (via the Controller) or the user directly |
 | **Author** | Folding Reviewer-closed milestones into the project's persistent record (results doc, report, decks) | `docs/RESULTS.md` and, if enabled, `docs/report/` | The user, after a real milestone closes |
 
 A few things worth calling out explicitly:
@@ -194,17 +194,17 @@ A few things worth calling out explicitly:
   `running/`, `review/`, `docs/theory/`, or data directories.
 - Drop the Researcher (and Author, if this project has no publication
   surface) entirely from a project that doesn't need them — see
-  `harness/harness.md` for how.
+  `.friday/active/harness/harness.md` for how.
 
 ### Model tiers and the `[light]`/`[heavy]` tag
 
 Every role has a default tier (light/mid/high — see the table in
-`harness/harness.md` for the exact model IDs). A directive's `[heavy]` tag
+`.friday/active/harness/harness.md` for the exact model IDs). A directive's `[heavy]` tag
 is what actually moves work off that default: it tells whichever role
 executes the directive to escalate to a high-tier model for that one
 directive.
 
-The important discipline, straight from `harness/harness.md`: **`[heavy]`
+The important discipline, straight from `.friday/active/harness/harness.md`: **`[heavy]`
 is set once, by the Planner, at directive creation — it is never re-judged
 per session.** It marks a directive as needing a formal derivation/proof,
 or a major architecture decision — not "this looks hard" in the moment.
@@ -229,10 +229,10 @@ Two more mechanics worth knowing as an operator:
 ## 4. The Rules System
 
 Every role follows the same numbered rules — they live in
-`harness/harness.md` (rendered from `harness/harness.md.tmpl`), which
+`.friday/active/harness/harness.md` (rendered from `templates/harness/harness.md.tmpl`), which
 stays deliberately lean: each rule is stated as an invariant plus a
-**trigger** naming a detail doc under `harness/rules/*.md`. Roles read
-`harness/harness.md` every pass, but only read a rule's detail doc when
+**trigger** naming a detail doc under `.friday/active/harness/rules/*.md`. Roles read
+`.friday/active/harness/harness.md` every pass, but only read a rule's detail doc when
 their next action actually matches that rule's trigger — that's the
 token-budget contract that keeps every session from re-reading the whole
 rule set in full on every pass.
@@ -242,32 +242,32 @@ open `harness.md` yourself:
 
 | # | Covers | Detail doc |
 |---|--------|------------|
-| 1 | Shared-artifact namespacing — never mutate a data artifact an existing run consumes | `harness/rules/data_artifacts.md` |
+| 1 | Shared-artifact namespacing — never mutate a data artifact an existing run consumes | `.friday/active/harness/rules/data_artifacts.md` |
 | 2 | Single source of truth for result numbers (this project's results doc) | — |
-| 3 | `harness/status.md` ownership — who updates it, and when a directive graduates to `status_history.md` | — |
-| 4 | Checkpoint/model compatibility for forward-pass-altering changes | `harness/rules/checkpoint_compat.md` |
-| 5 | Eval provenance sidecars + a completion self-check before reporting any eval done | `harness/rules/data_artifacts.md` |
-| 6 | Pre-mutation snapshots of canonical data | `harness/rules/data_artifacts.md` |
-| 7 | Monitor heartbeat — a stale timestamp means "monitor dead, verify directly" | `harness/rules/monitoring.md` |
-| 8 | Markdown hygiene — line caps on hot-path files | `harness/rules/md_hygiene.md` |
+| 3 | `.friday/active/harness/status.md` ownership — who updates it, and when a directive graduates to `status_history.md` | — |
+| 4 | Checkpoint/model compatibility for forward-pass-altering changes | `.friday/active/harness/rules/checkpoint_compat.md` |
+| 5 | Eval provenance sidecars + a completion self-check before reporting any eval done | `.friday/active/harness/rules/data_artifacts.md` |
+| 6 | Pre-mutation snapshots of canonical data | `.friday/active/harness/rules/data_artifacts.md` |
+| 7 | Monitor heartbeat — a stale timestamp means "monitor dead, verify directly" | `.friday/active/harness/rules/monitoring.md` |
+| 8 | Markdown hygiene — line caps on hot-path files | `.friday/active/harness/rules/md_hygiene.md` |
 | 9 | Controlled reproduction required before recording a root-cause claim as fact | — |
 | 10 | Accelerator allocation | **Config-dependent** — see below |
-| 11 | Fail-loud numerical guards — a skipped-batch guard must also catch permanent collapse | `harness/rules/monitoring.md` |
-| 12 | Recording finished work as an attributed version-control commit | `harness/rules/version_control.md` |
-| 13 | External task-tracker sync (only if this project configures one) | `harness/rules/task_tracking.md` |
+| 11 | Fail-loud numerical guards — a skipped-batch guard must also catch permanent collapse | `.friday/active/harness/rules/monitoring.md` |
+| 12 | Recording finished work as an attributed version-control commit | `.friday/active/harness/rules/version_control.md` |
+| 13 | External task-tracker sync (only if this project configures one) | `.friday/active/harness/rules/task_tracking.md` |
 | 14 | *(project-specific — see below)* | — |
-| 15 | Detached background launches — never a bare `cmd &` in an interactive shell | `harness/rules/environment.md` |
+| 15 | Detached background launches — never a bare `cmd &` in an interactive shell | `.friday/active/harness/rules/environment.md` |
 
 > [!WARNING]
 > **Rules 10 and 14 vary per project.** Both are gated on this project's
 > `ACCELERATORS_ENABLED` setting, and since this guide is shared verbatim
 > across every friday project, it can't tell you which form yours has —
-> check `harness/harness.md` directly. When no accelerator hardware is
+> check `.friday/active/harness/harness.md` directly. When no accelerator hardware is
 > configured, Rule 10 is a removed placeholder (kept numbered so the rest
 > of the list doesn't shift between projects) and Rule 14 is reserved for
 > a project-specific rule you can add later. When this project does have
 > accelerator hardware, Rule 10 is the real GPU-allocation rule (detail:
-> `harness/rules/gpu.md`) and Rule 14 covers shared-compute etiquette,
+> `.friday/active/harness/rules/gpu.md`) and Rule 14 covers shared-compute etiquette,
 > written in during setup.
 
 ---
@@ -276,7 +276,7 @@ open `harness.md` yourself:
 
 Behind the rules in §4 sit four small, dependency-free scripts that back
 some of them mechanically instead of relying on every role remembering to
-self-police. They live once in `.friday/adapters/hooks/`, and both
+self-police. They live once in `.friday/templates/adapters/hooks/`, and both
 `.claude/hooks/` and `.agents/hooks/` in this project are symlinks to that
 same implementation — editing hook logic anywhere updates both adapters at
 once, because there's only one copy.
@@ -385,24 +385,24 @@ redundant, and neither is a substitute for the other.
 
 ## 6. State Files: `log.md` and `status_history.md`
 
-Two files in `harness/` are easy to skim past in the status table (§7) but
+Two files in `.friday/active/harness/` are easy to skim past in the status table (§7) but
 carry more than one row's worth of weight:
 
-**`harness/log.md`** is the durable "why" behind the rule set itself —
-seeded at setup, append-only. Every rule in `harness/harness.md` exists
+**`.friday/active/harness/log.md`** is the durable "why" behind the rule set itself —
+seeded at setup, append-only. Every rule in `.friday/active/harness/harness.md` exists
 because of a real incident, and this is where that incident is recorded:
 what went wrong, which rule was added or amended in response, and when.
 It's not a work log for directives (that's `status_history.md`, below) —
 it's specifically the provenance trail for the harness's own rules. Read
 it when you're wondering *why* a rule is phrased the way it is, or before
-proposing to relax one — the harness's own convention (`harness/harness.md`
+proposing to relax one — the harness's own convention (`.friday/active/harness/harness.md`
 § "Shared rules") is that a rule is never relaxed without a dated entry
 here explaining why it's now safe to.
 
-**`harness/status_history.md`** is the append-only permanent record of
+**`.friday/active/harness/status_history.md`** is the append-only permanent record of
 every directive that's ever been closed: closing date, tracker issue (if
 any), the evidence the Reviewer checked, and the git commit hash that
-recorded the work. It's what makes `harness/status.md` self-pruning —
+recorded the work. It's what makes `.friday/active/harness/status.md` self-pruning —
 Rule 3 (§4) requires a directive's row to move out of `status.md` and into
 `status_history.md` in the same pass that closes it, so `status.md` only
 ever shows what's still open. `status_history.md` is exempt from the line
@@ -417,15 +417,15 @@ the answer from git log.
 
 | What are you looking for? | Where it lives | Description |
 |---------------------------|----------------|-------------|
-| **Current Live Status** | `harness/status.md` | **The living dashboard.** Shows all currently OPEN directives, their current owner, state (`queued`, `in progress`, `awaiting review`, `blocked`), active background processes/PIDs, and recent milestones. |
-| **Past Completed Work** | `harness/status_history.md` | **Append-only permanent log.** Contains every closed directive, the closing date, tracker issue (if any), closing evidence, and git commit hash — see §6 for more. |
-| **Rule Provenance** | `harness/log.md` | **Why the rules are what they are** — the incident behind each rule and its amendment history. See §6. |
+| **Current Live Status** | `.friday/active/harness/status.md` | **The living dashboard.** Shows all currently OPEN directives, their current owner, state (`queued`, `in progress`, `awaiting review`, `blocked`), active background processes/PIDs, and recent milestones. |
+| **Past Completed Work** | `.friday/active/harness/status_history.md` | **Append-only permanent log.** Contains every closed directive, the closing date, tracker issue (if any), closing evidence, and git commit hash — see §6 for more. |
+| **Rule Provenance** | `.friday/active/harness/log.md` | **Why the rules are what they are** — the incident behind each rule and its amendment history. See §6. |
 | **Authoritative Results** | See `AGENTS.md` § Project facts → "Results doc" row | **Single source of truth for numbers** (Rule 2) — every project names its own canonical results doc; this harness doesn't assume a path. |
-| **Immediate Queue** | `harness/plans/next_steps.md` | The current batch of directives created by the Planner, with tier tags, dependencies, and standing riders. |
-| **Directive Detail Specs** | `harness/plans/directives/<ID>.md` | The comprehensive specification for an active directive (context, requirements, verification criteria). Gitignored; deleted upon close-out. |
-| **Long-Term Roadmap** | `harness/plans/goals.md`<br>`harness/plans/long_term.md` | High-level research vision, phased roadmap, and major future milestones. |
-| **Suggestions & Inbox** | `harness/plans/suggestions.md` | Shared inbox for open questions, blocked items, or Reviewer findings awaiting Planner action. |
-| **Research Memos** | `harness/research/` | Deep-dive literature review and methodology memos produced by the Researcher, if this project uses that role. |
+| **Immediate Queue** | `.friday/active/harness/plans/next_steps.md` | The current batch of directives created by the Planner, with tier tags, dependencies, and standing riders. |
+| **Directive Detail Specs** | `.friday/active/harness/plans/directives/<ID>.md` | The comprehensive specification for an active directive (context, requirements, verification criteria). Gitignored; deleted upon close-out. |
+| **Long-Term Roadmap** | `.friday/active/harness/plans/goals.md`<br>`.friday/active/harness/plans/long_term.md` | High-level research vision, phased roadmap, and major future milestones. |
+| **Suggestions & Inbox** | `.friday/active/harness/plans/suggestions.md` | Shared inbox for open questions, blocked items, or Reviewer findings awaiting Planner action. |
+| **Research Memos** | `docs/research/` | Deep-dive literature review and methodology memos produced by the Researcher, if this project uses that role. |
 | **This project's own layout** | `AGENTS.md` § Repository Layout | Source code, data, docs, notebooks — whatever this project's own top-level directories are. The harness intentionally doesn't assume a shape here. |
 
 ---
@@ -442,7 +442,7 @@ Projects that use the Researcher role maintain a strict, verified bibliography w
    ```
 2. **Process the inbox**: Run the reference intake tool (or ask the Researcher/Controller to run it):
    ```bash
-   python3 harness/tools/intake_references.py
+   python3 .friday/active/harness/tools/intake_references.py
    ```
    - Automatically merges entries into `docs/references/references.bib` without duplicates.
    - Moves and renames PDFs to `docs/references/<bibkey>.pdf`.
@@ -465,7 +465,7 @@ Projects that use the Researcher role maintain a strict, verified bibliography w
 
 - **Asynchronous ideas & directives**: Add notes, bug reports, or research ideas directly into:
   ```
-  harness/plans/suggestions.md
+  .friday/active/harness/plans/suggestions.md
   ```
   The Planner reads this file at the start of every planning pass.
 - **Real-time steering during Controller execution**:
@@ -486,7 +486,7 @@ choice", "find prior work on X before we commit to an approach". Prompt
 it the same way as the three core roles:
 
 ```
-You are the researcher agent. Please research <topic> and produce a formal memo in harness/research/.
+You are the researcher agent. Please research <topic> and produce a formal memo in docs/research/.
 ```
 
 For a quick single-fact lookup that doesn't need the full memo + Reviewer
@@ -518,10 +518,10 @@ role working-state namespaces.
 
 | Goal | Prompt |
 |------|--------|
-| **Start Planning Cycle** | `You are the planner agent. Please triage harness/plans/suggestions.md and plan directives for next steps.` |
-| **Run Open Tasks** | `You are the controller agent. Please execute the open directives in harness/plans/next_steps.md.` |
+| **Start Planning Cycle** | `You are the planner agent. Please triage .friday/active/harness/plans/suggestions.md and plan directives for next steps.` |
+| **Run Open Tasks** | `You are the controller agent. Please execute the open directives in .friday/active/harness/plans/next_steps.md.` |
 | **Review & Close Tasks** | `You are the reviewer agent. Please review open directives, verify outputs against their Verify: lines, commit finished work, and close the queue.` |
-| **Deep Research Memo** | `You are the researcher agent. Please research <topic> and produce a formal memo in harness/research/.` |
+| **Deep Research Memo** | `You are the researcher agent. Please research <topic> and produce a formal memo in docs/research/.` |
 | **Fold in a closed milestone** | `You are the author agent. Please fold the <milestone> into docs/RESULTS.md.` |
 
 If this project also has its own document-compilation namespaces (e.g. a
@@ -540,16 +540,16 @@ Run these from the repo root:
 python3 .claude/hooks/check_md_hygiene.py   # or .agents/hooks/check_md_hygiene.py
 
 # Verify that all citations in references.bib have valid DOIs or local PDFs
-python3 harness/tools/verify_references.py
+python3 .friday/active/harness/tools/verify_references.py
 
 # Check that no document cites confirmed-unavailable sources
-python3 harness/tools/check_unavailable_sources.py
+python3 .friday/active/harness/tools/check_unavailable_sources.py
 
 # Lint formatting of research memos
-python3 harness/tools/lint_research_memo.py <memo_file>.md
+python3 .friday/active/harness/tools/lint_research_memo.py <memo_file>.md
 
 # Process new references and PDFs in the inbox
-python3 harness/tools/intake_references.py
+python3 .friday/active/harness/tools/intake_references.py
 ```
 
 ---
@@ -831,7 +831,7 @@ volumes and one container name.
 ### 12.6 Day-to-day workflow
 
 - **Resume work**: `docker compose -f docker/docker-compose.yml up -d && docker compose -f docker/docker-compose.yml attach harness` — the container and its named volumes (auth, caches, herdr session state) persist between sessions; you're not rebuilding or re-authenticating each time. Run `herdr` from the shell this drops you into if you want it.
-- **Detached background jobs** (training runs, long evals) inside the container use the same `setsid nohup ... & disown` pattern as a bare SSH box (see `harness/rules/environment.md`) — the container has no systemd user manager, but Compose's `init: true` runs tini as PID 1, which reaps zombies from detached jobs the same way systemd would on a bare host.
+- **Detached background jobs** (training runs, long evals) inside the container use the same `setsid nohup ... & disown` pattern as a bare SSH box (see `.friday/active/harness/rules/environment.md`) — the container has no systemd user manager, but Compose's `init: true` runs tini as PID 1, which reaps zombies from detached jobs the same way systemd would on a bare host.
 - **Stop the container**: `docker compose -f docker/docker-compose.yml down` — the bind-mounted project directory is untouched (it's your host filesystem), and named volumes (auth, caches) survive; only the container itself is removed. Never add `-v` here out of habit — see the warning in §12.5.
 - **Pick up a `docker/Dockerfile` or `docker/antigravity_settings.json` change**: for `antigravity_settings.json`, a plain `docker compose -f docker/docker-compose.yml up -d` (or a restart) is enough — `entrypoint.sh` re-syncs it. For `Dockerfile`: `docker compose -f docker/docker-compose.yml build && docker compose -f docker/docker-compose.yml up -d`.
 - **Multiple shells**: `docker compose -f docker/docker-compose.yml exec harness bash` again from another terminal — you're not limited to one shell per running container.
@@ -902,7 +902,7 @@ or `agy`'s equivalent from the host.
 | A risky command ran without a prompt in a Claude Code session | Expected today — `command_guard.py` is wired for the Antigravity adapter only (§5), not Claude Code. Don't rely on it as a Claude-session guardrail. |
 | Hygiene/commit-message hooks print a WARN but the commit still went through | Expected — `check_md_hygiene.py` and `check_commit_msg.py` are warn-only by design (§5); they never block. Fix the flagged file/message on your next edit. |
 | `[SET AT SETUP: ...]` tokens still visible in a rendered file after setup | The setup interview didn't finish, or a template was re-rendered without going through `init_harness.py`'s prompts. Re-run `.friday/setup/SETUP.md` with an agent, or hand-edit the specific placeholder and remove the bracketed instruction text with it. |
-| `harness/status.md` shows a directive as `in progress` that's actually done, or a job as running that already finished | Rule 3/Rule 7 (§4) violation — whoever picked up the directive or launched the job should have updated it in the same pass. Fix the row by hand and treat it as a signal to remind whichever role touches this next to update state in-pass. |
+| `.friday/active/harness/status.md` shows a directive as `in progress` that's actually done, or a job as running that already finished | Rule 3/Rule 7 (§4) violation — whoever picked up the directive or launched the job should have updated it in the same pass. Fix the row by hand and treat it as a signal to remind whichever role touches this next to update state in-pass. |
 | Container won't start / `docker compose up` fails | Run `docker compose -f docker/docker-compose.yml config` first to catch a bad `docker-compose.yml` render before worrying about the daemon; confirm `docker --version`/`docker compose version` work (§12.1); if it built previously and now fails, check whether `docker/Dockerfile` changed without a rebuild (§12.3/§12.6). |
 | `claude login` doesn't persist across `docker compose down`/`up` | If this project's Docker setup predates the ownership fix in §12.5, its named volumes may be stale and root-owned. This is the one case where `docker compose -f docker/docker-compose.yml down -v` is still the right call — but it **permanently destroys** all Claude Code/Antigravity conversation history and stored logins in those volumes, so make sure that's actually the cause (not, e.g., a stale `docker/antigravity_settings.json` — see the §12.5 warning) before running it; then `up -d` and log in again. |
 | Container-side conversation history looks empty right after entering a fresh container | Not data loss — Claude Code/Antigravity key history on the working-directory path, and the container's path differs from the host's, so container and host sessions are stored separately and neither's `--resume` list shows the other's. See §12.9. |

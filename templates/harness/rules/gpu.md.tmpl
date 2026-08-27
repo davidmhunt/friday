@@ -1,0 +1,27 @@
+# Accelerator hardware — device table & allocation policy
+
+This file only exists in projects with `ACCELERATORS_ENABLED=true`. It's the
+detail doc behind `.friday/active/harness/harness.md` rule 10 (allocation) and, if the
+project defined one, rule 14 (shared-compute etiquette).
+
+## Device table
+
+[SET AT SETUP: list each accelerator this project has access to — index,
+model, memory, and (if it matters) which host/node it lives on. Example:
+
+| Index | Model | Memory | Host | Notes |
+|-------|-------|--------|------|-------|
+| 0 | RTX 4090 | 24GB | workstation | primary |
+
+Also note here whether the tools you use (nvidia-smi, the ML framework, a
+job scheduler) agree on device indexing — if they don't, write down the
+mapping so an agent doesn't claim the wrong physical device.]
+
+## Allocation policy
+
+[SET AT SETUP: describe how a job claims a device before use and how that's
+recorded — e.g. "check `.friday/active/harness/status.md` for in-use devices before
+starting a job; record the device index you're using in the same row as the
+job." If compute is shared with other people/projects outside this harness,
+say how that's coordinated (a lockfile, a scheduler, a Slack channel, etc.)
+— this is what rule 14 in `.friday/active/harness/harness.md` should point back to.]

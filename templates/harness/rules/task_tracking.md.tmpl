@@ -1,0 +1,97 @@
+# Task Queue Sync (harness rule 13 — full detail)
+
+Read when opening or closing a directive, or when a sync check WARNs.
+
+`[SET AT SETUP: TRACKER_KIND]` selects which section below applies
+(`none` | `gitlab-issues` | `github-issues` | other — add a new section
+following the same shape if this project uses a different tracker).
+
+<!-- SECTION:tracker_none:start -->
+**`TRACKER_KIND=none`** — this project tracks work only in
+`.friday/active/harness/plans/`; there is no external issue tracker to sync. Skip the rest
+of this file.
+<!-- SECTION:tracker_none:end -->
+<!-- SECTION:tracker_gitlab:start -->
+**`TRACKER_KIND=gitlab-issues`**
+
+## What this rule is for
+
+The files under `.friday/active/harness/plans/` are the harness's own queue. This project
+also tracks work in **GitLab Issues** on the project `origin` remote
+(`[SET AT SETUP: VCS_REMOTE_PROJECT_PATH]` on `[SET AT SETUP:
+TRACKER_HOST]`), so that view must reflect real project state rather than
+lag it. This is a hard MUST for both bookending roles.
+
+## Credentials
+
+`GITLAB_TOKEN` (a personal access token, `api` scope) lives in the
+repo-root `.env` (gitignored, never committed). `GITLAB_PROJECT` in the
+same file names the project path
+(`[SET AT SETUP: VCS_REMOTE_PROJECT_PATH]`). Load both before any API call;
+never print the token value in a report or log.
+
+API base: `https://[SET AT SETUP: TRACKER_HOST]/api/v4/projects/<url-encoded
+GITLAB_PROJECT>/issues`, authenticated with header `PRIVATE-TOKEN:
+$GITLAB_TOKEN`.
+
+## Planner — opening a directive
+
+A directive is not "opened" until its GitLab issue exists. In the SAME pass
+you add it to `.friday/active/harness/plans/next_steps.md` or create
+`.friday/active/harness/plans/directives/<ID>.md`, create the issue with a checklist
+mirroring the phase/`Verify:` structure:
+
+```bash
+curl -sS --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --data-urlencode "title=<directive title>" \
+  --data-urlencode "description=<directive summary + Verify checklist as markdown checkboxes>" \
+  "https://[SET AT SETUP: TRACKER_HOST]/api/v4/projects/$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['GITLAB_PROJECT'],safe=''))")/issues"
+```
+
+Paste the returned issue IID/URL into the directive file. This is a step of
+opening the directive, not an optional follow-up.
+
+## Reviewer — closing a directive
+
+A directive is not fully closed until its GitLab issue reflects that. Tick
+checklist items as milestones land; in the SAME pass you mark a directive
+`[DONE]`, tick the remainder and close the issue:
+
+```bash
+curl -sS --request PUT \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --data "state_event=close" \
+  "https://[SET AT SETUP: TRACKER_HOST]/api/v4/projects/<...>/issues/<IID>"
+```
+
+**Multi-phase caveat:** close the issue only when the phase it actually
+tracks is done. A directive whose early phase is `[DONE]` while the issue
+tracks a later phase stays open — that's the done-but-open false positive;
+dismiss it by judgment rather than force-closing.
+
+## Missing-credentials clause
+
+**Block, do not skip.** If `GITLAB_TOKEN`/`GITLAB_PROJECT` are missing or
+the API is unreachable, the Planner/Reviewer pass stops and surfaces the
+problem to the user rather than opening/closing the directive without its
+GitLab mirror. There is no silent-skip path for this rule.
+
+## Mechanical check (optional)
+
+A script cross-referencing `.friday/active/harness/plans/directives/*.md` plus the
+`[DONE]` markers against live GitLab issue state, WARNing on (i) a
+directive with no issue and (ii) a done directive whose issue is still
+open. Planner and Reviewer run it at pass start. Its done-but-open output
+is a candidate list, not a verdict. A WARN surviving two consecutive passes
+becomes a finding in `.friday/active/harness/plans/suggestions.md`.
+<!-- SECTION:tracker_gitlab:end -->
+<!-- SECTION:tracker_github:start -->
+**`TRACKER_KIND=github-issues`**
+
+Same shape as the GitLab section above, substituting the GitHub REST API
+(`https://api.github.com/repos/<owner>/<repo>/issues`, header
+`Authorization: Bearer $GITHUB_TOKEN`) for issue creation/closing. Fill in
+the exact request bodies during setup by adapting the GitLab example above
+to GitHub's issue API if this project uses GitHub Issues as its tracker.
+<!-- SECTION:tracker_github:end -->

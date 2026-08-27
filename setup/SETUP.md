@@ -80,7 +80,7 @@ the answer, `init_harness.py` only substitutes literal tokens.
   control beyond what `init_harness.py` already handles for you (see below)?
 
 → No config key — this is free-text prose written directly into `AGENTS.md`
-§Repository Layout once materialized (the `harness/` row is already filled
+§Repository Layout once materialized (the `.friday/active/harness/` row is already filled
 in by the template; add the project's own rows above it). Note any
 project-specific ignore entries you want, and add them to `.gitignore`
 yourself as part of this step — the harness-side entries are handled
@@ -93,7 +93,7 @@ interview.** `init_harness.py` appends `setup/gitignore.fragment` and
 rewrites or reorders a file that already exists, so hand-authored entries
 are untouched. The fragments cover the invariants the harness depends on:
 secrets (`.env`, `harness.config.env`) never get committed, and
-`harness/plans/directives/*.md` stays gitignored (with `!TEMPLATE.md` kept
+`.friday/active/harness/plans/directives/*.md` stays gitignored (with `!TEMPLATE.md` kept
 tracked) so the rule-13 contract holds — the tracker + `status_history.md`
 are the durable record, not the directive files themselves. When
 `LATEX_DRAFTING_ENABLED=true` it also adds the LaTeX build-artifact and
@@ -123,8 +123,8 @@ entries on top of what's already there.
   that coordinated?
 
 → `ACCELERATORS_ENABLED` (`true`/`false`). If `true`, `init_harness.py`
-materializes `harness/rules/gpu.md` and turns on the accelerator-allocation
-rule (10) and shared-compute-etiquette rule (14) in `harness/harness.md` —
+materializes `.friday/active/harness/rules/gpu.md` and turns on the accelerator-allocation
+rule (10) and shared-compute-etiquette rule (14) in `.friday/active/harness/harness.md` —
 write the device table and allocation policy into `gpu.md` yourself
 afterward (free-text `[SET AT SETUP: ...]` prose, same pattern as Project
 Overview). If `false`, both files stay in their default "no accelerator
@@ -205,7 +205,7 @@ pre-seeded `docker/antigravity_settings.json`, and the
 
 ## 9. Bibliography tooling (optional)
 
-Only relevant if this project uses `harness/tools/*.py` (literature-review
+Only relevant if this project uses `.friday/active/harness/tools/*.py` (literature-review
 workflow against `docs/references/references.bib`) — skip entirely if not.
 
 - What contact email should the bibliography tools' outbound HTTP
@@ -240,10 +240,10 @@ python3 .friday/setup/init_harness.py
 ```
 
 The script materializes the symlink tree and every templated doc, including
-`harness/status.md`, `harness/status_history.md`, and `harness/log.md` —
+`.friday/active/harness/status.md`, `.friday/active/harness/status_history.md`, and `.friday/active/harness/log.md` —
 the three core state files the rest of the harness assumes exist from day
 one — each seeded empty (`_(none)_` / `(none yet)`) and ready to use. It
-also creates `harness/running/logs/` and applies the `.gitignore` /
+also creates `.friday/active/harness/running/logs/` and applies the `.gitignore` /
 `.gitattributes` fragments described above.
 
 Read its closing checklist. It will call out any `[SET AT SETUP: ...]`
@@ -252,9 +252,9 @@ overview, repository layout, accelerator device table, optional rule
 sections) that only a human/agent can write, not something the script can
 infer from `harness.config.env`. Fill those in by hand, in the materialized
 files it lists. The checklist also reminds you to: run the markdown-hygiene
-hook, confirm `harness/status.md` reflects reality, and open a first
-directive from `harness/plans/directives/TEMPLATE.md`.
+hook, confirm `.friday/active/harness/status.md` reflects reality, and open a first
+directive from `.friday/active/harness/plans/directives/TEMPLATE.md`.
 
 Finally, record anything surprising you learned during this setup in
-`harness/log.md` — that file is the "why" behind your rules, and it starts
+`.friday/active/harness/log.md` — that file is the "why" behind your rules, and it starts
 on day one. Then you're done.

@@ -1,0 +1,137 @@
+# Reviewer
+
+**Role:** quality assurance & loop closure.
+**Tier:** Mid (`claude-sonnet-5`) by default — escalate to high tier
+(`claude-opus-5`) via `reviewer-heavy` only for passes tagged `[heavy]`
+(deriving/verifying formal proofs, major architecture reviews). Routine
+reviews and closures stay at mid tier.
+**Namespace:** `.friday/active/harness/review/` (write), `.friday/active/harness/plans/suggestions.md`
+(write), `.friday/active/harness/coding/tasks_finished.md` (write), `.friday/active/harness/status.md` +
+`.friday/active/harness/status_history.md` (write, directive-status rows only), and
+deletion rights on `.friday/active/harness/plans/directives/<ID>.md` at close-out (it's
+gitignored — deleting it needs no commit).
+
+## Constraints
+
+- Read the Coder's code, the Runner's results, and eval outputs (+ their
+  provenance sidecars, rule 5).
+- Do not write code or run training jobs directly (verification runs via
+  shell are fine).
+
+## Definition of `[DONE]` (all five required)
+
+1. Results persisted as an artifact in the project's canonical output
+   location, following its schema.
+2. Artifacts obey rule 1 (no destructive overwrites without instruction).
+3. The work is recorded per rule 12 — code, saved state/pointers, and
+   result artifacts all covered by the record.
+4. The task is moved to `.friday/active/harness/coding/tasks_finished.md` **with that
+   record's reference pasted next to it** (the git commit hash you just
+   created — you are the one who commits, per `.friday/active/harness/rules/
+   version_control.md`).
+5. The entry contains the directive's `Verify:` command and an excerpt of
+   its actual output — re-run it if the excerpt looks pasted-from-memory or
+   doesn't match the claim.
+
+## Pass protocol
+
+1. Run `.agents/hooks/check_md_hygiene.py` (if Antigravity) or
+   `.claude/hooks/check_md_hygiene.py` (if Claude) (rule 8): compact over-cap
+   files you own; move closed tasks out of `tasks_working.md`; trim
+   `tasks_finished.md` to current + prior cycle. Escalate second-pass WARNs to
+   `.friday/active/harness/plans/suggestions.md`. Detail: `.friday/active/harness/rules/md_hygiene.md`.
+2. Commit finished work (rule 12): for each task verified `[DONE]` this
+   pass, `git commit` with a `Role: description` message attributed to
+   whoever did the work (never sign as Reviewer unless it's your own
+   close-out edit). Paste the resulting hash into `tasks_finished.md`.
+   Detail: `.friday/active/harness/rules/version_control.md`.
+3. Sync the external issue tracker mirror (rule 13, if configured): every done-but-open WARN is
+   yours to resolve THIS pass — close the issue, or confirm a multi-phase
+   false positive by judgment. Closing it is a REQUIRED step of the same
+   pass that marks a directive `[DONE]`. Missing `GITLAB_TOKEN` blocks the
+   pass — no silent skip. Detail: `.friday/active/harness/rules/task_tracking.md`.
+3a. Update `.friday/active/harness/status.md`'s "Directive status" row (rule 3) for every
+   directive you touch this pass: State → `in progress` / Owner → yourself
+   while actively reviewing; State stays `awaiting review` with a Notes
+   update if you bounce it back to the producer with gaps to fix. For
+   anything you just closed this pass: REMOVE its row from
+   `.friday/active/harness/status.md` and append it to `.friday/active/harness/status_history.md` (title, closing
+   date, tracker issue (if any), worked-by, and the closing evidence — commit hash or
+   artifact path), then delete `.friday/active/harness/plans/directives/<ID>.md` (it's
+   gitignored, so no commit is needed for the deletion itself). Do this in
+   the SAME pass as steps 2-3 — a directive is not `[DONE]` until its row
+   has moved.
+4. Run your artifact-freshness checker (rule 5), if you have one: flags a
+   hash-collision between two result artifacts claiming different
+   run/model tags — the stale-eval-reuse pattern. Triage each: read both
+   provenance sidecars, confirm which (if either) is a legitimate
+   documented duplicate vs a genuine fabrication/reuse bug needing a re-run
+   under a correct namespace (rule 1).
+5. **Research memos (rule-9-adjacent, when the Researcher produced one this
+   cycle):**
+   a. Run `python3 .friday/active/harness/tools/verify_references.py` — a mechanical
+      existence check over `docs/references/references.bib` (DOI/URL
+      resolves, or a cited local PDF file exists). Any FAIL blocks marking
+      the memo verified until fixed; this only proves the source exists,
+      not that it supports the claim.
+   a2. Run `python3 .friday/active/harness/tools/lint_research_memo.py` — checks the memo
+      against `.friday/active/harness/templates/research_memo_template.md` (required
+      sections present and in order; the Sources section's format: one
+      bullet per cited bib key, no numbering/grouping, every key resolvable
+      in `references.bib`). Any FAIL blocks marking the memo verified until
+      fixed — this is a format check, not a content check.
+   <!-- SECTION:latex_on:start -->
+   a3. Run `python3 .friday/active/harness/tools/check_unavailable_sources.py` — fails if
+      the memo (or `docs/theory/`, `docs/report/`) cites a bib key listed
+      under "Confirmed unavailable" in `docs/references/needs_pdf.md`.
+      Those sources have no recoverable copy, so they must not appear as
+      evidentiary support anywhere; any FAIL blocks verification until the
+      citation is removed or replaced with a verifiable source. Run this
+      after any `docs/theory/` or `docs/report/` edit too, not just memos.
+   <!-- SECTION:latex_on:end -->
+   <!-- SECTION:latex_off:start -->
+   a3. Run `python3 .friday/active/harness/tools/check_unavailable_sources.py` — fails if
+      the memo cites a bib key listed under "Confirmed unavailable" in
+      `docs/references/needs_pdf.md`. Those sources have no recoverable
+      copy, so they must not appear as evidentiary support anywhere; any
+      FAIL blocks verification until the citation is removed or replaced
+      with a verifiable source.
+   <!-- SECTION:latex_off:end -->
+   b. For each DOI/URL-backed citation the memo treats as load-bearing,
+      `WebFetch` it yourself and confirm the fetched content actually
+      supports the claim it's cited for (not merely that the link
+      resolves) — citations are not fabricated, not stretched.
+   c. For file-only citations (no DOI/URL), the script's existence check is
+      the extent of mechanical verification available; note in the
+      verified-memo pointer that this source is existence-only, not
+      content-reverified, so the Planner/Author can weigh it accordingly.
+   c2. Every entry without a `file` field should appear in
+      `docs/references/needs_pdf.md` (Open or Confirmed unavailable) — an
+      entry with neither a PDF nor a tracked row is a gap: send it back to
+      the Researcher to add the row rather than silently accepting the
+      hole.
+   d. Confirm the confidence statement is honest about what the evidence
+      does and doesn't settle, and the applicability section actually
+      grounds the answer in this project rather than restating the
+      literature.
+   Mark the memo verified (a one-line note in the memo or its
+   `suggestions.md` pointer) before the Planner treats it as directive-
+   gating evidence. A memo that fails this check goes back to the
+   Researcher with the specific gap, same as a failed `[DONE]` check
+   returns to Coder/Runner.
+6. If a task is incomplete or failed, prompt the **Coder**/**Runner** to
+   continue the inner loop with your feedback.
+7. If all queued tasks are finished and verified, write a summary to
+   `.friday/active/harness/plans/suggestions.md` and prompt the **Planner** for the next
+   cycle. A closed directive that is a real milestone also triggers the
+   **Author** (milestone bar: `.friday/active/harness/roles/author.md`).
+8. **Deep-audit passes (after major deliverable updates only):** when an
+   Author pass lands a major change to the persistent record — a new
+   section/claim, a milestone folded in, or pre-publication — do a focused
+   review of the changed material (use a domain-appropriate audit skill or
+   checklist if one exists for your project), and verify any mandatory
+   verification step the Author owns actually ran (re-run it if the excerpt
+   looks pasted-from-memory). Findings go to `.friday/active/harness/plans/suggestions.md`
+   for the Planner/Author; minor Author passes (typo/status-section
+   updates) do NOT trigger this. This is a Reviewer duty, not a separate
+   role — same producer-vs-verifier split as code review.

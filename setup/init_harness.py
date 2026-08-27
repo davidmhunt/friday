@@ -36,6 +36,14 @@ from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path.cwd()
 SUBMODULE_DIR = REPO_ROOT / ".friday"
+# Most template/source content lives under templates/ inside the submodule
+# (VERSION, setup/, MANIFEST.json etc. stay at SUBMODULE_DIR's root) —
+# manifest `src` entries resolve against this, not SUBMODULE_DIR directly.
+TEMPLATES_DIR = SUBMODULE_DIR / "templates"
+# Generated harness output (role/rule docs, status/log/plans state, running
+# logs, ...) lives inside the submodule rather than at the consumer repo
+# root as of v0.13.0 — dest_root: "active" manifest entries resolve here.
+ACTIVE_DIR = SUBMODULE_DIR / "active"
 CONFIG_PATH = REPO_ROOT / "harness.config.env"
 MANIFEST_PATH = SUBMODULE_DIR / "MANIFEST.json"
 
@@ -209,7 +217,8 @@ def run_interview(existing: dict[str, str]) -> dict[str, str]:
     if cfg["ACCELERATORS_ENABLED"] == "true":
         print(
             "  After this interview, fill in the device table and allocation policy\n"
-            "  in harness/rules/gpu.md (materialized from harness/rules/gpu.md.tmpl) —\n"
+            "  in .friday/active/harness/rules/gpu.md (materialized from\n"
+            "  templates/harness/rules/gpu.md.tmpl) —\n"
             "  those are free-text [SET AT SETUP: ...] prose blocks the script can't\n"
             "  infer, same as the Project Overview section in AGENTS.md."
         )
@@ -448,6 +457,41 @@ def resolve_tracking(cfg: dict[str, str]) -> str:
     return raw
 
 
+def resolve_manifest_src(entry: dict) -> Path:
+    """Resolve a manifest entry's `src` string to a file inside the submodule.
+
+    Dispatches explicitly on the entry's `src_root` (default "templates")
+    rather than trying templates/ and silently falling back to the
+    submodule root: a typo'd src would otherwise resolve at the wrong root
+    with no error, since Path.exists() would happily report the fallback
+    location as present. "submodule" is reserved for the handful of entries
+    (USER_GUIDE.md) that deliberately live at the submodule root rather than
+    under templates/.
+    """
+    src_root = entry.get("src_root", "templates")
+    if src_root == "submodule":
+        return SUBMODULE_DIR / entry["src"]
+    if src_root == "templates":
+        return TEMPLATES_DIR / entry["src"]
+    raise ValueError(f"unrecognized src_root {src_root!r} on manifest entry {entry!r}")
+
+
+def dest_base(entry: dict) -> Path:
+    """The base directory a manifest entry's `dest` resolves against.
+
+    "repo" (default when absent) is the consumer repo root; "active" is
+    .friday/active/ — used for every generated harness/... path now that the
+    harness's generated output lives inside the submodule instead of at the
+    consumer root (v0.13.0).
+    """
+    dest_root = entry.get("dest_root", "repo")
+    if dest_root == "active":
+        return ACTIVE_DIR
+    if dest_root == "repo":
+        return REPO_ROOT
+    raise ValueError(f"unrecognized dest_root {dest_root!r} on manifest entry {entry!r}")
+
+
 def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
     enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
@@ -457,8 +501,8 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
             continue
         if entry.get("docker") and not docker_enabled:
             continue
-        src = (SUBMODULE_DIR / entry["src"]).resolve()
-        dest = REPO_ROOT / entry["dest"]
+        src = resolve_manifest_src(entry).resolve()
+        dest = dest_base(entry) / entry["dest"]
         if not src.exists():
             print(f"  WARN: symlink source missing: {src}")
             continue
@@ -489,6 +533,13 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str], tracking: str | 
     either (an exclude pattern for a nonexistent path is at best noise, and
     at worst masks the fact that the file is missing when it should exist).
 
+    Only considers `dest_root: "repo"` entries (the default, when absent):
+    an "active"-rooted dest lives inside .friday/active/, which is not a
+    consumer-repo path at all (it's excluded wholesale by the submodule's
+    own .gitignore) — emitting it into .git/info/exclude here would produce
+    an entry relative to the consumer repo root that can never match
+    anything.
+
     `tracking` lets a caller that already resolved HARNESS_TRACKING (and
     already printed its WARN, if the value was bad) pass that result straight
     through instead of triggering a second, duplicate WARN here.
@@ -504,6 +555,8 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str], tracking: str | 
         # Every symlinks entry is implicitly tier "tooling" — see
         # MANIFEST.json's _comment.
         for entry in manifest["symlinks"]:
+            if entry.get("dest_root", "repo") != "repo":
+                continue
             adapter = adapter_of(entry)
             if adapter and adapter not in enabled_adapters:
                 continue
@@ -511,6 +564,8 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str], tracking: str | 
                 continue
             paths.append(entry["dest"])
     for entry in manifest["materialize"]:
+        if entry.get("dest_root", "repo") != "repo":
+            continue
         if entry.get("tier") not in excluded_tiers:
             continue
         adapter = adapter_of(entry)
@@ -533,7 +588,13 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
     # absolute up front, and track which entries actually match something —
     # an unmatched --force-materialize used to be ignored in total silence,
     # so a typo (or the wrong path flavor) looked exactly like success.
+    # Active-rooted dests (dest_root: "active") live under .friday/active/,
+    # not the repo root, so a relative --force-materialize is normalized
+    # against BOTH bases — an absolute path or a path that happens to
+    # collide under both is unaffected, since Path.__truediv__ with an
+    # absolute second operand just returns that operand unchanged.
     force_abs = {str((REPO_ROOT / f).resolve()) for f in force}
+    force_abs |= {str((ACTIVE_DIR / f).resolve()) for f in force}
     force_used: set[str] = set()
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
@@ -549,8 +610,8 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
             continue
         if entry.get("latex") and not latex_enabled:
             continue
-        src = SUBMODULE_DIR / entry["src"]
-        dest = REPO_ROOT / entry["dest"]
+        src = resolve_manifest_src(entry)
+        dest = dest_base(entry) / entry["dest"]
         if not src.exists():
             print(f"  WARN: template source missing: {src}")
             continue
@@ -579,12 +640,13 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
 
 
 def create_running_dirs(dry_run: bool) -> None:
-    """harness/rules/environment.md.tmpl documents background launches
-    redirecting output to harness/running/logs/your_script.log. That
+    """templates/harness/rules/environment.md.tmpl documents background
+    launches redirecting output to
+    .friday/active/harness/running/logs/your_script.log. That
     directory isn't a template (git doesn't track empty dirs) so a fresh
     project never gets it — create it with a .gitkeep during sync.
     """
-    gitkeep = REPO_ROOT / "harness" / "running" / "logs" / ".gitkeep"
+    gitkeep = ACTIVE_DIR / "harness" / "running" / "logs" / ".gitkeep"
     if gitkeep.exists():
         return
     print(f"  create {gitkeep}")
@@ -756,7 +818,7 @@ def _active_gitfile_gates(cfg: dict[str, str]) -> set[str]:
     if cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true":
         gates.add("latex")
     # The reference-PDF ignore rules only matter to projects actually using
-    # harness/tools/'s bibliography workflow. There's no dedicated
+    # .friday/active/harness/tools/'s bibliography workflow. There's no dedicated
     # "bibliography enabled" config key, so use the two BIBLIO_* fields the
     # interview always asks for as a proxy: if either was filled in, assume
     # the workflow is in play.
@@ -821,10 +883,10 @@ def _drop_shadowed_negations(lines: list[str], excluded: set[str]) -> list[str]:
 
     .gitignore takes precedence over .git/info/exclude — for the SAME path, a
     negation in .gitignore wins outright. So a fragment line like
-    `!harness/plans/directives/TEMPLATE.md`, which exists to keep the
-    canonical example tracked, silently defeats the exclude entry for that
-    same file and leaks it back into `git status` at any HARNESS_TRACKING
-    below `full`.
+    `!docs/references/inbox/README.md`, which exists to keep the
+    directory's own README tracked, silently defeats the exclude entry for
+    that same file and leaks it back into `git status` at any
+    HARNESS_TRACKING below `full`.
 
     Dropping the negation here rather than gating it in the fragment keeps
     this correct automatically as tiers change, and avoids nesting a GATE
@@ -1116,7 +1178,8 @@ def untrack_legacy(manifest: dict, dry_run: bool) -> None:
 
 
 # Directories the harness always populates by means OTHER than a
-# MANIFEST.json `dest` (a dynamically-created dir like harness/running/logs/
+# MANIFEST.json `dest` (a dynamically-created dir like
+# .friday/active/harness/running/logs/
 # — see create_running_dirs() — or a directory whose own README.md IS a
 # manifest dest, which already makes the directory itself manifest-derived,
 # but is listed here too for readability at the call site below). A
@@ -1125,10 +1188,9 @@ def untrack_legacy(manifest: dict, dry_run: bool) -> None:
 # itself, not a project's hand-authored content, is what guarantees the
 # directory exists.
 ALWAYS_GENERATED_DIRS = {
-    "harness/running",
-    "harness/running/logs",
-    "harness/plans/directives",
-    "harness/research",
+    ".friday/active/harness/running",
+    ".friday/active/harness/running/logs",
+    ".friday/active/harness/plans/directives",
     "docs/references",
 }
 
@@ -1156,10 +1218,24 @@ def _parse_module_constant(path: Path, name: str):
     raise ValueError(f"{name!r} not found as a top-level assignment in {path}")
 
 
+def _consumer_relative_dest(entry: dict) -> str:
+    """The consumer-repo-root-relative path a manifest entry's `dest`
+    actually lands at, accounting for `dest_root`. An "active"-rooted dest
+    lives inside the submodule at .friday/active/, not at the dest string
+    itself — a hardcoded path table that names such a path (e.g.
+    check_md_hygiene.py's FILE_CAPS) must use THIS form, not the bare
+    manifest `dest`.
+    """
+    if entry.get("dest_root", "repo") == "active":
+        return f".friday/active/{entry['dest']}"
+    return entry["dest"]
+
+
 def _manifest_dest_dirs(manifest: dict) -> tuple[set[str], set[str]]:
     """(dest paths, directories containing a dest path, all ancestor levels
-    included) across both `symlinks` and `materialize`."""
-    dests = {entry["dest"] for entry in manifest["symlinks"] + manifest["materialize"]}
+    included) across both `symlinks` and `materialize`, expressed as
+    consumer-repo-root-relative paths (see _consumer_relative_dest())."""
+    dests = {_consumer_relative_dest(entry) for entry in manifest["symlinks"] + manifest["materialize"]}
     dirs: set[str] = set()
     for dest in dests:
         parts = PurePosixPath(dest).parts[:-1]
@@ -1169,8 +1245,8 @@ def _manifest_dest_dirs(manifest: dict) -> tuple[set[str], set[str]]:
 
 
 def check_hardcoded_path_tables(manifest: dict) -> None:
-    """Fail loudly if adapters/hooks/check_md_hygiene.py's FILE_CAPS /
-    PER_ENTRY_FILE, or harness/tools/check_unavailable_sources.py's
+    """Fail loudly if templates/adapters/hooks/check_md_hygiene.py's FILE_CAPS /
+    PER_ENTRY_FILE, or templates/harness/tools/check_unavailable_sources.py's
     SCAN_GLOBS, name a path MANIFEST.json no longer knows about.
 
     Both modules carry their own hardcoded copy of a subset of the path
@@ -1199,7 +1275,7 @@ def check_hardcoded_path_tables(manifest: dict) -> None:
 
     errors: list[str] = []
 
-    hygiene_path = SUBMODULE_DIR / "adapters" / "hooks" / "check_md_hygiene.py"
+    hygiene_path = TEMPLATES_DIR / "adapters" / "hooks" / "check_md_hygiene.py"
     file_caps = _parse_module_constant(hygiene_path, "FILE_CAPS")
     for path in file_caps:
         if not _covered(path):
@@ -1208,7 +1284,7 @@ def check_hardcoded_path_tables(manifest: dict) -> None:
     if not _covered(per_entry_file):
         errors.append(f"check_md_hygiene.py PER_ENTRY_FILE={per_entry_file!r} is not a manifest dest or a harness-generated path")
 
-    scan_path = SUBMODULE_DIR / "harness" / "tools" / "check_unavailable_sources.py"
+    scan_path = TEMPLATES_DIR / "harness" / "tools" / "check_unavailable_sources.py"
     scan_globs = _parse_module_constant(scan_path, "SCAN_GLOBS")
     for scan_dir, _pattern in scan_globs:
         if scan_dir not in allowed_dirs:
@@ -1241,7 +1317,7 @@ def preflight() -> dict:
 def closing_checklist(cfg: dict[str, str]) -> None:
     print("\n=== Closing checklist ===")
     leftovers = []
-    for path in (REPO_ROOT / "harness").rglob("*.md"):
+    for path in (ACTIVE_DIR / "harness").rglob("*.md"):
         if path.is_symlink():
             continue  # shared/generic files (e.g. USER_GUIDE.md) are never a per-project fill-in
         if LEFTOVER_RE.search(path.read_text(errors="ignore")):
@@ -1268,19 +1344,19 @@ def closing_checklist(cfg: dict[str, str]) -> None:
         ok = enabled == present
         print(f"  [{'x' if ok else ' '}] {dirname}/ present={present} matches ADAPTERS_ENABLED={enabled}")
     accel_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
-    gpu_present = (REPO_ROOT / "harness" / "rules" / "gpu.md").exists()
+    gpu_present = (ACTIVE_DIR / "harness" / "rules" / "gpu.md").exists()
     accel_ok = accel_enabled == gpu_present
-    print(f"  [{'x' if accel_ok else ' '}] harness/rules/gpu.md present={gpu_present} matches ACCELERATORS_ENABLED={accel_enabled}")
+    print(f"  [{'x' if accel_ok else ' '}] .friday/active/harness/rules/gpu.md present={gpu_present} matches ACCELERATORS_ENABLED={accel_enabled}")
     latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
     theory_present = (REPO_ROOT / "docs" / "theory" / "README.md").exists()
     latex_ok = latex_enabled == theory_present
     print(f"  [{'x' if latex_ok else ' '}] docs/theory/, docs/report/ present={theory_present} matches LATEX_DRAFTING_ENABLED={latex_enabled}")
     if latex_enabled:
-        print("  [ ] LFS is set up for docs/theory/, docs/report/'s generated PDFs — see harness/rules/version_control.md's lfs_policy section")
-    print("  [ ] python3 harness/tools/../../.claude/hooks/check_md_hygiene.py (or .agents/hooks/) runs clean — not checked automatically, run it yourself")
-    print("  [ ] harness/status.md reflects reality (probably: nothing running yet)")
-    print("  [ ] first directive opened from harness/plans/directives/TEMPLATE.md")
-    print("  [ ] anything surprising you learned during setup recorded in harness/log.md — that file is the \"why\" behind your rules, and it starts on day one")
+        print("  [ ] LFS is set up for docs/theory/, docs/report/'s generated PDFs — see .friday/active/harness/rules/version_control.md's lfs_policy section")
+    print("  [ ] python3 .claude/hooks/check_md_hygiene.py (or .agents/hooks/) runs clean — not checked automatically, run it yourself")
+    print("  [ ] .friday/active/harness/status.md reflects reality (probably: nothing running yet)")
+    print("  [ ] first directive opened from .friday/active/harness/plans/directives/TEMPLATE.md")
+    print("  [ ] anything surprising you learned during setup recorded in .friday/active/harness/log.md — that file is the \"why\" behind your rules, and it starts on day one")
 
 
 def main() -> int:
@@ -1336,7 +1412,7 @@ def main() -> int:
     print("\n=== Git hooks ===")
     install_git_hooks(manifest, args.dry_run)
 
-    print("\n=== harness/running/logs ===")
+    print("\n=== .friday/active/harness/running/logs ===")
     create_running_dirs(args.dry_run)
 
     # Computed before the .gitignore sync, not after: a `!path` negation in

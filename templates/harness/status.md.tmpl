@@ -1,0 +1,102 @@
+# Status
+
+Living dashboard — the first thing every session reads and the last thing it
+updates. Keep it terse: this file answers "what is true right now," not "what
+happened" (that's `.friday/active/harness/*/history.md`). Harness rule 3 makes updating it
+mandatory for whoever starts/finishes a job OR picks up/hands off a
+directive; rule 8 caps its length, so compact old entries out rather than
+letting it grow.
+
+## Directive status
+
+<!-- SECTION:tracker_gitlab:start -->
+<!-- Rule 3: the live per-directive tracker for CURRENTLY OPEN directives
+     only — who's touching what, right now. Whoever picks up a directive
+     (starts active work on it) or hands it off (memo/code done, waiting on
+     the next role) updates its row in the SAME pass, per
+     .friday/active/harness/roles/<role>.md Handoff sections. This is the answer to "what
+     is it doing / who's operating it / what's left" — `plans/
+     suggestions.md` is a notification inbox that gets emptied, not a
+     status record; this table is. Detail on the directive itself lives in
+     `.friday/active/harness/plans/directives/<ID>.md` (gitignored — churns per cycle,
+     GitLab issue + `.friday/active/harness/status_history.md` are the durable record).
+     States: queued (opened, nobody working it yet) / in progress (owner
+     actively working) / awaiting review (producer done, waiting on
+     Reviewer) / blocked (waiting on a dependency). Once a directive is
+     Reviewer-verified + GitLab-closed, its row is REMOVED from here and
+     appended to `.friday/active/harness/status_history.md` in the same close-out pass —
+     this table only ever holds open work, so it never needs "done" as a
+     state or manual pruning. -->
+<!-- SECTION:tracker_gitlab:end -->
+<!-- SECTION:tracker_github:start -->
+<!-- Rule 3: the live per-directive tracker for CURRENTLY OPEN directives
+     only — who's touching what, right now. Whoever picks up a directive
+     (starts active work on it) or hands it off (memo/code done, waiting on
+     the next role) updates its row in the SAME pass, per
+     .friday/active/harness/roles/<role>.md Handoff sections. This is the answer to "what
+     is it doing / who's operating it / what's left" — `plans/
+     suggestions.md` is a notification inbox that gets emptied, not a
+     status record; this table is. Detail on the directive itself lives in
+     `.friday/active/harness/plans/directives/<ID>.md` (gitignored — churns per cycle,
+     GitHub issue + `.friday/active/harness/status_history.md` are the durable record).
+     States: queued (opened, nobody working it yet) / in progress (owner
+     actively working) / awaiting review (producer done, waiting on
+     Reviewer) / blocked (waiting on a dependency). Once a directive is
+     Reviewer-verified + GitHub-closed, its row is REMOVED from here and
+     appended to `.friday/active/harness/status_history.md` in the same close-out pass —
+     this table only ever holds open work, so it never needs "done" as a
+     state or manual pruning. -->
+<!-- SECTION:tracker_github:end -->
+<!-- SECTION:tracker_none:start -->
+<!-- Rule 3: the live per-directive tracker for CURRENTLY OPEN directives
+     only — who's touching what, right now. Whoever picks up a directive
+     (starts active work on it) or hands it off (memo/code done, waiting on
+     the next role) updates its row in the SAME pass, per
+     .friday/active/harness/roles/<role>.md Handoff sections. This is the answer to "what
+     is it doing / who's operating it / what's left" — `plans/
+     suggestions.md` is a notification inbox that gets emptied, not a
+     status record; this table is. Detail on the directive itself lives in
+     `.friday/active/harness/plans/directives/<ID>.md` (gitignored — churns per cycle,
+     `.friday/active/harness/status_history.md` is the durable record).
+     States: queued (opened, nobody working it yet) / in progress (owner
+     actively working) / awaiting review (producer done, waiting on
+     Reviewer) / blocked (waiting on a dependency). Once a directive is
+     Reviewer-verified, its row is REMOVED from here and
+     appended to `.friday/active/harness/status_history.md` in the same close-out pass —
+     this table only ever holds open work, so it never needs "done" as a
+     state or manual pruning. -->
+<!-- SECTION:tracker_none:end -->
+
+| ID | Title | Owner (current) | State | Last updated | Notes |
+|----|-------|------------------|-------|---------------|-------|
+| _(none)_ | | | | | |
+
+## Active background jobs
+
+<!-- SECTION:accel_present:start -->
+<!-- Rule 3: never say "idle" while a job is running. One row per live job.
+     Rule 10: the device claim below is written at launch and must be the
+     POST-LAUNCH VERIFIED device, not the one you asked for. -->
+
+| Job / directive | Started (UTC) | PID / unit | Device claim | Log | Monitor |
+|-----------------|---------------|------------|--------------|-----|---------|
+| _(none)_ | | | | | |
+<!-- SECTION:accel_present:end -->
+<!-- SECTION:accel_none:start -->
+<!-- Rule 3: never say "idle" while a job is running. One row per live job. -->
+
+| Job / directive | Started (UTC) | PID / unit | Log | Monitor |
+|-----------------|---------------|------------|-----|---------|
+| _(none)_ | | | | |
+<!-- SECTION:accel_none:end -->
+
+## Recent milestones
+
+<!-- Last few real closures only, newest first. Cite the artifact per rule 2
+     rather than restating numbers. -->
+
+- _(none yet)_
+
+## Open issues / blockers
+
+- _(none yet)_

@@ -10,11 +10,11 @@ re-authoring it.
 The full operator manual — how the Planner → Controller → Reviewer loop
 works, where status lives, how to feed the agents inputs, and the complete
 Docker container workflow — is `USER_GUIDE.md` in this repo. It's the same
-file for every project (symlinked in as `harness/USER_GUIDE.md`, never
-templated), so read it here or in any consumer project.
+file for every project (symlinked in as `.friday/active/harness/USER_GUIDE.md`,
+never templated), so read it here or in any consumer project.
 
 **Doc split**: this `README.md` covers installing, updating, and porting
-friday itself (installer + maintainer concerns). `harness/USER_GUIDE.md`
+friday itself (installer + maintainer concerns). `.friday/active/harness/USER_GUIDE.md`
 covers operating an already-installed harness day to day (the operator
 manual). If you're looking for how to *use* the harness rather than set
 it up, go there instead.
@@ -37,20 +37,23 @@ it up, go there instead.
    Docker, background jobs, bibliography tooling, and the LaTeX/Beamer
    drafting suite — one topic at a time — then writes `harness.config.env`
    itself and runs `init_harness.py`.
-3. **What that leaves you with**: a symlink tree (`harness/`, `.claude/`,
-   `.agents/`) pointing into `.friday/` for everything identical across
-   every project, plus real materialized copies of anything needing
+3. **What that leaves you with**: a symlink tree (`.friday/active/harness/`,
+   `.claude/`, `.agents/`) pointing into `.friday/` for everything identical
+   across every project, plus real materialized copies of anything needing
    project-specific customization (`harness.md`, the three project-facing
    rules docs, the Researcher/Author/Reviewer role contracts, `AGENTS.md`,
    `README.md`, and — if Docker/accelerators are enabled —
    `docker/docker-compose.yml`, `docker/Dockerfile`, `docker/entrypoint.sh`,
-   and `gpu.md`) — plus a starter `docs/` and `harness/{coding,plans}/`
-   scaffold (empty working-state files with the right headers, `docs/
+   and `gpu.md`) — plus a starter `docs/` and
+   `.friday/active/harness/{coding,plans}/` scaffold (empty working-state
+   files with the right headers, `docs/
    references/` with its inbox + `needs_pdf.md`, and `docs/theory/`/`docs/
    report/` if the LaTeX suite is on), the three core state files
-   `harness/status.md`, `harness/status_history.md`, and `harness/log.md`
+   `.friday/active/harness/status.md`, `.friday/active/harness/status_history.md`,
+   and `.friday/active/harness/log.md`
    (seeded empty and ready to use — previously referenced everywhere in the
-   harness but never actually materialized), and `harness/running/logs/`
+   harness but never actually materialized), and
+   `.friday/active/harness/running/logs/`
    — so every project starts from the same shape instead of inventing it on
    first use. `init_harness.py` also applies the `.gitignore`/
    `.gitattributes` fragments (secrets, gitignored directive files, and
@@ -159,19 +162,20 @@ about them is ever rendered or project-specific.
 
 | Consumer path | Points into `.friday/` | Notes |
 |---|---|---|
-| `harness/USER_GUIDE.md` | `USER_GUIDE.md` | the operator manual you're reading a copy of right now |
-| `harness/roles/{coder,controller,planner,runner}.md` | `harness/roles/` | 4 of the 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
-| `harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts}.md` | `harness/rules/` | the 5 rules docs with zero project-specific content |
-| `harness/plans/directives/TEMPLATE.md` | `harness/plans/directives/` | the directive template every real directive is copied from |
-| `harness/research/README.md`, `harness/review/README.md`, `harness/running/README.md` | same paths | namespace explainers for the Researcher/Reviewer/Runner working directories — zero project-specific content |
-| `docs/references/inbox/README.md` | `docs/references/inbox/` | explains the drop-a-PDF-here + `intake_references.py` workflow |
-| `harness/tools/{_config,intake_references,verify_references,check_unavailable_sources,lint_research_memo,find_open_access_pdf}.py` | `harness/tools/` | bibliography-workflow tools; config-driven via `harness.config.env` (see `harness/tools/_config.py`), not templated |
-| `.claude/agents/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `adapters/claude/agents/` | Claude Code role adapter files — present only if `ADAPTERS_ENABLED` includes `claude` |
-| `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
-| `.agents/agents/{author,coder,coder-heavy,controller,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `adapters/antigravity/agents/` | Antigravity role + tier-variant adapter files — present only if `ADAPTERS_ENABLED` includes `antigravity` |
-| `.agents/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.agents/hooks/{pre-commit,commit-msg,README.md}` | `adapters/hooks/` | same canonical files as the `.claude/hooks/*` row above |
-| `.dockerignore` | `docker/` | only present if `DOCKER_ENABLED=true` — the only Docker file that's still a plain symlink, and the only one that stays at the repo root rather than moving into `docker/`: Compose reads `.dockerignore` from the build-context root, not from the compose file's directory; `docker/Dockerfile`, `docker/entrypoint.sh` and `docker/antigravity_settings.json` are materialized (see below) since they now render per-project |
-| `.git/hooks/{pre-commit,commit-msg}` | *(anchored to `.claude/hooks/`, per `MANIFEST.json`'s `git_hooks` key — not a manifest `symlinks` entry)* | a second-order symlink: `.git/hooks/*` → `.claude/hooks/*` → `.friday/adapters/hooks/*`; installed by `install_git_hooks()` |
+| `.friday/active/harness/USER_GUIDE.md` | `USER_GUIDE.md` | the operator manual you're reading a copy of right now |
+| `.friday/active/harness/roles/{coder,controller,planner,runner}.md` | `templates/harness/roles/` | 4 of the 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
+| `.friday/active/harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts}.md` | `templates/harness/rules/` | the 5 rules docs with zero project-specific content |
+| `.friday/active/harness/plans/directives/TEMPLATE.md` | `templates/harness/plans/directives/` | the directive template every real directive is copied from |
+| `.friday/active/harness/review/README.md`, `.friday/active/harness/running/README.md` | same paths, under `templates/harness/` | namespace explainers for the Reviewer/Runner working directories — zero project-specific content |
+| `docs/research/README.md` | `templates/docs/research/` | namespace explainer for the Researcher's memo directory — lives at the project root (tracked, not gitignored) since research memos must survive the harness being removed, unlike the `active/`-rooted rows above |
+| `docs/references/inbox/README.md` | `templates/docs/references/inbox/` | explains the drop-a-PDF-here + `intake_references.py` workflow |
+| `.friday/active/harness/tools/{_config,intake_references,verify_references,check_unavailable_sources,lint_research_memo,find_open_access_pdf}.py` | `templates/harness/tools/` | bibliography-workflow tools; config-driven via `harness.config.env` (see `.friday/active/harness/tools/_config.py`), not templated |
+| `.claude/agents/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `templates/adapters/claude/agents/` | Claude Code role adapter files — present only if `ADAPTERS_ENABLED` includes `claude` |
+| `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `templates/adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
+| `.agents/agents/{author,coder,coder-heavy,controller,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `templates/adapters/antigravity/agents/` | Antigravity role + tier-variant adapter files — present only if `ADAPTERS_ENABLED` includes `antigravity` |
+| `.agents/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.agents/hooks/{pre-commit,commit-msg,README.md}` | `templates/adapters/hooks/` | same canonical files as the `.claude/hooks/*` row above |
+| `.dockerignore` | `templates/docker/` | only present if `DOCKER_ENABLED=true` — the only Docker file that's still a plain symlink, and the only one that stays at the repo root rather than moving into `docker/`: Compose reads `.dockerignore` from the build-context root, not from the compose file's directory; `docker/Dockerfile`, `docker/entrypoint.sh` and `docker/antigravity_settings.json` are materialized (see below) since they now render per-project |
+| `.git/hooks/{pre-commit,commit-msg}` | *(anchored to `.claude/hooks/`, per `MANIFEST.json`'s `git_hooks` key — not a manifest `symlinks` entry)* | a second-order symlink: `.git/hooks/*` → `.claude/hooks/*` → `.friday/templates/adapters/hooks/*`; installed by `install_git_hooks()` |
 
 ### Materialized (real per-project copies, rendered once)
 
@@ -184,33 +188,33 @@ one that already exists and differs from a fresh render; use
 
 | Consumer path | Template source in `.friday/` | Gated by |
 |---|---|---|
-| `harness/harness.md` | `harness/harness.md.tmpl` | — |
-| `harness/roles/researcher.md` | `harness/roles/researcher.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the `docs/theory/` namespace text |
-| `harness/roles/author.md` | `harness/roles/author.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the `docs/report/` namespace + Slide decks section |
-| `harness/roles/reviewer.md` | `harness/roles/reviewer.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in the citation-check step |
-| `harness/rules/environment.md` | `harness/rules/environment.md.tmpl` | — |
-| `harness/rules/task_tracking.md` | `harness/rules/task_tracking.md.tmpl` | — |
-| `harness/rules/version_control.md` | `harness/rules/version_control.md.tmpl` | — |
-| `harness/rules/gpu.md` | `harness/rules/gpu.md.tmpl` | `ACCELERATORS_ENABLED=true` |
-| `harness/templates/research_memo_template.md` | `harness/templates/research_memo_template.md.tmpl` | — |
-| `harness/coding/tasks_working.md`, `tasks_finished.md`, `history.md` | `harness/coding/*.md.tmpl` | — (starter working-state files, blank; real content accrues per-project and is never re-rendered) |
-| `harness/plans/next_steps.md`, `suggestions.md`, `goals.md`, `long_term.md`, `history.md` | `harness/plans/*.md.tmpl` | — (same starter/blank-skeleton pattern as `coding/` above) |
-| `docs/RESULTS.md` | `docs/RESULTS.md.tmpl` | — |
-| `docs/ARCHITECTURE.md` | `docs/ARCHITECTURE.md.tmpl` | — |
-| `docs/references/needs_pdf.md` | `docs/references/needs_pdf.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in its "do not cite" wording |
-| `docs/theory/README.md` | `docs/theory/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
-| `docs/report/README.md` | `docs/report/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
-| `harness/status.md` | `harness/status.md.tmpl` | — (starter, blank; real content accrues per-project and is never re-rendered) |
-| `harness/status_history.md` | `harness/status_history.md.tmpl` | — (same starter/blank-skeleton pattern) |
-| `harness/log.md` | `harness/log.md.tmpl` | — (same starter/blank-skeleton pattern, seeded with one entry recording the setup interview) |
-| `AGENTS.md` | `AGENTS.md.tmpl` | — |
-| `README.md` | `README.md.tmpl` | — |
-| `.claude/settings.json` | `adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
-| `.agents/hooks.json` | `adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
-| `docker/docker-compose.yml` | `docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true`; the `docker_gpu` section (an NVIDIA GPU device reservation) is further gated on `ACCELERATORS_ENABLED=true`. Each adapter's contribution is gated by `docker_agent_claude_compose` / `docker_agent_antigravity_compose`: its config volume (`claude-config`, `gemini-config`) and, for antigravity, the `ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables that put `command_guard.py` in container mode. `agent-cache` is ungated (uv/pip/npm all use `~/.cache`), which also keeps the top-level `volumes:` map non-empty when no adapter is enabled. `name:` is pinned to `PROJECT_NAME_LOWER` so volume/container prefixes don't fall back to the directory basename. `.env` is mounted as an optional `env_file` (`required: false`) and `SSH_AUTH_SOCK` falls back to `/dev/null` when unset, so `docker compose config` succeeds on a fresh project with neither present |
-| `docker/Dockerfile` | `docker/Dockerfile.tmpl` | `DOCKER_ENABLED=true`; the image is otherwise driven entirely by existing config keys, no new interview questions. `PACKAGE_MANAGER` selects one package-manager install branch (`uv`, `poetry` via pipx, `pip` via apt python3-pip+venv, or `npm`/`pnpm`/`yarn` via NodeSource + corepack; anything else drops in a "none" branch with a comment on hand-adding conda/Miniforge). `ADAPTERS_ENABLED` selects agent CLI installs (`claude` → NodeSource Node + `npm install -g @anthropic-ai/claude-code`; `antigravity` → its official install script). Each adapter's block also pre-creates its own config directory (`/home/agent/.claude`, `/home/agent/.gemini`) owned by `agent`, so the matching named volume doesn't come up root-owned; `~/.cache` is created unconditionally. `LATEX_DRAFTING_ENABLED` gates the TeX Live install (several GB, off by default). See `docker_pm_*`/`docker_agent_*`/`docker_latex`/`docker_node_runtime` in `sections_to_drop()` |
-| `docker/antigravity_settings.json` | `docker/antigravity_settings.json.tmpl` | `DOCKER_ENABLED=true` **and** `ADAPTERS_ENABLED` includes `antigravity`. Copied into the image at `~/.gemini/antigravity-cli/settings.json` (a path hardcoded in the `agy` binary). Carries the CLI's own permission policy — flat `permissions.allow`/`.ask`/`.deny` arrays of `command(...)`, `read_file(...)`, `write_file(...)`, `read_url(...)`, `mcp(...)` rules — which is a **separate layer** from `command_guard.py` and covers things the hook can't see (reading `~/.ssh/**`, writing `.git/**`, fetching a URL). Because a named volume is only initialized on first creation, a rebuild alone won't push a changed copy into an existing `gemini-config` volume — but `entrypoint.sh` re-syncs this one file from the bind-mounted repo on every container start, so a plain restart (`docker compose -f docker/docker-compose.yml up -d`) is enough to pick up the change; `down -v` is not needed |
-| `docker/entrypoint.sh` | `docker/entrypoint.sh.tmpl` | `DOCKER_ENABLED=true`; not internally gated by config — `AUTO_LAUNCH_AGENT=1` probes `PATH` at runtime for `claude` then `agy` (the Antigravity CLI's actual binary name — no `antigravity` binary is ever installed) and execs whichever is found, rather than being gated at render time on `ADAPTERS_ENABLED` (a render-time gate with no adapter enabled used to render an empty `if ...; then fi`, a bash syntax error that broke the entrypoint outright) |
+| `.friday/active/harness/harness.md` | `templates/harness/harness.md.tmpl` | — |
+| `.friday/active/harness/roles/researcher.md` | `templates/harness/roles/researcher.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the `docs/theory/` namespace text |
+| `.friday/active/harness/roles/author.md` | `templates/harness/roles/author.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the `docs/report/` namespace + Slide decks section |
+| `.friday/active/harness/roles/reviewer.md` | `templates/harness/roles/reviewer.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in the citation-check step |
+| `.friday/active/harness/rules/environment.md` | `templates/harness/rules/environment.md.tmpl` | — |
+| `.friday/active/harness/rules/task_tracking.md` | `templates/harness/rules/task_tracking.md.tmpl` | — |
+| `.friday/active/harness/rules/version_control.md` | `templates/harness/rules/version_control.md.tmpl` | — |
+| `.friday/active/harness/rules/gpu.md` | `templates/harness/rules/gpu.md.tmpl` | `ACCELERATORS_ENABLED=true` |
+| `.friday/active/harness/templates/research_memo_template.md` | `templates/harness/templates/research_memo_template.md.tmpl` | — |
+| `.friday/active/harness/coding/tasks_working.md`, `tasks_finished.md`, `history.md` | `templates/harness/coding/*.md.tmpl` | — (starter working-state files, blank; real content accrues per-project and is never re-rendered) |
+| `.friday/active/harness/plans/next_steps.md`, `suggestions.md`, `goals.md`, `long_term.md`, `history.md` | `templates/harness/plans/*.md.tmpl` | — (same starter/blank-skeleton pattern as `coding/` above) |
+| `docs/RESULTS.md` | `templates/docs/RESULTS.md.tmpl` | — |
+| `docs/ARCHITECTURE.md` | `templates/docs/ARCHITECTURE.md.tmpl` | — |
+| `docs/references/needs_pdf.md` | `templates/docs/references/needs_pdf.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in its "do not cite" wording |
+| `docs/theory/README.md` | `templates/docs/theory/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
+| `docs/report/README.md` | `templates/docs/report/README.md.tmpl` | `LATEX_DRAFTING_ENABLED=true` |
+| `.friday/active/harness/status.md` | `templates/harness/status.md.tmpl` | — (starter, blank; real content accrues per-project and is never re-rendered) |
+| `.friday/active/harness/status_history.md` | `templates/harness/status_history.md.tmpl` | — (same starter/blank-skeleton pattern) |
+| `.friday/active/harness/log.md` | `templates/harness/log.md.tmpl` | — (same starter/blank-skeleton pattern, seeded with one entry recording the setup interview) |
+| `AGENTS.md` | `templates/AGENTS.md.tmpl` | — |
+| `README.md` | `templates/README.md.tmpl` | — |
+| `.claude/settings.json` | `templates/adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
+| `.agents/hooks.json` | `templates/adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
+| `docker/docker-compose.yml` | `templates/docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true`; the `docker_gpu` section (an NVIDIA GPU device reservation) is further gated on `ACCELERATORS_ENABLED=true`. Each adapter's contribution is gated by `docker_agent_claude_compose` / `docker_agent_antigravity_compose`: its config volume (`claude-config`, `gemini-config`) and, for antigravity, the `ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables that put `command_guard.py` in container mode. `agent-cache` is ungated (uv/pip/npm all use `~/.cache`), which also keeps the top-level `volumes:` map non-empty when no adapter is enabled. `name:` is pinned to `PROJECT_NAME_LOWER` so volume/container prefixes don't fall back to the directory basename. `.env` is mounted as an optional `env_file` (`required: false`) and `SSH_AUTH_SOCK` falls back to `/dev/null` when unset, so `docker compose config` succeeds on a fresh project with neither present |
+| `docker/Dockerfile` | `templates/docker/Dockerfile.tmpl` | `DOCKER_ENABLED=true`; the image is otherwise driven entirely by existing config keys, no new interview questions. `PACKAGE_MANAGER` selects one package-manager install branch (`uv`, `poetry` via pipx, `pip` via apt python3-pip+venv, or `npm`/`pnpm`/`yarn` via NodeSource + corepack; anything else drops in a "none" branch with a comment on hand-adding conda/Miniforge). `ADAPTERS_ENABLED` selects agent CLI installs (`claude` → NodeSource Node + `npm install -g @anthropic-ai/claude-code`; `antigravity` → its official install script). Each adapter's block also pre-creates its own config directory (`/home/agent/.claude`, `/home/agent/.gemini`) owned by `agent`, so the matching named volume doesn't come up root-owned; `~/.cache` is created unconditionally. `LATEX_DRAFTING_ENABLED` gates the TeX Live install (several GB, off by default). See `docker_pm_*`/`docker_agent_*`/`docker_latex`/`docker_node_runtime` in `sections_to_drop()` |
+| `docker/antigravity_settings.json` | `templates/docker/antigravity_settings.json.tmpl` | `DOCKER_ENABLED=true` **and** `ADAPTERS_ENABLED` includes `antigravity`. Copied into the image at `~/.gemini/antigravity-cli/settings.json` (a path hardcoded in the `agy` binary). Carries the CLI's own permission policy — flat `permissions.allow`/`.ask`/`.deny` arrays of `command(...)`, `read_file(...)`, `write_file(...)`, `read_url(...)`, `mcp(...)` rules — which is a **separate layer** from `command_guard.py` and covers things the hook can't see (reading `~/.ssh/**`, writing `.git/**`, fetching a URL). Because a named volume is only initialized on first creation, a rebuild alone won't push a changed copy into an existing `gemini-config` volume — but `entrypoint.sh` re-syncs this one file from the bind-mounted repo on every container start, so a plain restart (`docker compose -f docker/docker-compose.yml up -d`) is enough to pick up the change; `down -v` is not needed |
+| `docker/entrypoint.sh` | `templates/docker/entrypoint.sh.tmpl` | `DOCKER_ENABLED=true`; not internally gated by config — `AUTO_LAUNCH_AGENT=1` probes `PATH` at runtime for `claude` then `agy` (the Antigravity CLI's actual binary name — no `antigravity` binary is ever installed) and execs whichever is found, rather than being gated at render time on `ADAPTERS_ENABLED` (a render-time gate with no adapter enabled used to render an empty `if ...; then fi`, a bash syntax error that broke the entrypoint outright) |
 
 Not a `MANIFEST.json` entry: `docker/.env`, a relative symlink to `../.env`
 that `init_harness.py` creates (and re-creates on every sync) whenever
@@ -224,7 +228,7 @@ that has never created one still works.
 
 ### Real project data (never touched by friday)
 
-`harness/plans/directives/<ID>.md` (all but `TEMPLATE.md`), and any raw
+`.friday/active/harness/plans/directives/<ID>.md` (all but `TEMPLATE.md`), and any raw
 reference PDFs/`references.bib` under `docs/references/` are this project's
 own live state — friday materializes the *starting* shape for the files
 above once, then never touches them again (hand-edit freely); these other
@@ -236,7 +240,7 @@ Not a manifest entry — `init_harness.py` appends
 `setup/gitignore.fragment` and `setup/gitattributes.fragment` to the
 project's own `.gitignore`/`.gitattributes` at sync time, one missing line
 at a time, and never rewrites a file that already exists. Covers secrets
-(`.env`, `harness.config.env`), gitignoring `harness/plans/directives/*.md`
+(`.env`, `harness.config.env`), gitignoring `.friday/active/harness/plans/directives/*.md`
 while keeping `!TEMPLATE.md` tracked, and — when `LATEX_DRAFTING_ENABLED`
 or the bibliography workflow are in use — LaTeX build artifacts, LFS-tracked
 PDFs, and reference PDFs.

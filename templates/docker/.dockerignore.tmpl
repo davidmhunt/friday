@@ -1,0 +1,15 @@
+.git
+.friday/.git
+.venv
+__pycache__
+*.pyc
+node_modules
+.pytest_cache
+.friday/active/harness/running/logs
+.friday/active/harness/plans/directives
+
+# reference PDFs and other data artifacts — never needed inside the build
+# context, only mounted in at runtime via the bind-mounted /<project name>
+docs/references/*.pdf
+docs/references/inbox/*
+!docs/references/inbox/README.md

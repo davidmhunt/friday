@@ -19,12 +19,6 @@ __pycache__/
 # non-secret but regenerable/environment-specific harness config
 harness.config.env
 
-# directive files churn frequently (created/closed/deleted per cycle) — the
-# task tracker (if configured) and harness/status_history.md are the
-# durable record; TEMPLATE.md is the canonical example and stays tracked
-harness/plans/directives/*.md
-!harness/plans/directives/TEMPLATE.md
-
 # GATE:biblio:start
 # raw reference PDFs — kept locally, never committed
 docs/references/*.pdf
