@@ -553,9 +553,19 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
     # against BOTH bases — an absolute path or a path that happens to
     # collide under both is unaffected, since Path.__truediv__ with an
     # absolute second operand just returns that operand unchanged.
-    force_abs = {str((REPO_ROOT / f).resolve()) for f in force}
-    force_abs |= {str((ACTIVE_DIR / f).resolve()) for f in force}
-    force_used: set[str] = set()
+    # Tracked per ORIGINAL argument, not per resolved path: each argument
+    # expands to two candidates and at most one of them can ever match a real
+    # dest, so keying "was this used?" on resolved paths guarantees the other
+    # candidate is reported unmatched every time — a spurious WARN alongside a
+    # successful overwrite, which is exactly the signal this WARN exists to
+    # give. Reporting the user's own argument back is also friendlier than
+    # echoing a resolved path they never typed.
+    force_candidates = {
+        f: {str((REPO_ROOT / f).resolve()), str((ACTIVE_DIR / f).resolve())}
+        for f in force
+    }
+    force_abs = set().union(*force_candidates.values()) if force_candidates else set()
+    force_used_args: set[str] = set()
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
     latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
@@ -581,7 +591,9 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
         dest_key = str(dest.resolve()) if dest.exists() else str(dest)
         forced = dest_key in force_abs
         if forced:
-            force_used.add(dest_key)
+            force_used_args.update(
+                arg for arg, cands in force_candidates.items() if dest_key in cands
+            )
         if dest.exists() and not forced:
             # seed_once entries (currently just README.md) are a one-time
             # scaffold, not harness-owned churn: the project starts editing
@@ -597,7 +609,7 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
             dest.write_text(rendered)
             if src.name in ("pre-commit", "commit-msg") or os.access(src, os.X_OK):
                 dest.chmod(dest.stat().st_mode | stat.S_IEXEC)
-    for unmatched in sorted(force_abs - force_used):
+    for unmatched in sorted(set(force_candidates) - force_used_args):
         print(f"  WARN: --force-materialize={unmatched} matched no materialized file (typo? wrong path? gated off by config?)")
 
 
