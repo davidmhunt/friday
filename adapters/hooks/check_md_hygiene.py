@@ -107,6 +107,13 @@ def main() -> int:
     for rel_path, cap in FILE_CAPS.items():
         path = REPO_ROOT / rel_path
         if not path.exists():
+            # A missing configured path used to be silently skipped, which
+            # meant a relocated or mistyped path quietly stopped being
+            # enforced — invisible in every channel, since the pre-commit
+            # wrapper always exits 0. WARN instead, but stay advisory: don't
+            # flip any_warn, since a missing file isn't an over-cap file and
+            # this hook must not start blocking commits during a migration.
+            print(f"WARN | hygiene | configured path not found: {rel_path}")
             continue
         n = count_lines(path)
         if n > cap:
@@ -114,7 +121,10 @@ def main() -> int:
             any_warn = True
 
     per_entry_path = REPO_ROOT / PER_ENTRY_FILE
-    if per_entry_path.exists():
+    if not per_entry_path.exists():
+        # Same rationale as the FILE_CAPS loop above: warn, don't block.
+        print(f"WARN | hygiene | configured path not found: {PER_ENTRY_FILE}")
+    else:
         for msg in check_per_entry_caps(per_entry_path):
             print(msg)  # warn-only: deliberately does not affect the exit code
 

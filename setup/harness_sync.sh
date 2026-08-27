@@ -8,6 +8,11 @@
 #                             # symlinks/materialized files, bump the pointer
 #
 # Refuses to run with unrelated uncommitted changes elsewhere unless --force.
+#
+# .friday/active/ holds all live per-project harness state and is
+# gitignored (see .friday/.gitignore) — `git clean -xfd` run inside the
+# .friday/ submodule wipes it, since gitignored files are exactly what
+# -x sweeps up.
 set -euo pipefail
 
 SUBMODULE_DIR=".friday"
@@ -28,6 +33,19 @@ require_clean_tree() {
 
 cmd_push() {
   require_clean_tree
+  # Refuse to push if active/ (per-project live harness state) isn't
+  # gitignored — otherwise the `add -A` below would commit and push it to
+  # the shared friday remote, leaking this project's state to every other
+  # consumer. Probe path must be "active/" (trailing slash) to match the
+  # ".gitignore" rule "active/" the same way whether or not the directory
+  # exists yet on disk: without the trailing slash, `check-ignore` on a
+  # nonexistent "active" path can't tell it's meant to be a directory and
+  # misses the dir-only pattern. Keep this pairing in sync if either side
+  # changes.
+  git -C "$SUBMODULE_DIR" check-ignore -q "active/" || {
+    echo "REFUSE: $SUBMODULE_DIR/active/ is not gitignored — pushing would leak project state to the shared harness remote." >&2
+    exit 1
+  }
   if [ -z "$(git -C "$SUBMODULE_DIR" status --porcelain)" ]; then
     echo "No changes in $SUBMODULE_DIR/ to push."
     return

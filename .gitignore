@@ -1,3 +1,9 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Load-bearing: setup/harness_sync.sh's cmd_push() asserts this rule is in
+# effect (via `git check-ignore -q active/`) before running `git add -A` in
+# this submodule. Without it, that add/push would sweep up per-project live
+# harness state (.friday/active/) and push it to the shared harness remote.
+active/

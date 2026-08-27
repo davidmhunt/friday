@@ -25,13 +25,14 @@ tooling philosophy.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
 import stat
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path.cwd()
 SUBMODULE_DIR = REPO_ROOT / ".friday"
@@ -559,7 +560,12 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
         if forced:
             force_used.add(dest_key)
         if dest.exists() and not forced:
-            if dest.read_text() != rendered:
+            # seed_once entries (currently just README.md) are a one-time
+            # scaffold, not harness-owned churn: the project starts editing
+            # it the moment setup finishes, so "differs from fresh render"
+            # is the EXPECTED steady state, not a drift signal worth a SKIP
+            # line every re-run. Silence is the point here.
+            if not entry.get("seed_once") and dest.read_text() != rendered:
                 print(f"  SKIP (already materialized, differs from fresh render — use --force-materialize={dest} to overwrite): {dest}")
             continue
         print(f"  {'overwrite' if dest.exists() else 'materialize'} {dest}")
@@ -1013,6 +1019,40 @@ def write_git_exclude(manifest: dict, cfg: dict[str, str], dry_run: bool) -> Non
     print(f"  {len(excluded)} path(s) excluded at HARNESS_TRACKING={tracking}")
 
 
+def _untrack_paths(candidates: set[str], dry_run: bool, nothing_msg: str, found_label: str) -> None:
+    """Shared body of --untrack-harness and --untrack-legacy: `git rm
+    --cached` the intersection of `candidates` with `git ls-files`.
+
+    Intersecting with an explicit, caller-supplied path set (never a glob,
+    never a directory, never `-r`) is the safety property that makes both
+    commands trustworthy to run unattended — this helper is structurally
+    incapable of touching a file that isn't already in `candidates`, no
+    matter what else `git ls-files` happens to report. It never commits;
+    it only stages the removal for the operator to review and commit
+    themselves.
+    """
+    result = subprocess.run(
+        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    )
+    tracked = set(result.stdout.splitlines())
+    to_untrack = sorted(candidates & tracked)
+    if not to_untrack:
+        print(f"  {nothing_msg}")
+        return
+
+    print(f"  {len(to_untrack)} tracked file(s) {found_label}:")
+    for path in to_untrack:
+        print(f"    {path}")
+    if dry_run:
+        return
+    # Explicit file list, never -r on a directory: every candidate here is a
+    # single file (a manifest dest or a legacy_dests entry), and passing
+    # directories would risk sweeping in something neither list names.
+    subprocess.run(["git", "rm", "--cached", "--"] + to_untrack, cwd=REPO_ROOT, check=True)
+    print(f"  Ran `git rm --cached` on {len(to_untrack)} file(s). Nothing committed —")
+    print("  review `git status` and commit the removal yourself when ready.")
+
+
 def untrack_harness(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
     """`git rm --cached` every currently-tracked file that HARNESS_TRACKING
     says should be excluded going forward.
@@ -1031,26 +1071,43 @@ def untrack_harness(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
     if not excluded:
         print(f"  Nothing to untrack — HARNESS_TRACKING={tracking} excludes no tier.")
         return
-    result = subprocess.run(
-        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    _untrack_paths(
+        excluded, dry_run,
+        "Nothing to untrack — no excluded path is currently tracked by git.",
+        "fall under the current exclude set",
     )
-    tracked = set(result.stdout.splitlines())
-    to_untrack = sorted(excluded & tracked)
-    if not to_untrack:
-        print("  Nothing to untrack — no excluded path is currently tracked by git.")
-        return
 
-    print(f"  {len(to_untrack)} tracked file(s) fall under the current exclude set:")
-    for path in to_untrack:
-        print(f"    {path}")
-    if dry_run:
+
+def untrack_legacy(manifest: dict, dry_run: bool) -> None:
+    """`git rm --cached` every currently-tracked file listed in
+    MANIFEST.json's `legacy_dests` — the harness/** dests that existed
+    before v0.13.0 relocated the whole harness/ tree into
+    .friday/active/harness/.
+
+    This is --untrack-harness's counterpart for that move, not a
+    replacement for it: once v0.13.0 lands, no entry in `symlinks` or
+    `materialize` has a `harness/…` dest any more, so
+    compute_excluded_paths() (and therefore untrack_harness()) can never
+    again produce one of those paths — the intersection with `git
+    ls-files` that untrack_harness() relies on goes structurally empty for
+    exactly the files this command exists to remove. A project that
+    committed harness/** before upgrading past `legacy_dests.since` still
+    needs a way to drop those now-stale paths from git so the post-move
+    symlink tree (materializing under .friday/active/harness/ instead)
+    doesn't collide with them. legacy_dests.paths is a frozen snapshot
+    for exactly that purpose — it must never be "kept in sync" with the
+    current manifest, since its entire job is to remember dests the
+    current manifest has already forgotten.
+    """
+    legacy = manifest.get("legacy_dests", {}).get("paths", [])
+    if not legacy:
+        print("  Nothing to untrack — no legacy_dests in MANIFEST.json.")
         return
-    # Explicit file list, never -r on a directory: a manifest dest is always
-    # a single file, and passing directories here would risk sweeping in
-    # something the manifest never generated.
-    subprocess.run(["git", "rm", "--cached", "--"] + to_untrack, cwd=REPO_ROOT, check=True)
-    print(f"  Ran `git rm --cached` on {len(to_untrack)} file(s). Nothing committed —")
-    print("  review `git status` and commit the removal yourself when ready.")
+    _untrack_paths(
+        set(legacy), dry_run,
+        "Nothing to untrack — no legacy_dests path is currently tracked by git.",
+        "are pre-v0.13.0 harness/** paths that have moved into .friday/active/",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1058,7 +1115,114 @@ def untrack_harness(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-def preflight() -> None:
+# Directories the harness always populates by means OTHER than a
+# MANIFEST.json `dest` (a dynamically-created dir like harness/running/logs/
+# — see create_running_dirs() — or a directory whose own README.md IS a
+# manifest dest, which already makes the directory itself manifest-derived,
+# but is listed here too for readability at the call site below). A
+# hardcoded path table is allowed to reference anything under one of these
+# without that reference being manifest-checkable, because the harness
+# itself, not a project's hand-authored content, is what guarantees the
+# directory exists.
+ALWAYS_GENERATED_DIRS = {
+    "harness/running",
+    "harness/running/logs",
+    "harness/plans/directives",
+    "harness/research",
+    "docs/references",
+}
+
+
+def _parse_module_constant(path: Path, name: str):
+    """Read a top-level `NAME = <literal>` assignment out of `path` by
+    parsing its AST — never by importing it.
+
+    check_md_hygiene.py runs `REPO_ROOT = find_repo_root()` at import time
+    (an upward filesystem search, see that module's docstring), and
+    check_unavailable_sources.py has import-time side effects of its own
+    (it inserts a path and imports sibling tools). Importing either module
+    from here — a script that itself may be running from a submodule
+    checkout with no consumer project around it yet — would trigger those
+    searches/imports against the wrong tree, or fail outright. `ast.parse` +
+    `ast.literal_eval` reads the literal value straight off the source text,
+    with no side effects and no dependency on the current working directory.
+    """
+    tree = ast.parse(path.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    return ast.literal_eval(node.value)
+    raise ValueError(f"{name!r} not found as a top-level assignment in {path}")
+
+
+def _manifest_dest_dirs(manifest: dict) -> tuple[set[str], set[str]]:
+    """(dest paths, directories containing a dest path, all ancestor levels
+    included) across both `symlinks` and `materialize`."""
+    dests = {entry["dest"] for entry in manifest["symlinks"] + manifest["materialize"]}
+    dirs: set[str] = set()
+    for dest in dests:
+        parts = PurePosixPath(dest).parts[:-1]
+        for i in range(1, len(parts) + 1):
+            dirs.add("/".join(parts[:i]))
+    return dests, dirs
+
+
+def check_hardcoded_path_tables(manifest: dict) -> None:
+    """Fail loudly if adapters/hooks/check_md_hygiene.py's FILE_CAPS /
+    PER_ENTRY_FILE, or harness/tools/check_unavailable_sources.py's
+    SCAN_GLOBS, name a path MANIFEST.json no longer knows about.
+
+    Both modules carry their own hardcoded copy of a subset of the path
+    layout — check_md_hygiene.py because it's deliberately dependency-free
+    (see its module docstring), check_unavailable_sources.py because a glob
+    root isn't the kind of thing that belongs in MANIFEST.json's flat
+    src/dest entries. Neither copy is derived from the manifest, so nothing
+    stops them drifting out of sync with it — and the failure mode when they
+    do is silent: a file the manifest moved or renamed simply stops being
+    hygiene-checked or scanned, with no error, no warning, just a hole in
+    coverage nobody notices until much later. This check exists so that
+    drift is a loud preflight failure instead. It's the reason this whole
+    exercise (items 2-4 of the v0.13.0 prep work) matters: the upcoming
+    harness/** relocation into .friday/active/harness/ is exactly the kind
+    of manifest-wide dest change that would otherwise silently break both
+    tables the moment it lands.
+    """
+    dests, manifest_dirs = _manifest_dest_dirs(manifest)
+    allowed_dirs = manifest_dirs | ALWAYS_GENERATED_DIRS
+
+    def _covered(path: str) -> bool:
+        if path in dests:
+            return True
+        parent = str(PurePosixPath(path).parent)
+        return parent in allowed_dirs
+
+    errors: list[str] = []
+
+    hygiene_path = SUBMODULE_DIR / "adapters" / "hooks" / "check_md_hygiene.py"
+    file_caps = _parse_module_constant(hygiene_path, "FILE_CAPS")
+    for path in file_caps:
+        if not _covered(path):
+            errors.append(f"check_md_hygiene.py FILE_CAPS[{path!r}] is not a manifest dest or a harness-generated path")
+    per_entry_file = _parse_module_constant(hygiene_path, "PER_ENTRY_FILE")
+    if not _covered(per_entry_file):
+        errors.append(f"check_md_hygiene.py PER_ENTRY_FILE={per_entry_file!r} is not a manifest dest or a harness-generated path")
+
+    scan_path = SUBMODULE_DIR / "harness" / "tools" / "check_unavailable_sources.py"
+    scan_globs = _parse_module_constant(scan_path, "SCAN_GLOBS")
+    for scan_dir, _pattern in scan_globs:
+        if scan_dir not in allowed_dirs:
+            errors.append(f"check_unavailable_sources.py SCAN_GLOBS entry {scan_dir!r} is not a manifest dest directory or a harness-generated directory")
+
+    if errors:
+        print("Hardcoded path table(s) have drifted from MANIFEST.json:")
+        for e in errors:
+            print(f"  {e}")
+        print("Update the offending constant(s), or MANIFEST.json, so they agree again.")
+        sys.exit(1)
+
+
+def preflight() -> dict:
     if not (REPO_ROOT / ".gitmodules").exists() or not SUBMODULE_DIR.exists():
         print(
             "No .friday/ submodule found. Add it first:\n\n"
@@ -1069,6 +1233,9 @@ def preflight() -> None:
     if not MANIFEST_PATH.exists():
         print(f"MANIFEST.json not found at {MANIFEST_PATH} — submodule checkout looks incomplete.")
         sys.exit(1)
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    check_hardcoded_path_tables(manifest)
+    return manifest
 
 
 def closing_checklist(cfg: dict[str, str]) -> None:
@@ -1125,11 +1292,24 @@ def main() -> int:
         "--untrack-harness", action="store_true",
         help="git rm --cached every already-tracked file that HARNESS_TRACKING now says to exclude, then exit. Never commits.",
     )
+    parser.add_argument(
+        "--untrack-legacy", action="store_true",
+        help="git rm --cached every already-tracked file listed in MANIFEST.json's legacy_dests (pre-v0.13.0 harness/** dests that moved to .friday/active/harness/), then exit. Never commits.",
+    )
     args = parser.parse_args()
 
-    preflight()
-    manifest = json.loads(MANIFEST_PATH.read_text())
+    manifest = preflight()
     existing = load_config()
+
+    if args.untrack_legacy:
+        # No harness.config.env / HARNESS_TRACKING dependency, unlike
+        # --untrack-harness: legacy_dests is a fixed list straight off the
+        # manifest, not something derived from this project's interview
+        # answers, so there is nothing here that requires setup to have run
+        # first.
+        print("\n=== --untrack-legacy ===")
+        untrack_legacy(manifest, args.dry_run)
+        return 0
 
     if args.untrack_harness:
         if not existing:

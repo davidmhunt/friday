@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from check_md_hygiene import FILE_CAPS, PER_ENTRY_FILE
+
 HOOK_SOURCE = Path(__file__).parent / "check_md_hygiene.py"
 
 
@@ -28,6 +30,8 @@ def _build_consumer_repo(tmp_path: Path) -> Path:
         tmp_path/consumer/
             harness.config.env          <- marks this as the repo root
             harness/status.md           <- deliberately over its 150-line cap
+            <every other FILE_CAPS/PER_ENTRY_FILE path>  <- empty stub, so
+                only status.md's over-cap WARN fires by default
             .friday/adapters/hooks/check_md_hygiene.py   <- the real file
             .claude/hooks/check_md_hygiene.py            <- symlink -> above
 
@@ -42,6 +46,14 @@ def _build_consumer_repo(tmp_path: Path) -> Path:
     harness_dir.mkdir()
     # 151 lines: one line over the 150-line cap for harness/status.md.
     (harness_dir / "status.md").write_text("\n".join(f"line {i}" for i in range(151)) + "\n")
+
+    # Every other configured path must exist too, or the "path not found"
+    # WARN added for the missing-path case would fire here and pollute the
+    # existing tests' output assertions. Stub them out empty (well under cap).
+    for rel_path in {*FILE_CAPS, PER_ENTRY_FILE} - {"harness/status.md"}:
+        stub = repo / rel_path
+        stub.parent.mkdir(parents=True, exist_ok=True)
+        stub.write_text("")
 
     real_hooks_dir = repo / ".friday" / "adapters" / "hooks"
     real_hooks_dir.mkdir(parents=True)
@@ -97,6 +109,29 @@ def test_symlinked_invocation_under_cap_exits_zero(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout.strip() == ""
+
+
+def test_missing_configured_path_warns_but_stays_advisory(tmp_path):
+    """A FILE_CAPS entry that doesn't exist (relocated file, typo'd path)
+    used to be silently skipped, so the cap silently stopped being enforced.
+    It must now WARN — but must not flip the exit code, since a mid-
+    migration project must not have commits blocked by this."""
+    repo = _build_consumer_repo(tmp_path)
+    (repo / "harness" / "status.md").write_text("short file\n")
+    # Remove a FILE_CAPS entry that _build_consumer_repo otherwise stubs out,
+    # simulating a relocated/mistyped configured path.
+    (repo / "docs" / "references" / "needs_pdf.md").unlink()
+    symlink_hook = repo / ".claude" / "hooks" / "check_md_hygiene.py"
+
+    result = subprocess.run(
+        [sys.executable, str(symlink_hook)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "WARN | hygiene | configured path not found: docs/references/needs_pdf.md" in result.stdout
+    assert result.returncode == 0
 
 
 def test_direct_invocation_without_symlink_still_works(tmp_path):

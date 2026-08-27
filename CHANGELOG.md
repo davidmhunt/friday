@@ -1,5 +1,89 @@
 # Changelog
 
+<!-- Maintainer reminder: bump VERSION in the same commit as the entry
+     below it documents. VERSION drifted for several releases (stuck at
+     0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
+     atomic step. -->
+
+## v0.12.1
+
+Groundwork for the v0.13.0 restructure, which moves every harness-generated
+file out of the consumer project and into `.friday/` itself. None of that
+happens here. What lands here is the safety net that makes the move
+verifiable, deliberately shipped *before* the move rather than alongside it —
+a rewrite that touches several hundred path references should not be the same
+release as the checks that prove it was done completely.
+
+**`check_md_hygiene.py` no longer fails silently.** A `FILE_CAPS` path that
+doesn't exist was skipped with a bare `continue`, so a relocated or mistyped
+path quietly stopped being enforced — and since `pre-commit` always exits 0,
+that was invisible in every channel. It now prints `WARN | hygiene |
+configured path not found: <path>`, for `PER_ENTRY_FILE` as well. The exit
+code is deliberately untouched: the hook is advisory by design, and a project
+midway through a migration must not have its commits blocked by it. The test
+fixture now stubs out every configured path (otherwise the new WARN would
+pollute the existing tests' output assertions) and imports `FILE_CAPS` from
+the hook, so it stays in sync if the table changes.
+
+**Setup fails loudly when a hardcoded path table drifts from the manifest.**
+Two modules carry path tables that must agree with `MANIFEST.json` and that
+fail silently when they don't: `check_md_hygiene.py`'s `FILE_CAPS` /
+`PER_ENTRY_FILE`, and `check_unavailable_sources.py`'s `SCAN_GLOBS`.
+`preflight()` now parses both and exits with an error naming the offending
+constant and path if an entry is neither a manifest dest nor under a directory
+the harness always generates. The constants are read with `ast.parse` +
+`literal_eval` rather than by importing the modules, since both execute
+repo-root resolution at import time. This turns "a path table drifted" from a
+silent runtime no-op into a setup-time failure.
+
+**`--untrack-legacy`, because `--untrack-harness` is about to stop working.**
+`untrack_harness()` intersects `git ls-files` with `compute_excluded_paths()`.
+After v0.13.0 no manifest entry has a `harness/…` dest at all, so that
+intersection goes empty and the command reports "Nothing to untrack" for
+precisely the migration it exists to perform. `MANIFEST.json` gains a
+top-level `legacy_dests` listing the 40 pre-v0.13.0 `harness/**` dests, and
+`--untrack-legacy` intersects `git ls-files` with that instead. The two
+commands are complementary and both are needed during migration:
+`--untrack-legacy` handles what *moves out* of the project, `--untrack-harness`
+handles what *stays* at the root but should stop being tracked (`.claude/`,
+`.agents/`, the harness-only Docker files). The shared "intersect, then
+`git rm --cached` an explicit file list" logic is factored into one helper,
+preserving every safety property: an explicit list, never `-r`, never a glob,
+never a commit, idempotent.
+
+Note that `legacy_dests` is manifest-derived and therefore structurally cannot
+reach files the manifest never generated — `harness/research/*.md` and
+`harness/running/logs/.gitkeep` among them. Those are handled by hand during
+migration, which is the correct tradeoff: the same property that makes this
+command safe to run unattended is what limits its reach.
+
+**`seed_once` on `README.md`.** The project's own README is now materialized
+only when absent, and left alone thereafter with no output — a diverging
+README is the expected steady state, not drift, so the `SKIP (already
+materialized, differs from fresh render…)` line was noise.
+
+**`.friday/active/` is gitignored ahead of existing, and `harness_sync.sh`
+asserts it.** `cmd_push()` runs `git -C .friday add -A` and pushes to the
+shared harness remote; once v0.13.0 puts per-project live state at
+`.friday/active/`, that ignore rule is the only thing standing between a
+routine `sync push` and leaking one project's state to every other consumer.
+That is too much weight for a single unremarked line, so the rule lands now
+and `cmd_push()` refuses to proceed unless `git check-ignore` confirms it is
+in effect. The probe path is `active/` with a trailing slash, matching the
+dir-only pattern: bare `active` returns "not ignored" while the directory
+doesn't exist and "ignored" once it does, which would have made the guard
+silently vacuous until the very release it exists to protect. The check runs
+as a precondition, before the commit-message prompt.
+
+`git clean -xfd` inside `.friday/` now destroys all harness state, since
+gitignored files are exactly what `-x` sweeps up. Documented in the
+`harness_sync.sh` header.
+
+**`VERSION` was stale at 0.10.0** — it was last bumped in the v0.10.0 commit
+and drifted through v0.10.1, v0.11.0 and v0.12.0. Set to 0.12.1, with a
+maintainer reminder at the top of this file to bump it in the same commit as
+the entry it documents.
+
 ## v0.12.0 (in progress — code landed, docs pending)
 
 Two related changes toward a harness that can be dropped into a project
