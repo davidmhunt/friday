@@ -25,7 +25,6 @@ docs/references/*.pdf
 
 # reference intake staging — raw drops, cleared out by intake_references.py
 docs/references/inbox/*
-!docs/references/inbox/README.md
 # GATE:biblio:end
 
 # GATE:latex:start

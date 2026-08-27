@@ -83,36 +83,6 @@ GIT_MANAGED_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
-# HARNESS_TRACKING controls how much of the harness's footprint gets
-# committed to the consumer repo's history at all, as opposed to living only
-# on disk and being excluded via .git/info/exclude (see write_git_exclude()).
-# Every materialize entry in MANIFEST.json carries a "tier"; every symlinks
-# entry is implicitly "tooling" (see MANIFEST.json's _comment). The value
-# here is the set of tiers EXCLUDED at that tracking level — "project"
-# never appears in any of them, because project-authored content (README,
-# AGENTS.md, docs/RESULTS.md, the Docker build inputs, ...) is never
-# harness-owned churn and must always be visible to `git status`/`git add`.
-TRACKING_TIERS: dict[str, set[str]] = {
-    "full": set(),
-    "tooling": {"tooling"},
-    "state": {"tooling", "state"},
-    "none": {"tooling", "state", "durable"},
-}
-# Default to "tooling", not "state": excluding the derived tooling is pure
-# upside (it's regenerable, and tracking it as symlinks into an optional
-# submodule breaks any clone made without --recurse-submodules), whereas
-# excluding harness STATE trades away cross-machine continuity. status.md and
-# plans/ stay tracked by default; a project that wants a cleaner repo can
-# still opt into "state" or "none" in the interview.
-DEFAULT_HARNESS_TRACKING = "tooling"
-
-# ...unless the project has no task tracker. With one configured, issues are
-# an external durable record that survives harness state being local-only.
-# Without one, excluding harness state would leave the project with NO record
-# of in-flight work that survives a fresh clone, so fall back to tracking
-# everything rather than silently dropping the only copy.
-NO_TRACKER_HARNESS_TRACKING = "full"
-
 # ---------------------------------------------------------------------------
 # Config file I/O
 # ---------------------------------------------------------------------------
@@ -189,6 +159,7 @@ def run_interview(existing: dict[str, str]) -> dict[str, str]:
     if cfg["TRACKER_KIND"] != "none":
         cfg["TRACKER_HOST"] = ask("Tracker host", existing.get("TRACKER_HOST", "gitlab.com" if cfg["TRACKER_KIND"] == "gitlab-issues" else "github.com"))
         cfg["VCS_REMOTE_PROJECT_PATH"] = ask("Project path (org/repo)", existing.get("VCS_REMOTE_PROJECT_PATH", ""))
+    cfg["STATUS_HISTORY_PATH"] = status_history_path_for(cfg)
 
     adapters = []
     if ask_yn("Enable the Claude Code adapter (.claude/)?", True):
@@ -222,37 +193,6 @@ def run_interview(existing: dict[str, str]) -> dict[str, str]:
             "  those are free-text [SET AT SETUP: ...] prose blocks the script can't\n"
             "  infer, same as the Project Overview section in AGENTS.md."
         )
-
-    print(
-        "\nHow much of the harness's own footprint should this project commit\n"
-        "to git, versus leave on disk only (excluded via .git/info/exclude —\n"
-        "never .gitignore, so a project that already ignores broadly doesn't\n"
-        "collide with it)? Tier \"project\" content (README, AGENTS.md,\n"
-        "docs/RESULTS.md, Docker build inputs, ...) is always committed,\n"
-        "regardless of this choice:"
-    )
-    tracking_default = default_tracking_for(cfg)
-    print("  1) full     commit everything")
-    print(f"  2) tooling  exclude generated tooling (role/rule docs, hooks, adapter configs, symlinks)"
-          f"{'  [recommended]' if tracking_default == 'tooling' else ''}")
-    print("  3) state    tooling, plus day-to-day harness state (status.md, tasks_*.md, plans/*.md)")
-    print("  4) none     tooling + state, plus durable harness history (status_history.md, coding/history.md, plans/history.md)")
-    if not _has_task_tracker(cfg):
-        # No external durable record, so excluding harness state would leave
-        # in-flight work with no copy that survives a fresh clone.
-        print("  NOTE: no task tracker configured, so 'full' is recommended here —")
-        print("        options 3 and 4 would leave in-flight work on this machine only.")
-    tracking_choice = ask(
-        "Choice",
-        {"full": "1", "tooling": "2", "state": "3", "none": "4"}.get(
-            existing.get("HARNESS_TRACKING", ""),
-            {"full": "1", "tooling": "2", "state": "3", "none": "4"}[tracking_default],
-        ),
-    )
-    cfg["HARNESS_TRACKING"] = {"1": "full", "2": "tooling", "3": "state", "4": "none"}.get(tracking_choice, tracking_default)
-    if cfg["HARNESS_TRACKING"] in ("state", "none") and not _has_task_tracker(cfg):
-        print("  WARN: harness state will be excluded from git and this project has no")
-        print("        task tracker — in-flight work won't survive a fresh clone.")
 
     # --- Docker (B.1a) ---
     cfg["DOCKER_ENABLED"] = "true" if ask_yn("\nSet up Docker for this project?", True) else "false"
@@ -421,40 +361,28 @@ def adapter_of(entry: dict) -> str | None:
 
 def _has_task_tracker(cfg: dict[str, str]) -> bool:
     # TRACKER_KIND is the interview's own key (none / gitlab-issues /
-    # github-issues), set earlier in run_interview() than HARNESS_TRACKING is,
-    # so it's always populated by the time this is consulted.
+    # github-issues). Used by status_history_path_for() and preflight()'s
+    # tracker-less refusal check.
     tracker = cfg.get("TRACKER_KIND", "").strip().lower()
     return bool(tracker) and tracker != "none"
 
 
-def default_tracking_for(cfg: dict[str, str]) -> str:
-    """The HARNESS_TRACKING default appropriate to this project's config."""
-    return DEFAULT_HARNESS_TRACKING if _has_task_tracker(cfg) else NO_TRACKER_HARNESS_TRACKING
+def status_history_path_for(cfg: dict[str, str]) -> str:
+    """The consumer-repo-root-relative path status_history.md lands at for
+    this project's TRACKER_KIND — see MANIFEST.json's two status_history.md
+    materialize entries (gated on "tracker": "configured" / "none").
 
-
-def resolve_tracking(cfg: dict[str, str]) -> str:
-    """Read HARNESS_TRACKING off cfg, falling back to the default.
-
-    A missing key (config written before this feature existed) falls back
-    quietly — that's just an old project that hasn't opted in yet, not an
-    error. An unrecognized value (hand-edited config, typo) is a real
-    mistake worth flagging, so that one gets a WARN naming the bad value
-    before falling back the same way.
-
-    An EXPLICIT choice is always honoured, including one that excludes
-    harness state on a project with no task tracker: the interview warns
-    about that combination at the point of choosing (see run_interview()),
-    and silently overriding what the config file plainly says would be
-    worse than letting the user own the tradeoff.
+    With a task tracker configured, closed issues are an external durable
+    record, so status_history.md can safely live in the gitignored
+    .friday/active/harness/ tree alongside the rest of the harness's
+    generated state. Without one, that file is the ONLY durable record of
+    finished work that would otherwise survive a fresh clone — see
+    preflight()'s refusal check — so it materializes at docs/status_history.md
+    in the consumer repo instead, owner "project", always tracked.
     """
-    fallback = default_tracking_for(cfg)
-    raw = cfg.get("HARNESS_TRACKING", "")
-    if not raw:
-        return fallback
-    if raw not in TRACKING_TIERS:
-        print(f"  WARN: unrecognized HARNESS_TRACKING={raw!r}, falling back to {fallback!r}")
-        return fallback
-    return raw
+    if _has_task_tracker(cfg):
+        return ".friday/active/harness/status_history.md"
+    return "docs/status_history.md"
 
 
 def resolve_manifest_src(entry: dict) -> Path:
@@ -492,6 +420,36 @@ def dest_base(entry: dict) -> Path:
     raise ValueError(f"unrecognized dest_root {dest_root!r} on manifest entry {entry!r}")
 
 
+def owner_of(entry: dict) -> str:
+    """The "owner" gate on a manifest entry: "harness" (regenerable, excluded
+    from git via .git/info/exclude — see compute_excluded_paths()) or
+    "project" (hand-authored, always tracked). "harness" is the default when
+    the key is absent, since every symlinks entry and most materialize
+    entries are harness-owned derived output — see MANIFEST.json's
+    _comment.
+    """
+    return entry.get("owner", "harness")
+
+
+def tracker_matches(entry: dict, cfg: dict[str, str]) -> bool:
+    """True if this entry's optional "tracker" gate (see MANIFEST.json's
+    _comment) allows it for this project's TRACKER_KIND. "configured" means
+    any tracker other than "none"; "none" means no tracker configured.
+    Entries with no "tracker" key are ungated and always match — this is
+    currently only used by status_history.md's two materialize entries, one
+    per TRACKER_KIND branch.
+    """
+    gate = entry.get("tracker")
+    if gate is None:
+        return True
+    has_tracker = _has_task_tracker(cfg)
+    if gate == "configured":
+        return has_tracker
+    if gate == "none":
+        return not has_tracker
+    raise ValueError(f"unrecognized tracker gate {gate!r} on manifest entry {entry!r}")
+
+
 def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
     enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
@@ -500,6 +458,8 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
         if adapter and adapter not in enabled_adapters:
             continue
         if entry.get("docker") and not docker_enabled:
+            continue
+        if not tracker_matches(entry, cfg):
             continue
         src = resolve_manifest_src(entry).resolve()
         dest = dest_base(entry) / entry["dest"]
@@ -523,15 +483,17 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
                 dest.symlink_to(rel_target)
 
 
-def compute_excluded_paths(manifest: dict, cfg: dict[str, str], tracking: str | None = None) -> list[str]:
-    """The consumer-repo-relative dest paths that HARNESS_TRACKING says
-    should never touch git history, given this project's actual config.
+def compute_excluded_paths(manifest: dict, cfg: dict[str, str]) -> list[str]:
+    """The consumer-repo-relative dest paths that must never touch git
+    history — every repo-rooted entry with "owner": "harness" (the default),
+    given this project's actual config.
 
-    Mirrors the same adapter/docker/accelerators/latex gating sync_symlinks()
-    and materialize_files() apply — a file that config gates off is never
-    created in the first place, so it must never show up in an exclude list
-    either (an exclude pattern for a nonexistent path is at best noise, and
-    at worst masks the fact that the file is missing when it should exist).
+    Mirrors the same adapter/docker/accelerators/latex/tracker gating
+    sync_symlinks() and materialize_files() apply — a file that config gates
+    off is never created in the first place, so it must never show up in an
+    exclude list either (an exclude pattern for a nonexistent path is at
+    best noise, and at worst masks the fact that the file is missing when it
+    should exist).
 
     Only considers `dest_root: "repo"` entries (the default, when absent):
     an "active"-rooted dest lives inside .friday/active/, which is not a
@@ -539,34 +501,30 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str], tracking: str | 
     own .gitignore) — emitting it into .git/info/exclude here would produce
     an entry relative to the consumer repo root that can never match
     anything.
-
-    `tracking` lets a caller that already resolved HARNESS_TRACKING (and
-    already printed its WARN, if the value was bad) pass that result straight
-    through instead of triggering a second, duplicate WARN here.
     """
-    excluded_tiers = TRACKING_TIERS[tracking if tracking is not None else resolve_tracking(cfg)]
     enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
     latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
 
     paths: list[str] = []
-    if "tooling" in excluded_tiers:
-        # Every symlinks entry is implicitly tier "tooling" — see
-        # MANIFEST.json's _comment.
-        for entry in manifest["symlinks"]:
-            if entry.get("dest_root", "repo") != "repo":
-                continue
-            adapter = adapter_of(entry)
-            if adapter and adapter not in enabled_adapters:
-                continue
-            if entry.get("docker") and not docker_enabled:
-                continue
-            paths.append(entry["dest"])
+    # Every symlinks entry is harness-owned by construction — a link straight
+    # into the .friday/ submodule is never hand-edited in the consumer repo.
+    for entry in manifest["symlinks"]:
+        if entry.get("dest_root", "repo") != "repo":
+            continue
+        adapter = adapter_of(entry)
+        if adapter and adapter not in enabled_adapters:
+            continue
+        if entry.get("docker") and not docker_enabled:
+            continue
+        if not tracker_matches(entry, cfg):
+            continue
+        paths.append(entry["dest"])
     for entry in manifest["materialize"]:
         if entry.get("dest_root", "repo") != "repo":
             continue
-        if entry.get("tier") not in excluded_tiers:
+        if owner_of(entry) != "harness":
             continue
         adapter = adapter_of(entry)
         if adapter and adapter not in enabled_adapters:
@@ -576,6 +534,8 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str], tracking: str | 
         if entry.get("accelerators") and not accelerators_enabled:
             continue
         if entry.get("latex") and not latex_enabled:
+            continue
+        if not tracker_matches(entry, cfg):
             continue
         paths.append(entry["dest"])
     return sorted(set(paths))
@@ -609,6 +569,8 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
         if entry.get("accelerators") and not accelerators_enabled:
             continue
         if entry.get("latex") and not latex_enabled:
+            continue
+        if not tracker_matches(entry, cfg):
             continue
         src = resolve_manifest_src(entry)
         dest = dest_base(entry) / entry["dest"]
@@ -878,32 +840,6 @@ def _upsert_managed_block(existing_text: str, block_lines: list[str]) -> str:
     return existing_text + sep + ("\n" if existing_text else "") + new_block
 
 
-def _drop_shadowed_negations(lines: list[str], excluded: set[str]) -> list[str]:
-    """Remove `!path` re-include lines for paths the harness now excludes.
-
-    .gitignore takes precedence over .git/info/exclude — for the SAME path, a
-    negation in .gitignore wins outright. So a fragment line like
-    `!docs/references/inbox/README.md`, which exists to keep the
-    directory's own README tracked, silently defeats the exclude entry for
-    that same file and leaks it back into `git status` at any
-    HARNESS_TRACKING below `full`.
-
-    Dropping the negation here rather than gating it in the fragment keeps
-    this correct automatically as tiers change, and avoids nesting a GATE
-    inside the existing `biblio` gate — GATE_RE.sub() is single-pass, so a
-    nested gate's markers would survive into the rendered output verbatim.
-    """
-    if not excluded:
-        return lines
-    kept: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("!") and stripped[1:].strip().lstrip("/") in excluded:
-            continue
-        kept.append(line)
-    return kept
-
-
 def _warn_shadowing_negations(dest: Path, excluded: set[str]) -> None:
     """Flag `!path` lines OUTSIDE our managed block that defeat the exclude.
 
@@ -937,13 +873,11 @@ def _sync_one_gitfile(
     dest: Path,
     cfg: dict[str, str],
     dry_run: bool,
-    excluded: set[str] | None = None,
 ) -> None:
     if not fragment_path.exists():
         print(f"  WARN: fragment source missing: {fragment_path}")
         return
     desired = _render_gitfile_fragment(fragment_path.read_text(), _active_gitfile_gates(cfg))
-    desired = _drop_shadowed_negations(desired, excluded or set())
     if not desired:
         return  # nothing gated on for this project (e.g. no LaTeX -> no .gitattributes content)
 
@@ -1007,12 +941,13 @@ def sync_git_ignore_attributes(
     inside the managed block is safely regenerated each run (same pattern
     as apply_docker_volumes()'s user-added-volumes block).
 
-    `excluded` is the .git/info/exclude path set; any `!path` negation for a
-    path in it is dropped, since .gitignore would otherwise override the
-    exclude and leak the file back (see _drop_shadowed_negations()).
+    `excluded` is the .git/info/exclude path set, used only to warn about a
+    hand-written `!path` negation elsewhere in the consumer's .gitignore that
+    would defeat one of those exclusions (see _warn_shadowing_negations()) —
+    the fragment itself carries no negations of its own to drop any more.
     """
     _sync_one_gitfile(
-        SUBMODULE_DIR / "setup" / "gitignore.fragment", REPO_ROOT / ".gitignore", cfg, dry_run, excluded
+        SUBMODULE_DIR / "setup" / "gitignore.fragment", REPO_ROOT / ".gitignore", cfg, dry_run
     )
     _warn_shadowing_negations(REPO_ROOT / ".gitignore", excluded or set())
     # .gitattributes carries no negations, so the exclude set is irrelevant there.
@@ -1020,7 +955,7 @@ def sync_git_ignore_attributes(
 
 
 # ---------------------------------------------------------------------------
-# HARNESS_TRACKING: .git/info/exclude + --untrack-harness
+# .git/info/exclude + --untrack-harness
 # ---------------------------------------------------------------------------
 
 
@@ -1043,16 +978,13 @@ def _git_info_exclude_path() -> Path:
 
 
 def write_git_exclude(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
-    """Exclude harness-generated files via .git/info/exclude, never
-    .gitignore. .git/info/exclude is local-only and untracked by design — it
-    never becomes part of the consumer repo's history, so it can't collide
-    with a project's own .gitignore conventions or leak our opinions about
-    what counts as "harness noise" into a commit. This is what makes
-    HARNESS_TRACKING < full possible without asking the project to adopt any
-    new convention of its own.
+    """Exclude harness-owned files (see compute_excluded_paths()) via
+    .git/info/exclude, never .gitignore. .git/info/exclude is local-only and
+    untracked by design — it never becomes part of the consumer repo's
+    history, so it can't collide with a project's own .gitignore conventions
+    or leak our opinions about what counts as "harness noise" into a commit.
     """
-    tracking = resolve_tracking(cfg)
-    excluded = compute_excluded_paths(manifest, cfg, tracking=tracking)
+    excluded = compute_excluded_paths(manifest, cfg)
     exclude_path = _git_info_exclude_path()
     existing_text = exclude_path.read_text() if exclude_path.exists() else ""
     block_lines = [f"/{p}" for p in excluded]
@@ -1060,25 +992,23 @@ def write_git_exclude(manifest: dict, cfg: dict[str, str], dry_run: bool) -> Non
     if block_lines:
         new_text = _upsert_managed_block(existing_text, block_lines)
     else:
-        # HARNESS_TRACKING=full excludes no tier. Unlike
-        # _sync_one_gitfile()'s "leave a stale block alone" rule, a shrinking
-        # exclude set here must actually shrink — otherwise switching a
-        # project from e.g. "state" back to "full" would silently leave
-        # yesterday's exclusions in effect and the promised file would still
-        # never show up in `git status`.
+        # Unlike _sync_one_gitfile()'s "leave a stale block alone" rule, a
+        # shrinking exclude set here must actually shrink — otherwise a
+        # config change (e.g. dropping the Antigravity adapter) would
+        # silently leave yesterday's exclusions in effect.
         new_text = GIT_MANAGED_BLOCK_RE.sub("", existing_text)
 
     if new_text == existing_text:
-        print(f"  {len(excluded)} path(s) excluded at HARNESS_TRACKING={tracking} (no change to {exclude_path})")
+        print(f"  {len(excluded)} path(s) excluded (no change to {exclude_path})")
         return
     verb = "would update" if dry_run else ("update" if exclude_path.exists() else "create")
     print(f"  {verb} {exclude_path}")
     if dry_run:
-        print(f"  {len(excluded)} path(s) would be excluded at HARNESS_TRACKING={tracking}")
+        print(f"  {len(excluded)} path(s) would be excluded")
         return
     exclude_path.parent.mkdir(parents=True, exist_ok=True)
     exclude_path.write_text(new_text)
-    print(f"  {len(excluded)} path(s) excluded at HARNESS_TRACKING={tracking}")
+    print(f"  {len(excluded)} path(s) excluded")
 
 
 def _untrack_paths(candidates: set[str], dry_run: bool, nothing_msg: str, found_label: str) -> None:
@@ -1116,22 +1046,22 @@ def _untrack_paths(candidates: set[str], dry_run: bool, nothing_msg: str, found_
 
 
 def untrack_harness(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
-    """`git rm --cached` every currently-tracked file that HARNESS_TRACKING
-    says should be excluded going forward.
+    """`git rm --cached` every currently-tracked file that
+    compute_excluded_paths() says should be excluded going forward.
 
-    This exists for the project that adopted HARNESS_TRACKING (or lowered
-    it) after already committing some of the harness's generated files —
-    write_git_exclude() only stops NEW commits from picking them up, it
-    can't retroactively drop what's already tracked. Intersecting with the
-    manifest-derived exclude set (never a glob, never a directory) is the
-    safety property that makes this command trustworthy to run unattended:
-    it is structurally incapable of touching a file the manifest doesn't
-    know about, tier "project" included.
+    This exists for a project that committed some harness-owned files before
+    this script's .git/info/exclude handling caught up with them (e.g. an
+    old checkout, or a manual edit) — write_git_exclude() only stops NEW
+    commits from picking them up, it can't retroactively drop what's already
+    tracked. Intersecting with the manifest-derived exclude set (never a
+    glob, never a directory) is the safety property that makes this command
+    trustworthy to run unattended: it is structurally incapable of touching
+    a file the manifest doesn't know about, "owner": "project" entries
+    included.
     """
-    tracking = resolve_tracking(cfg)
-    excluded = set(compute_excluded_paths(manifest, cfg, tracking=tracking))
+    excluded = set(compute_excluded_paths(manifest, cfg))
     if not excluded:
-        print(f"  Nothing to untrack — HARNESS_TRACKING={tracking} excludes no tier.")
+        print("  Nothing to untrack — no harness-owned path is excluded for this config.")
         return
     _untrack_paths(
         excluded, dry_run,
