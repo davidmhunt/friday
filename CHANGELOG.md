@@ -235,12 +235,10 @@ and drifted through v0.10.1, v0.11.0 and v0.12.0. Set to 0.12.1, with a
 maintainer reminder at the top of this file to bump it in the same commit as
 the entry it documents.
 
-## v0.12.0 (in progress — code landed, docs pending)
+## v0.12.0
 
 Two related changes toward a harness that can be dropped into a project
-without committing itself to that project's repo. **The documentation pass
-for both is not written yet**, and no project has been untracked yet — see
-"Remaining" below.
+without committing itself to that project's repo.
 
 **HARNESS_TRACKING: the harness can exclude its own files from git.**
 Tracking harness output as symlinks into an optional submodule was already
@@ -296,12 +294,11 @@ carry a Node runtime it will never use. `.dockerignore` is now materialized
 rather than symlinked, since as a symlink it dangled without the submodule
 and broke the build itself.
 
-**Remaining for v0.12.0:** the documentation pass (USER_GUIDE section on
-the tiers, §12 rewrite for the dev/harness split, README tables, SETUP.md,
-`version_control.md`, a `HARNESS.md` pointer doc, and making `harness.sh`
-explain itself when the submodule is missing), then running
-`--untrack-harness` on a real project and verifying a fresh clone made
-without `--recurse-submodules` is fully functional.
+The documentation debt this release originally left open (USER_GUIDE's
+Docker section, README's tables, SETUP.md) was folded into v0.14.0's
+documentation pass against the final `.friday/templates/` + `active/`
+layout, rather than written twice against a layout v0.13.0 was already
+about to replace.
 
 ## v0.11.0
 

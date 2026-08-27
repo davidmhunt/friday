@@ -133,6 +133,7 @@
     { "src": "docs/report/README.md.tmpl", "dest": "docs/report/README.md", "latex": true, "owner": "project" },
     { "src": "AGENTS.md.tmpl", "dest": "AGENTS.md", "owner": "project" },
     { "src": "README.md.tmpl", "dest": "README.md", "owner": "project", "seed_once": true },
+    { "src": "harness.sh.tmpl", "dest": "harness.sh", "dest_root": "repo", "owner": "project", "seed_once": true },
     { "src": "adapters/claude/settings.json.tmpl", "dest": ".claude/settings.json" },
     { "src": "adapters/antigravity/hooks.json.tmpl", "dest": ".agents/hooks.json", "adapter": "antigravity" },
     { "src": "docker/docker-compose.yml.tmpl", "dest": "docker/docker-compose.yml", "docker": true, "owner": "project" },

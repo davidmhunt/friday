@@ -172,17 +172,28 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 No new question here shapes the image itself — `docker/Dockerfile`,
 `docker/entrypoint.sh` and `docker/antigravity_settings.json` are rendered
 from answers already collected earlier in this interview: `PACKAGE_MANAGER`
-(§3) picks the package-manager install block, `ADAPTERS_ENABLED` (§6) picks
-which agent CLI(s) get installed and auto-launched,
-`LATEX_DRAFTING_ENABLED` (§9) gates the LaTeX toolchain, and
-`ACCELERATORS_ENABLED` (§4) gates the GPU reservation in
-`docker/docker-compose.yml`.
+(§3) picks the package-manager install block (in the Dockerfile's `dev`
+stage), `ADAPTERS_ENABLED` (§6) picks which agent CLI(s) get installed (in
+the `harness` stage) and auto-launched, `LATEX_DRAFTING_ENABLED` (§9)
+gates the LaTeX toolchain (`dev` stage), and `ACCELERATORS_ENABLED` (§4)
+gates the GPU reservation in `docker/docker-compose.yml`, the project-owned
+base compose file.
 
-Each adapter is gated symmetrically across both files: enabling `claude`
-adds its CLI, its `claude-config` volume and its `~/.claude` mount point;
-enabling `antigravity` adds its CLI, its `gemini-config` volume, the
-pre-seeded `docker/antigravity_settings.json`, and the
-`ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables.
+`init_harness.py` also renders `docker/docker-compose.harness.yml` — a
+gitignored Compose override, never committed by this or any consumer
+project — and writes `COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.harness.yml`
+into the gitignored root `.env`, so a plain `docker compose up -d` picks
+up both files for anyone who ran this interview. Everything agent-CLI-
+specific lives in that override, never in the base file, so a teammate who
+clones this repo without the `.friday/` submodule still gets a working,
+agent-tooling-free container from `docker/docker-compose.yml` alone. Each
+adapter is gated symmetrically within it: enabling `claude` adds its CLI
+(Dockerfile `harness` stage), its `claude-config` volume and its
+`~/.claude` mount point (compose override); enabling `antigravity` adds
+its CLI, its `gemini-config` volume, the pre-seeded
+`docker/antigravity_settings.json`, and the
+`ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables — also
+in the override.
 
 > **Worth telling the user about, if Docker and the Antigravity adapter are
 > both on:** those two environment variables put `command_guard.py` into
@@ -190,7 +201,8 @@ pre-seeded `docker/antigravity_settings.json`, and the
 > not — an agent runs unattended. Because `docker/docker-compose.yml` also
 > bind-mounts the repo and forwards the host `ssh-agent`, that's a real
 > posture change, not just a convenience. See USER_GUIDE.md §5; it can be
-> turned off by deleting the two `environment:` entries.
+> turned off by deleting the two `environment:` entries from
+> `docker/docker-compose.harness.yml`.
 
 ## 8. Detached background jobs
 

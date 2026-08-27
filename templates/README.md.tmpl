@@ -20,16 +20,19 @@ template can't pre-fill it, only hold its place.]
 ├── docs/
 │   └── research/                # Verified literature research memos (tracked, survives the harness)
 ├── .agents/ / .claude/          # Agent hooks, command guards, and subagent adapters
+├── docker/                      # Docker build inputs (Dockerfile, compose files, entrypoint)
 ├── .friday/                     # Portable harness submodule
-│   └── active/harness/          # Generated harness state (gitignored inside the submodule)
-│       ├── USER_GUIDE.md        # Comprehensive operator manual (start here!)
-│       ├── harness.md           # Core loop rules and invariant definitions
-│       ├── status.md            # Living dashboard of active directives & background jobs
-│       ├── status_history.md    # Append-only permanent ledger of completed directives
-│       ├── plans/               # Planner directives (next_steps.md, suggestions.md, goals.md)
-│       ├── roles/               # Role definition contracts (Planner, Controller, Reviewer, etc.)
-│       ├── rules/               # On-demand rule specification details
-│       └── tools/               # Reference ingestion, verification, and linting scripts
+│   ├── templates/                 # Harness template sources (tracked, shared across projects)
+│   └── active/harness/            # This project's generated harness state (gitignored inside the submodule)
+│       ├── USER_GUIDE.md            # Comprehensive operator manual (start here!)
+│       ├── harness.md                # Core loop rules and invariant definitions
+│       ├── status.md                 # Living dashboard of active directives & background jobs
+│       ├── status_history.md         # Append-only permanent ledger of completed directives
+│       ├── plans/                    # Planner directives (next_steps.md, suggestions.md, goals.md)
+│       ├── roles/                    # Role definition contracts (Planner, Controller, Reviewer, etc.)
+│       ├── rules/                    # On-demand rule specification details
+│       └── tools/                    # Reference ingestion, verification, and linting scripts
+├── harness.sh                   # Wrapper for `.friday/setup/harness_sync.sh` (push/pull harness edits)
 └── AGENTS.md                    # Agent root index loaded into AI sessions
 ```
 
@@ -69,30 +72,45 @@ This project uses `[SET AT SETUP: PACKAGE_MANAGER]` for dependency/environment m
 <!-- SECTION:docker_quickstart:start -->
 ### Docker Dev Container
 
-This project runs its agent tooling inside a container. The bind-mounted
-project directory is your host filesystem, mounted at
-`/[SET AT SETUP: PROJECT_NAME_LOWER]`; named volumes keep auth and caches
-across restarts. The image follows this project's own `harness.config.env`
-(package manager, agent CLI, LaTeX, GPU) — after re-running
-`init_harness.py` to reconfigure, run the `build` command below again to
-pick up a changed `docker/Dockerfile`. The container starts a plain shell;
-[herdr](https://herdr.dev), a terminal workspace manager for AI coding
-agents, is installed unconditionally alongside whichever agent CLI(s) this
-project enabled — run `herdr` by hand from that shell when you want it. See
-`.friday/active/harness/USER_GUIDE.md` §12 for the full workflow, including reconfiguring
-mounts.
+Docker builds in two stages: `dev` (base packages, LaTeX, the package
+manager, [herdr](https://herdr.dev)'s terminal workspace manager — no agent
+CLI) and `harness`, which layers Claude Code / Antigravity on top of `dev`.
+This split means the container works two different ways depending on
+whether you have the `.friday/` submodule checked out.
 
-Every Docker input lives in `docker/`, so Compose needs `-f` to find its
-file:
+**With the submodule, after running `init_harness.py`:** setup wrote
+`COMPOSE_FILE=docker/docker-compose.yml:docker/docker-compose.harness.yml`
+into the gitignored root `.env`, so plain `docker compose` commands pick up
+both files (the base `dev` service plus the harness override — agent config
+volumes, `target: harness`) automatically:
 
 ```bash
-docker compose -f docker/docker-compose.yml build            # build the image
-docker compose -f docker/docker-compose.yml up -d            # start the container, detached
-docker compose -f docker/docker-compose.yml attach harness   # attach to the container's shell
+docker compose build            # build the image
+docker compose up -d            # start the container, detached
+docker compose attach harness   # attach to the container's shell
 # or, from another terminal (independent of the container's main process):
-docker compose -f docker/docker-compose.yml exec harness bash
-docker compose -f docker/docker-compose.yml down             # stop it (project dir untouched)
+docker compose exec harness bash
+docker compose down             # stop it (project dir untouched)
 ```
+
+**Without the submodule** (e.g. a teammate who cloned without
+`--recurse-submodules`, or never ran setup): there is no root `.env`, so
+Compose falls back to just the base file and gets a working `dev` container
+with no agent tooling on it. Point Compose at it explicitly with `-f`:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
+
+Either way, the bind-mounted project directory is your host filesystem,
+mounted at `/[SET AT SETUP: PROJECT_NAME_LOWER]`; named volumes keep auth
+and caches across restarts. The image follows this project's own
+`harness.config.env` (package manager, agent CLI, LaTeX, GPU) — after
+re-running `init_harness.py` to reconfigure, run `build` again to pick up a
+changed `docker/Dockerfile`. The container starts a plain shell; herdr is
+installed unconditionally — run `herdr` by hand from that shell when you
+want it. See `.friday/active/harness/USER_GUIDE.md` §12 for the full
+workflow, including reconfiguring mounts.
 <!-- SECTION:docker_quickstart:end -->
 <!-- SECTION:latex_on:start -->
 ### LaTeX Document Compilation

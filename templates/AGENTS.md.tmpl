@@ -5,6 +5,17 @@ session, so it stays lean — detail lives in on-demand docs. **Load only what
 your task needs, per this index:**
 
 > [!NOTE]
+> This repo has two kinds of content. `docs/`, source, tests and this file
+> are project content, tracked in the project's own repo — they must keep
+> making sense after the harness is removed. `.friday/` is the harness
+> itself: `.friday/templates/` is the portable submodule (tracked, shared
+> across every project that uses it), and `.friday/active/` is this
+> project's generated, local-only harness working state (gitignored inside
+> the submodule — see below). Don't confuse harness working state with
+> project content: a directive spec or a status dashboard is disposable
+> scaffolding, not something the project's history depends on.
+
+> [!NOTE]
 > `.friday/active/` lives inside the `.friday` git submodule and is
 > gitignored *there* (it's generated, per-project state, not part of the
 > friday repo's own history). A git-ignore-respecting search — `git grep`,
@@ -56,7 +67,7 @@ shared, not private to one session.
   issues. Read it at session start; update it on real progress, directive
   pickup/handoff, job start/finish, or blockers — it must reflect current
   reality. Keep entries terse; link to your results doc or the relevant
-  script/output instead of duplicating detail. `.friday/active/harness/status_history.md`
+  script/output instead of duplicating detail. `[SET AT SETUP: STATUS_HISTORY_PATH]`
   holds the same directive's record once the Reviewer closes it (rows move
   there, not deleted) — check it for the outcome of past directives.
   `.friday/active/harness/plans/directives/<ID>.md` is gitignored (except `TEMPLATE.md`)
@@ -76,7 +87,7 @@ shared, not private to one session.
 | Dir | Contents |
 |-----|----------|
 | [SET AT SETUP: fill in this project's own top-level dirs and what lives in each — e.g. `src/`, `notebooks/`, `docs/`, `data/`] | |
-| `.friday/active/harness/` | Multi-agent harness: core rules, role definitions, per-rule detail docs, the live dashboard (`status.md` + `status_history.md`), and the role working folders (`plans/`, `coding/`, `running/`, `review/`). |
+| `.friday/active/harness/` | Multi-agent harness: core rules, role definitions, per-rule detail docs, the live dashboard (`status.md` + `status_history.md`, unless `[SET AT SETUP: STATUS_HISTORY_PATH]` points elsewhere), and the role working folders (`plans/`, `coding/`, `running/`, `review/`). |
 | `docs/research/` | The Researcher's memos — tracked project content, not part of the `.friday/` submodule's generated output. |
 
 Conventions: all paths relative to the repo root

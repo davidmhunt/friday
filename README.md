@@ -123,12 +123,9 @@ an upstream change down:
 `harness.sh` is a thin project-owned wrapper around
 `.friday/setup/harness_sync.sh` (kept outside `.friday/` itself since it's
 the one entry point a project's own shell history/aliases would reference).
-Add it once, per project:
-
-```bash
-printf '#!/usr/bin/env bash\nexec "$(dirname "$0")/.friday/setup/harness_sync.sh" "$@"\n' > harness.sh
-chmod +x harness.sh
-```
+`init_harness.py` generates and makes it executable for you as part of the
+normal setup/sync run described above — there's no separate step to add it
+by hand.
 
 ## Porting a local harness change to every project that uses it
 
@@ -148,11 +145,12 @@ the consumer repo — repeat the pull half in each other project.
 
 ## What's symlinked vs. materialized in a consumer project
 
-`MANIFEST.json` is the single source of truth for this — every path below
-is a literal `dest` entry there, and `sync_symlinks()` /
-`materialize_files()` in `setup/init_harness.py` are what actually create
-them. This section is a human-readable rendering of that manifest, grouped
-by directory; if the two ever disagree, `MANIFEST.json` is authoritative.
+`MANIFEST.json` (`MANIFEST_VERSION: 2`) is the single source of truth for
+this — every path below is a literal `dest` entry there, and
+`sync_symlinks()` / `materialize_files()` in `setup/init_harness.py` are
+what actually create them. This section is a human-readable rendering of
+that manifest, grouped by directory; if the two ever disagree,
+`MANIFEST.json` is authoritative.
 
 ### Symlinked (shared — edit in `.friday/`, every project sees it next pull)
 
