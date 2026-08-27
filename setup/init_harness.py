@@ -843,12 +843,13 @@ def _upsert_managed_block(existing_text: str, block_lines: list[str]) -> str:
 def _warn_shadowing_negations(dest: Path, excluded: set[str]) -> None:
     """Flag `!path` lines OUTSIDE our managed block that defeat the exclude.
 
-    _drop_shadowed_negations() can only filter lines this script is about to
-    render into its own managed block. A project that hand-installed the
-    harness, or that ran a version predating the managed block, has those
-    negations sitting in .gitignore as ordinary user content — and
-    _sync_one_gitfile() deliberately never rewrites anything outside the
-    block, since that content may be the user's own.
+    This script's own managed block never contains a `!path` negation (the
+    gitignore fragment doesn't emit any), so there's nothing to filter on
+    the way in. A project that hand-installed the harness, or that ran a
+    version predating the managed block, may still have such negations
+    sitting in .gitignore as ordinary user content — and _sync_one_gitfile()
+    deliberately never rewrites anything outside the block, since that
+    content may be the user's own.
 
     So warn rather than edit: silently deleting a line someone wrote by hand
     is worse than telling them it's there. Without this the failure is
@@ -1244,6 +1245,55 @@ def preflight() -> dict:
     return manifest
 
 
+def check_status_history_not_gitignored(cfg: dict[str, str]) -> None:
+    """Refuse to proceed if TRACKER_KIND is "none" but the resolved
+    status_history.md destination is inside .friday/active/ — the
+    consumer-repo-root-relative safety property status_history_path_for()'s
+    docstring describes, checked here where cfg actually exists.
+
+    .friday/active/ is gitignored and lives only in this local submodule
+    checkout: it is tracked by neither the consumer repo (excluded via
+    .git/info/exclude) nor the submodule's own history (it's generated
+    state, not committed there either). With a task tracker configured,
+    that's fine — closed issues are the durable external record of finished
+    work. Without one, status_history.md IS that record, so if it landed in
+    active/ anyway, a fresh clone would have no record of completed work at
+    all.
+
+    This can't happen via the normal interview path — run_interview() /
+    the STATUS_HISTORY_PATH-derivation fallback in main() always resolve a
+    "none" TRACKER_KIND to docs/status_history.md. It can happen if
+    harness.config.env is hand-edited (TRACKER_KIND flipped to "none"
+    without a full re-materialize), leaving a stale
+    .friday/active/harness/status_history.md value behind from when a
+    tracker was configured.
+
+    Tolerates a first-run project with no config yet — cfg is `{}` before
+    the interview has run, so there's nothing to check.
+    """
+    if not cfg:
+        return
+    tracker = cfg.get("TRACKER_KIND", "").strip().lower()
+    if tracker and tracker != "none":
+        return
+    path = cfg.get("STATUS_HISTORY_PATH") or status_history_path_for(cfg)
+    if path.startswith(".friday/active/"):
+        print(
+            "Refusing to proceed: TRACKER_KIND=none, but STATUS_HISTORY_PATH "
+            f"resolves to {path!r} — inside .friday/active/, which is "
+            "gitignored and lives only in this local submodule checkout, "
+            "tracked by neither this repo nor the submodule's own history.\n\n"
+            "Without a task tracker configured, status_history.md is the ONLY "
+            "durable record of finished work; a fresh clone would have no "
+            "record of it at all.\n\n"
+            "This usually means harness.config.env was hand-edited (TRACKER_KIND "
+            "changed without re-running setup to re-derive STATUS_HISTORY_PATH). "
+            "Delete the STATUS_HISTORY_PATH line from harness.config.env and "
+            "re-run this script — it will re-derive it to docs/status_history.md."
+        )
+        sys.exit(1)
+
+
 def closing_checklist(cfg: dict[str, str]) -> None:
     print("\n=== Closing checklist ===")
     leftovers = []
@@ -1332,6 +1382,26 @@ def main() -> int:
     else:
         cfg = existing
         print("Existing harness.config.env found — re-syncing (pass --reconfigure to re-run the interview).")
+
+    # Checked here, not inside preflight() — preflight() runs before
+    # load_config() (it has to: it's what validates the submodule/manifest
+    # even exist) and so has no cfg to inspect yet. See
+    # check_status_history_not_gitignored()'s docstring for what this guards
+    # against.
+    check_status_history_not_gitignored(cfg)
+
+    # run_interview() sets STATUS_HISTORY_PATH itself (it needs TRACKER_KIND,
+    # which it just asked about), but a config written by a version of this
+    # script that predates that key skips the interview entirely on re-run
+    # (the `cfg = existing` branch above) and would otherwise carry the key
+    # forward as permanently absent — leaving render()'s
+    # `[SET AT SETUP: STATUS_HISTORY_PATH]` token unsubstituted in every
+    # generated role doc that references it. Deriving it here, unconditionally
+    # whenever it's missing, covers that path too.
+    if "STATUS_HISTORY_PATH" not in cfg:
+        cfg["STATUS_HISTORY_PATH"] = status_history_path_for(cfg)
+        if not args.dry_run:
+            write_config(cfg)
 
     print("\n=== Symlinks ===")
     sync_symlinks(manifest, cfg, args.dry_run)

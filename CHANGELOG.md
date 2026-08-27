@@ -5,6 +5,76 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.14.0
+
+Closes out the restructure: the tier system that v0.13.0 made redundant is
+deleted, the Reviewer's close-out contract is restated for a world where
+harness state and code live in different repos, and the one configuration that
+would silently lose a project's record of finished work is now refused.
+
+**The Reviewer commits project content only.** Until v0.13.0 a close-out was
+one commit carrying both the code and the harness state explaining it, so the
+project's history was self-describing. Now the state sits in gitignored
+`.friday/active/` and the commit carries only code. `version_control.md`'s
+first invariant — "the record is a git commit, referenced by its hash" —
+becomes "a commit hash **or**, when the pass produced no project-repo diff,
+the literal `no code changes`". A new section pins down what gets staged:
+source, tests and `docs/`, via `git commit -- . ':!.friday'` so a submodule
+pointer bump never rides inside a `Reviewer:` commit — that is a legitimate
+change but belongs in its own `Harness:` commit.
+
+The commit message carries the durable record instead. `check_commit_msg.py`
+now requires a `Reviewer:` commit to name a directive and a tracker reference
+(or the literal `no tracker`). It reads the whole message rather than the
+first line, and strips git's trailing `#` comment block first — without that,
+refs appearing only in the commented-out diff summary would count as a pass.
+It stays warn-only and reads no config: `commit-msg` is symlinked into
+`.git/hooks`, and a blocking hook that misfires mid-migration would strand the
+Reviewer with no escape hatch.
+
+**Four tiers collapse to one field.** `HARNESS_TRACKING` (`full`/`tooling`/
+`state`/`none`) existed to decide how much harness output a consumer repo
+should track. With almost nothing generated into that repo, the only question
+left for a repo-rooted entry is who owns the file, so `tier` becomes
+`owner` (`harness` or `project`), and `TRACKING_TIERS`,
+`DEFAULT_HARNESS_TRACKING`, `NO_TRACKER_HARNESS_TRACKING`, `resolve_tracking`,
+`default_tracking_for`, `_has_task_tracker` and the interview question all go.
+`compute_excluded_paths()` becomes "repo-rooted and harness-owned".
+
+`_drop_shadowed_negations()` goes too, but only after removing the last
+negation it existed to handle. `!docs/references/inbox/README.md` had been
+kept to keep that README tracked — but it is a symlink into `.friday`, so it
+would dangle in a clone made without `--recurse-submodules`. It should never
+have been tracked. `_warn_shadowing_negations()` stays: it still guards
+negations a project writes by hand in its own `.gitignore`.
+
+**The tracker-less unversioned configuration is now refused.** With a tracker,
+issues are an external durable record and harness state can be disposable.
+With `TRACKER_KIND=none` and `status_history.md` in gitignored `active/`, a
+project's finished work would have no record surviving a fresh clone — exactly
+what the just-deleted `NO_TRACKER_HARNESS_TRACKING = "full"` prevented.
+
+Refusing `TRACKER_KIND=none` outright was the wrong fix: it is the interview's
+default, so it would lock out every fresh solo project. The unsafe
+*configuration* is refused instead. A new `tracker` manifest gate gives
+`status_history.md` two entries — with a tracker it materializes to
+`.friday/active/harness/`, without one to `docs/status_history.md`, tracked in
+the project repo. A new `STATUS_HISTORY_PATH` token keeps the role docs
+pointing at whichever applies, and `init_harness.py` exits with an explanation
+if the two ever disagree. The invariant that finished work always has a record
+surviving a fresh clone now holds for every project, rather than depending on
+a config default nobody reads.
+
+`STATUS_HISTORY_PATH` is derived whenever it is missing, not only during the
+interview: an existing project skips the interview entirely, and `render()`
+leaves unknown tokens verbatim, so without that fallback an upgrading project
+would have shipped role docs containing a literal `[SET AT SETUP: ...]`
+string.
+
+The durability note in `version_control.md` is gated per tracker for the same
+reason — "tracked by neither repo" is true with a tracker and false without
+one, where the file is deliberately project-tracked and IS the source of truth.
+
 ## v0.13.0
 
 The harness no longer installs itself into the project it serves. Everything

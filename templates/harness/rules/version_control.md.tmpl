@@ -13,7 +13,7 @@ Whatever system you use, three things must be true:
    when the pass produced no project-repo diff (review-only, a bounce-back,
    a decision with no code to show for it), the literal token
    `no code changes`. Either way, that reference is recorded in two places:
-   `.friday/active/harness/status_history.md` and next to the task in
+   `[SET AT SETUP: STATUS_HISTORY_PATH]` and next to the task in
    `.friday/active/harness/coding/tasks_finished.md`.
 2. **The record is attributable to the role that did the work.** Two agents'
    changes must never sit mingled in one unrecorded blob — an
@@ -137,13 +137,37 @@ merges and `fixup!`/`squash!` commits. It runs two checks:
 
 ## Durability note
 
-`status_history.md` (like the rest of `.friday/active/`) is tracked by
-**neither** the project repo nor `.friday` — a fresh clone of either will
-never have it. Treat it as a convenience index, not a source of truth: the
-genuinely durable carriers of a close-out are the **commit message** (this
-file's format above) and the **tracker issue**, both of which live in
-systems that survive a clone. A future reader reconstructing history should
-follow commit hashes and tracker references, not `status_history.md`.
+<!-- SECTION:tracker_none:start -->
+This project has no task tracker configured, so
+`[SET AT SETUP: STATUS_HISTORY_PATH]` is deliberately kept in the project
+repo rather than in `.friday/active/` — with no tracker, it is the ONLY
+record of finished work that survives a fresh clone, so it must be tracked.
+Setup refuses to run any configuration that would put it anywhere else (see
+`check_status_history_not_gitignored()` in `init_harness.py`).
+
+It is therefore a real source of truth here, and commits that change it
+belong in the same `Reviewer:` commit as the work they describe.
+<!-- SECTION:tracker_none:end -->
+<!-- SECTION:tracker_gitlab:start -->
+`[SET AT SETUP: STATUS_HISTORY_PATH]` (like the rest of `.friday/active/`)
+is tracked by **neither** the project repo nor `.friday` — a fresh clone of
+either will never have it. Treat it as a convenience index, not a source of
+truth: the genuinely durable carriers of a close-out are the **commit
+message** (this file's format above) and the **tracker issue**, both of
+which live in systems that survive a clone. A future reader reconstructing
+history should follow commit hashes and tracker references, not
+`status_history.md`.
+<!-- SECTION:tracker_gitlab:end -->
+<!-- SECTION:tracker_github:start -->
+`[SET AT SETUP: STATUS_HISTORY_PATH]` (like the rest of `.friday/active/`)
+is tracked by **neither** the project repo nor `.friday` — a fresh clone of
+either will never have it. Treat it as a convenience index, not a source of
+truth: the genuinely durable carriers of a close-out are the **commit
+message** (this file's format above) and the **tracker issue**, both of
+which live in systems that survive a clone. A future reader reconstructing
+history should follow commit hashes and tracker references, not
+`status_history.md`.
+<!-- SECTION:tracker_github:end -->
 
 ## Remote
 
