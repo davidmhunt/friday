@@ -17,9 +17,6 @@ an authoritative table somewhere mechanical if you build a checker):
 - `.friday/active/harness/coding/tasks_working.md` ≤250
 - `.friday/active/harness/coding/tasks_finished.md` ≤200 (current + prior cycle in full,
   older trimmed to `[hash] task — DONE`)
-- `docs/references/needs_pdf.md` ≤150 (rows pruned automatically by
-  `.friday/active/harness/tools/intake_references.py` as they resolve; a "Confirmed
-  unavailable" row that's grown stale should be revisited, not just left)
 
 History files (`.friday/active/harness/plans/history.md`, `.friday/active/harness/coding/history.md`,
 `.friday/active/harness/status_history.md`) are append-only logs and EXEMPT from caps.

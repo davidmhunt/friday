@@ -8,6 +8,25 @@ import unittest
 import command_guard
 from command_guard import build_dynamic_patterns, evaluate_command_line
 
+# The config the evaluate_command_line() policy tests below are written
+# against. These tests used to read command_guard's module-level pattern
+# lists, which are built at import time from whatever harness.config.env
+# happens to sit above the checkout — so the suite asserted one project's
+# policy while running under another's. On this repo that surfaced as a bare
+# `pytest` force-asking (TEST_CMD carries an env prefix) and would have
+# surfaced next as `latexmk` denying (LATEX_DRAFTING_ENABLED=false); the
+# loop simply aborted on the first case and hid the second.
+PINNED_CONFIG = {
+    "PACKAGE_MANAGER": "uv",
+    "PACKAGE_MANAGER_SYNC_CMD": "uv sync",
+    "PACKAGE_MANAGER_RUN_CMD": "uv run",
+    "PACKAGE_MANAGER_ADD_CMD": "uv add",
+    # Deliberately carries an env-var prefix: the bare-runner derivation has
+    # to see through it, or `pytest` stops being auto-allowed.
+    "TEST_CMD": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest",
+    "LATEX_DRAFTING_ENABLED": "true",
+}
+
 
 class TestCommandGuard(unittest.TestCase):
 
@@ -43,9 +62,10 @@ class TestCommandGuard(unittest.TestCase):
             "ls -la && uv run pytest",
             "cat file.txt | grep pattern",
         ]
-        for cmd in allow_cases:
-            res = evaluate_command_line(cmd, in_container=False)
-            self.assertEqual(res.get("decision"), "allow", f"Expected allow for: {cmd}, got {res}")
+        with _PatchedPatterns(PINNED_CONFIG):
+            for cmd in allow_cases:
+                res = evaluate_command_line(cmd, in_container=False)
+                self.assertEqual(res.get("decision"), "allow", f"Expected allow for: {cmd}, got {res}")
 
     def test_force_ask_commands(self):
         ask_cases = [
@@ -69,9 +89,10 @@ class TestCommandGuard(unittest.TestCase):
             # Chained with ask
             "git status && git commit -m 'msg'",
         ]
-        for cmd in ask_cases:
-            res = evaluate_command_line(cmd, in_container=False)
-            self.assertEqual(res.get("decision"), "force_ask", f"Expected force_ask for: {cmd}, got {res}")
+        with _PatchedPatterns(PINNED_CONFIG):
+            for cmd in ask_cases:
+                res = evaluate_command_line(cmd, in_container=False)
+                self.assertEqual(res.get("decision"), "force_ask", f"Expected force_ask for: {cmd}, got {res}")
 
     def test_deny_commands(self):
         deny_cases = [
@@ -109,21 +130,20 @@ class _PatchedPatterns:
     filesystem/cwd. Restores the original patterns on exit.
     """
 
-    _GENERIC_ALLOW = [
-        r"^git\s+(status|diff|log|show|branch|rev-parse|describe|remote|ls-files|check-ignore|check-attr|version)(\s+.*)?$",
-        r"^curl\s+.*$",
-        r"^(ls|dir|pwd|cat|head|tail|grep|rg|find|which|whereis|echo|diff|colordiff|wc|sort|uniq|cut|awk|tree|file|stat|du|df|env|printenv|uname|whoami|date|uptime)(\s+.*)?$",
-        r"^(python|python3|jupyter|node|git|latexmk)\s+(--version|-V|-v)$",
-    ]
-    _GENERIC_FORCE_ASK = [
-        (r"\bgit\s+(commit|push|checkout|switch|reset|stash|merge|rebase|tag|cherry-pick|revert)\b", "Git branch/remote state modification requires confirmation."),
-        (r"\b(systemd-run|setsid)\b", "Launching detached/background service requires confirmation."),
-        (r"\bpip\s+(install|uninstall)\b", "Package installation/removal requires confirmation."),
-        (r"\b(rm|unlink|rmdir)\b", "File deletion requires confirmation."),
-        (r"\bmv\b", "Moving or renaming files requires confirmation."),
-        (r"\b(kill|pkill|killall)\b", "Terminating processes requires confirmation."),
-        (r"\bsed\s+-i", "In-place file modification via sed requires confirmation."),
-    ]
+    # The config-independent half of each list, recovered by trimming the
+    # extras command_guard appended at import time. Previously these were
+    # hand-copied literals, which is the same drift trap the hooks' other
+    # duplicated tables have: editing a base pattern in command_guard.py
+    # left the copy here stale and the tests asserting a policy that no
+    # longer existed.
+    @staticmethod
+    def _base_lists():
+        allow = command_guard.ALLOW_COMMAND_PATTERNS
+        force_ask = command_guard.FORCE_ASK_PATTERNS
+        return (
+            allow[: len(allow) - len(command_guard._EXTRA_ALLOW_PATTERNS)],
+            force_ask[: len(force_ask) - len(command_guard._EXTRA_FORCE_ASK_PATTERNS)],
+        )
 
     def __init__(self, config: dict):
         self.config = config
@@ -132,8 +152,9 @@ class _PatchedPatterns:
         self._orig_allow = command_guard.ALLOW_COMMAND_PATTERNS
         self._orig_force_ask = command_guard.FORCE_ASK_PATTERNS
         extra_allow, extra_force_ask = build_dynamic_patterns(self.config)
-        command_guard.ALLOW_COMMAND_PATTERNS = self._GENERIC_ALLOW + extra_allow
-        command_guard.FORCE_ASK_PATTERNS = self._GENERIC_FORCE_ASK + extra_force_ask
+        base_allow, base_force_ask = self._base_lists()
+        command_guard.ALLOW_COMMAND_PATTERNS = base_allow + extra_allow
+        command_guard.FORCE_ASK_PATTERNS = base_force_ask + extra_force_ask
         return self
 
     def __exit__(self, *exc):
@@ -179,6 +200,31 @@ class TestBuildDynamicPatterns(unittest.TestCase):
         reasons = [p for p, _ in force_ask]
         self.assertTrue(any("uv\\ add" in p for p in reasons))
         self.assertTrue(any("uv\\ remove" in p for p in reasons) or any("uv\\s+remove" in p for p in reasons))
+
+    def test_env_prefixed_test_cmd_still_yields_bare_runner(self):
+        """A TEST_CMD carrying a leading `VAR=value` prefix — this repo's is
+        `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest` — must still produce
+        the bare-runner allow. Before the prefix was stripped, the
+        `startswith(run_cmd + " ")` test below failed, a bare `pytest`
+        quietly started force-asking, and only the configured literal (env
+        prefix and all) was auto-allowed."""
+        config = dict(UV_CONFIG, TEST_CMD="PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest")
+        allow, _ = build_dynamic_patterns(config)
+        self.assertIn(r"^pytest(\s+.*)?$", allow)
+        # Both spellings of the configured command are allowed: with the env
+        # prefix (what harness.config.env says) and without (what a human types).
+        self.assertIn(r"^PYTEST_DISABLE_PLUGIN_AUTOLOAD=1\ uv\ run\ pytest(\s+.*)?$", allow)
+        self.assertIn(r"^uv\ run\ pytest(\s+.*)?$", allow)
+
+    def test_strip_env_assignments(self):
+        strip = command_guard.strip_env_assignments
+        self.assertEqual(strip("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest"), "uv run pytest")
+        self.assertEqual(strip("A=1 B=2 npm test"), "npm test")
+        self.assertEqual(strip("uv run pytest"), "uv run pytest")
+        self.assertEqual(strip(""), "")
+        # Only a *leading* run of assignments is a prefix; an `=` inside an
+        # argument is part of the command, not environment.
+        self.assertEqual(strip("uv run pytest -k a=b"), "uv run pytest -k a=b")
 
     def test_npm_config_produces_npm_patterns_no_latex(self):
         allow, force_ask = build_dynamic_patterns(NPM_CONFIG)

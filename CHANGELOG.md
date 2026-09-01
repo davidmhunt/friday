@@ -5,6 +5,79 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.14.3
+
+Gates the Claude adapter's files symmetrically with Antigravity's, grants the
+dispatching roles the Antigravity tool they need to operate, gates the
+bibliography workflow's own files the same way, and fixes two guard-hook
+tests that asserted against whatever project they happened to run in.
+
+**`.claude/**` is now adapter-gated.** Every `.claude/` entry in
+`MANIFEST.json` — seven agent definitions, six hooks plus their README, and
+`settings.json` — carried no `adapter` key, while each `.agents/` twin carried
+`"adapter": "antigravity"`. Since `install_symlinks()` and
+`materialize_files()` skip an entry only when it names a disabled adapter, an
+ungated entry installed unconditionally: answering "no" to *"Enable the Claude
+Code adapter?"* still wrote the whole `.claude/` tree. It also made the
+postflight self-check that compares `.claude/agents` presence against
+`ADAPTERS_ENABLED` incapable of ever failing. All 15 entries now carry
+`"adapter": "claude"`.
+
+**`define_subagent` added to the Antigravity dispatching roles.** `controller`,
+`planner`, and `planner-heavy` — the three agents that hold `invoke_subagent` —
+now also hold `define_subagent`, which Antigravity requires for subagent
+dispatch to work at all. Note the interaction with `check_agent_spawn.py`: that
+hook exempts any `TypeName` outside `ALL_HARNESS_ROLE_TYPES` as a utility
+spawn, so an agent defined at runtime under a name outside the 13 known roles
+is not subject to the `role(model): task` title check or the `[heavy]`
+escalation warning. The tier discipline stays a property of the committed
+`.agents/agents/*.md` files.
+
+**`docs/references/needs_pdf.md` dropped from the hygiene caps.**
+`check_md_hygiene.py`'s `FILE_CAPS` and the caps table in
+`rules/md_hygiene.md` no longer cap that file. `test_check_md_hygiene.py`'s
+missing-path case named it literally and broke the moment the cap was retired;
+it now picks its victim out of `FILE_CAPS` instead, so retiring any single cap
+can't break it again.
+
+**`TEST_CMD` with a leading env-var prefix no longer loses its bare-runner
+allow.** `build_dynamic_patterns()` derives an allow for the bare test runner
+(`pytest`) by asking whether `TEST_CMD` is `PACKAGE_MANAGER_RUN_CMD` plus a
+runner. A perfectly ordinary `TEST_CMD=PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run
+pytest` failed that `startswith` test, so a bare `pytest` silently started
+force-asking — the exact regression the derivation was written to prevent — and
+only the configured literal, env prefix and all, was auto-allowed. A new
+`strip_env_assignments()` drops leading `VAR=value` tokens before the
+comparison, and both spellings of the configured command are now allowed.
+
+**Guard-hook policy tests no longer depend on the ambient project.**
+`test_auto_allow_commands` and `test_force_ask_commands` read `command_guard`'s
+module-level pattern lists, which are built at import time from whichever
+`harness.config.env` sits above the checkout — so the suite asserted one
+project's policy while running under another's. Both now pin a fixed config
+through `_PatchedPatterns`. This had already broken (`pytest` force-asking) and
+was hiding a second failure behind it (`latexmk`, under
+`LATEX_DRAFTING_ENABLED=false`), since the assertion loop aborts on the first
+case. `_PatchedPatterns` also stops carrying hand-copied duplicates of
+`command_guard`'s base pattern lists, deriving them by trimming the
+import-time extras instead.
+
+**`docs/references/needs_pdf.md` and its bibliography-workflow siblings are
+now gated on `biblio`.** `needs_pdf.md`, `docs/references/inbox/README.md`,
+and the `intake_references.py` / `find_open_access_pdf.py` /
+`check_unavailable_sources.py` tools installed unconditionally regardless of
+whether a project uses the reference-PDF workflow at all — the one thing
+`.gitignore`'s `GATE:biblio` fragment already assumed wasn't universal.
+`_active_gitfile_gates()`'s proxy for "is the workflow in play" (either
+`BIBLIO_CONTACT_EMAIL` or `BIBLIO_USER_AGENT_TOKEN` filled in at interview)
+is now a shared `biblio_enabled()` helper, and a `"biblio": true` key on
+those five `MANIFEST.json` entries wires `sync_symlinks()`,
+`materialize_files()`, and `compute_excluded_paths()` to the same gate —
+mirroring how `"latex"` and `"accelerators"` already work. `verify_references.py`
+and `lint_research_memo.py` stay ungated: they check citation format/existence
+against `references.bib`, which every research-memo-writing project needs
+regardless of whether it also fetches PDFs.
+
 ## v0.14.2
 
 Materializes Antigravity subagent definition files as concrete files instead of symlinks and adds robust symlink handling to file materialization.

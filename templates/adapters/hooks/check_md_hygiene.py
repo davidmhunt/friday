@@ -63,7 +63,6 @@ FILE_CAPS = {
     ".friday/active/harness/plans/next_steps.md": 400,
     ".friday/active/harness/coding/tasks_working.md": 250,
     ".friday/active/harness/coding/tasks_finished.md": 200,
-    "docs/references/needs_pdf.md": 150,
 }
 
 # Additional warn-only per-entry cap: a single task block that sprawls is the

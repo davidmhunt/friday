@@ -7,6 +7,7 @@ tools:
   - find_by_name
   - grep_search
   - invoke_subagent
+  - define_subagent
   - send_message
   - manage_task
   - manage_subagents

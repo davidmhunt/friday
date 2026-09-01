@@ -113,6 +113,24 @@ def _load_project_command_config(start: Optional[Path] = None) -> Dict[str, str]
     return {}
 
 
+_ENV_ASSIGNMENT_PREFIX_RE = re.compile(r"^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+")
+
+
+def strip_env_assignments(cmd: str) -> str:
+    """Drop leading `VAR=value` tokens from a command line.
+
+    A perfectly ordinary TEST_CMD carries an environment prefix — this
+    project's is `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest`. Without
+    stripping it, two things silently go wrong: the literal allow pattern
+    built from TEST_CMD only matches when the caller reproduces the prefix
+    verbatim, and the bare-runner derivation below (which asks whether
+    TEST_CMD is RUN_CMD plus a runner) never fires, so a bare `pytest`
+    starts prompting — exactly the regression that derivation exists to
+    prevent.
+    """
+    return _ENV_ASSIGNMENT_PREFIX_RE.sub("", cmd).strip()
+
+
 def build_dynamic_patterns(config: Dict[str, str]) -> Tuple[List[str], List[Tuple[str, str]]]:
     """Pure function: parsed harness.config.env dict -> (extra allow
     patterns, extra force-ask (pattern, reason) pairs). Separated from
@@ -136,8 +154,15 @@ def build_dynamic_patterns(config: Dict[str, str]) -> Tuple[List[str], List[Tupl
     force_ask: List[Tuple[str, str]] = []
 
     for cmd in (sync_cmd, run_cmd, test_cmd):
-        if cmd:
-            allow.append(rf"^{re.escape(cmd)}(\s+.*)?$")
+        if not cmd:
+            continue
+        allow.append(rf"^{re.escape(cmd)}(\s+.*)?$")
+        # Allow the command with its env prefix dropped too, so a config
+        # whose TEST_CMD is `FOO=1 uv run pytest` doesn't force-ask the
+        # plain `uv run pytest` that everyone actually types.
+        stripped = strip_env_assignments(cmd)
+        if stripped and stripped != cmd:
+            allow.append(rf"^{re.escape(stripped)}(\s+.*)?$")
 
     # When TEST_CMD is just RUN_CMD plus a runner (`uv run pytest`), allow the
     # bare runner too (`pytest`). The hardcoded list this replaced matched
@@ -145,8 +170,11 @@ def build_dynamic_patterns(config: Dict[str, str]) -> Tuple[List[str], List[Tupl
     # would quietly start prompting for a bare `pytest`. Managers whose test
     # command isn't prefixed by the run command (`npm test` vs `npm run`) get
     # no bare form, which is correct — there's no separate runner to name.
-    if test_cmd and run_cmd and test_cmd.startswith(run_cmd + " "):
-        bare_runner = test_cmd[len(run_cmd) :].strip()
+    # A leading env-var prefix on TEST_CMD is stripped first; it describes
+    # how the tests are run, not which runner runs them.
+    bare_test_cmd = strip_env_assignments(test_cmd)
+    if bare_test_cmd and run_cmd and bare_test_cmd.startswith(run_cmd + " "):
+        bare_runner = bare_test_cmd[len(run_cmd) :].strip()
         if bare_runner:
             allow.append(rf"^{re.escape(bare_runner)}(\s+.*)?$")
     if manager:

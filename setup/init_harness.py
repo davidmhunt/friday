@@ -450,14 +450,29 @@ def tracker_matches(entry: dict, cfg: dict[str, str]) -> bool:
     raise ValueError(f"unrecognized tracker gate {gate!r} on manifest entry {entry!r}")
 
 
+def biblio_enabled(cfg: dict[str, str]) -> bool:
+    """Whether this project uses the bibliography/reference-PDF workflow —
+    the "biblio" gate on a manifest entry.
+
+    There's no dedicated "bibliography enabled" config key, so use the two
+    BIBLIO_* fields the interview always asks for as a proxy: if either was
+    filled in, assume the workflow is in play. Shared by the manifest gating
+    below and by _active_gitfile_gates(), so the two can't drift apart.
+    """
+    return bool(cfg.get("BIBLIO_CONTACT_EMAIL", "").strip() or cfg.get("BIBLIO_USER_AGENT_TOKEN", "").strip())
+
+
 def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
     enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
+    biblio = biblio_enabled(cfg)
     for entry in manifest["symlinks"]:
         adapter = adapter_of(entry)
         if adapter and adapter not in enabled_adapters:
             continue
         if entry.get("docker") and not docker_enabled:
+            continue
+        if entry.get("biblio") and not biblio:
             continue
         if not tracker_matches(entry, cfg):
             continue
@@ -488,7 +503,7 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str]) -> list[str]:
     history — every repo-rooted entry with "owner": "harness" (the default),
     given this project's actual config.
 
-    Mirrors the same adapter/docker/accelerators/latex/tracker gating
+    Mirrors the same adapter/docker/accelerators/latex/biblio/tracker gating
     sync_symlinks() and materialize_files() apply — a file that config gates
     off is never created in the first place, so it must never show up in an
     exclude list either (an exclude pattern for a nonexistent path is at
@@ -506,6 +521,7 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str]) -> list[str]:
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
     latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
+    biblio = biblio_enabled(cfg)
 
     paths: list[str] = []
     # Every symlinks entry is harness-owned by construction — a link straight
@@ -517,6 +533,8 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str]) -> list[str]:
         if adapter and adapter not in enabled_adapters:
             continue
         if entry.get("docker") and not docker_enabled:
+            continue
+        if entry.get("biblio") and not biblio:
             continue
         if not tracker_matches(entry, cfg):
             continue
@@ -534,6 +552,8 @@ def compute_excluded_paths(manifest: dict, cfg: dict[str, str]) -> list[str]:
         if entry.get("accelerators") and not accelerators_enabled:
             continue
         if entry.get("latex") and not latex_enabled:
+            continue
+        if entry.get("biblio") and not biblio:
             continue
         if not tracker_matches(entry, cfg):
             continue
@@ -569,6 +589,7 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
     docker_enabled = cfg.get("DOCKER_ENABLED", "false") == "true"
     accelerators_enabled = cfg.get("ACCELERATORS_ENABLED", "false") == "true"
     latex_enabled = cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true"
+    biblio = biblio_enabled(cfg)
     for entry in manifest["materialize"]:
         adapter = adapter_of(entry)
         enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
@@ -579,6 +600,8 @@ def materialize_files(manifest: dict, cfg: dict[str, str], dry_run: bool, force:
         if entry.get("accelerators") and not accelerators_enabled:
             continue
         if entry.get("latex") and not latex_enabled:
+            continue
+        if entry.get("biblio") and not biblio:
             continue
         if not tracker_matches(entry, cfg):
             continue
@@ -797,11 +820,10 @@ def _active_gitfile_gates(cfg: dict[str, str]) -> set[str]:
     if cfg.get("LATEX_DRAFTING_ENABLED", "false") == "true":
         gates.add("latex")
     # The reference-PDF ignore rules only matter to projects actually using
-    # .friday/active/harness/tools/'s bibliography workflow. There's no dedicated
-    # "bibliography enabled" config key, so use the two BIBLIO_* fields the
-    # interview always asks for as a proxy: if either was filled in, assume
-    # the workflow is in play.
-    if cfg.get("BIBLIO_CONTACT_EMAIL", "").strip() or cfg.get("BIBLIO_USER_AGENT_TOKEN", "").strip():
+    # .friday/active/harness/tools/'s bibliography workflow — see
+    # biblio_enabled() for the proxy this is derived from, shared with the
+    # same-named manifest-entry gate in materialize_files()/sync_symlinks().
+    if biblio_enabled(cfg):
         gates.add("biblio")
     return gates
 

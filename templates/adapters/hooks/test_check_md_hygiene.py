@@ -68,6 +68,15 @@ def _build_consumer_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def _some_stubbed_cap_path() -> str:
+    """A FILE_CAPS path that _build_consumer_repo() stubs out, i.e. any one
+    other than status.md (which the fixture fills past its cap on purpose).
+    Sorted so the choice is deterministic across runs."""
+    candidates = sorted(set(FILE_CAPS) - {".friday/active/harness/status.md"})
+    assert candidates, "FILE_CAPS needs an entry besides status.md for this test"
+    return candidates[0]
+
+
 def test_symlinked_invocation_finds_real_repo_root(tmp_path):
     """The exact bug: invoking through .claude/hooks/<symlink> must still
     resolve REPO_ROOT to the consumer repo, inspect .friday/active/harness/status.md there,
@@ -119,8 +128,11 @@ def test_missing_configured_path_warns_but_stays_advisory(tmp_path):
     repo = _build_consumer_repo(tmp_path)
     (repo / ".friday" / "active" / "harness" / "status.md").write_text("short file\n")
     # Remove a FILE_CAPS entry that _build_consumer_repo otherwise stubs out,
-    # simulating a relocated/mistyped configured path.
-    (repo / "docs" / "references" / "needs_pdf.md").unlink()
+    # simulating a relocated/mistyped configured path. Picked out of FILE_CAPS
+    # rather than hardcoded: this test previously named docs/references/
+    # needs_pdf.md literally, and broke the moment that cap was retired.
+    missing_rel = _some_stubbed_cap_path()
+    (repo / missing_rel).unlink()
     symlink_hook = repo / ".claude" / "hooks" / "check_md_hygiene.py"
 
     result = subprocess.run(
@@ -130,7 +142,7 @@ def test_missing_configured_path_warns_but_stays_advisory(tmp_path):
         text=True,
     )
 
-    assert "WARN | hygiene | configured path not found: docs/references/needs_pdf.md" in result.stdout
+    assert f"WARN | hygiene | configured path not found: {missing_rel}" in result.stdout
     assert result.returncode == 0
 
 
