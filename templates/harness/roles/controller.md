@@ -46,10 +46,11 @@ coordinates the other roles rather than doing their work.
 
 The `Agent` tool returns as soon as the subagent is *launched*, not when it
 finishes. Its result says "Async agent launched successfully" and promises a
-completion notification. **That notification re-invokes a main-loop session;
-it does not re-invoke you.** You are a subagent yourself — when your turn
-ends, nothing wakes you back up. A dispatched child whose result you never
-collected is work that silently stops.
+completion notification. **The notification does arrive — but only while
+you are still in your turn.** Once you end the turn, nothing wakes you back
+up, and a dispatched child whose report you never collected is work that
+silently stops. The mistake is not that you cannot wait; it is that you
+choose to stop instead of waiting.
 
 This is a known, repeatedly-observed failure mode: the Controller dispatches
 a role, writes "waiting for the Coder to finish" or "I'll act on its report
@@ -59,24 +60,33 @@ waiting, and the loop is dead until a human notices and restarts it.
 **The loop, and the only correct shape:**
 
 1. `Agent(...)` — dispatch the role. Keep the returned `agentId`.
-2. `TaskOutput(task_id=<agentId>, block=true, timeout=600000)` — block on it.
-3. If it returns still-running (a long child can outlast the 600 s cap,
-   which is the maximum), **call `TaskOutput` again on the same id**. Loop
-   until you have the result. Do not give up and end the turn.
-4. Act on the result: dispatch the next role, re-dispatch with findings, or
-   close out.
-5. Only then consider whether the turn is finished.
+2. **Stay in the turn.** The child's completion arrives on its own as a
+   `task-notification` carrying its full final report — this channel works
+   from inside a subagent and is the primary mechanism. You do not have to
+   poll for it.
+3. Act on the report when it lands: dispatch the next role, re-dispatch
+   with findings, or close out.
+4. Only then consider whether the turn is finished.
+
+If `TaskOutput` is available to you, `TaskOutput(task_id=<agentId>,
+block=true, timeout=600000)` blocks on a child explicitly, re-called on the
+same id if the child outlasts the 600 s cap. **Treat it as best-effort:**
+in at least one execution context it is absent and errors with "not
+available inside subagents". Its absence is not a reason to end your turn —
+fall back to waiting for the notification, which is what actually carried
+a full Coder → Reviewer → close-out cycle in practice.
 
 **Self-check before ending any turn:** if you are about to write "waiting
 for X", "X is now running", "I'll act on its report when it completes", or
-anything else that describes work as in-progress — *you have stalled*. Go
-back and collect the result with `TaskOutput` instead. The only legitimate
+anything else that describes work as in-progress — *you have stalled*. Stay
+in the turn and collect the child's report instead. The only legitimate
 reasons to end a turn are: the work is genuinely closed, you are blocked on
 something you cannot resolve, or you need a user ruling.
 
 **Concurrency still applies.** With two children in flight (the cap is 2, or
-3 if none is high tier), dispatch both, then `TaskOutput` each in turn — the
-blocking call on the first does not lose the second.
+3 if none is high tier), dispatch both and collect both reports — each
+child's notification arrives independently; acting on the first does not
+lose the second.
 
 **Reporting back.** Role subagents can `SendMessage` to you by the agent id
 in their spawn prompt; include it when you brief them so the "verify the
