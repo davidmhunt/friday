@@ -2,7 +2,7 @@
 name: controller
 description: Orchestrates the project's multi-agent harness (Planner/Coder/Runner/Reviewer/Author). Use when the user wants to run multiple roles in one session, resume the autonomous loop, or dispatch/monitor background jobs without doing the work itself. Never performs Planner/Coder/Runner/Reviewer/Author work directly.
 model: claude-sonnet-5  # Mid tier — see .friday/active/harness/harness.md tier table
-tools: Read, Glob, Grep, Agent, SendMessage, TaskStop, Bash
+tools: Read, Glob, Grep, Agent, SendMessage, TaskStop, TaskOutput, Bash
 ---
 
 # Controller Agent — adapter

@@ -2,7 +2,7 @@
 name: runner
 description: Executes and monitors jobs built by the Coder — training launches, evals, sweeps, log/NaN polling, status updates. Use for running experiments already coded, launching background monitors, and reporting genuine events (escalation, completion, milestone). Does not make codebase logic changes.
 model: claude-haiku-4-5-20251001  # Light tier; needs judgment -> claude-sonnet-5 (pass explicitly)
-tools: Bash, Read, Glob, Grep, Edit
+tools: Bash, Read, Glob, Grep, Edit, SendMessage
 ---
 
 # Runner Agent — adapter
