@@ -170,6 +170,107 @@ def add_file_field(text: str, key: str, rel_path: str) -> str | None:
     return text[: match.start()] + new_block + text[match.end() :]
 
 
+ZOTERO_FILE_SEGMENT_RE = re.compile(r"^(?:[^:]*:)?(/[^:;]+)(?::[^:;]*)?$")
+
+
+def extract_file_paths(raw: str) -> list[str]:
+    """Parse a BibTeX `file` field into candidate filesystem paths.
+
+    Handles the Zotero export format (`Label:/abs/path.pdf:mimetype`,
+    semicolon-separated for multiple attachments) as well as a bare path
+    with no label/mimetype wrapper (the convention this script itself
+    writes)."""
+    paths = []
+    for segment in raw.split(";"):
+        segment = segment.strip()
+        if not segment:
+            continue
+        match = ZOTERO_FILE_SEGMENT_RE.match(segment)
+        paths.append(match.group(1) if match else segment)
+    return paths
+
+
+def find_external_pdf(entry: dict) -> Path | None:
+    """If entry's `file` field parses to a real absolute path OUTSIDE the
+    repo (e.g. an unmodified Zotero-exported path pointing at the user's
+    live library), return it. Returns None for repo-relative paths (those
+    are covered by has_local_pdf) or paths that don't resolve."""
+    raw = entry.get("file")
+    if not raw:
+        return None
+    repo_root_resolved = REPO_ROOT.resolve()
+    for candidate in extract_file_paths(raw):
+        path = Path(candidate)
+        if not path.is_absolute():
+            continue
+        try:
+            path.resolve().relative_to(repo_root_resolved)
+            continue  # already inside the repo -- not "external"
+        except ValueError:
+            pass
+        if path.is_file():
+            return path
+    return None
+
+
+def set_file_field(text: str, key: str, rel_path: str) -> str | None:
+    """Set entry `key`'s `file` field to rel_path, replacing an existing
+    field (e.g. a stale Zotero absolute path) or adding one if absent."""
+    pattern = re.compile(rf"(@\w+\s*\{{\s*{re.escape(key)}\s*,.*?)\n\}}", re.DOTALL)
+    match = pattern.search(text)
+    if not match:
+        return None
+    block = match.group(1)
+    field_re = re.compile(r"\n  file = \{.*?\},", re.DOTALL)
+    if field_re.search(block):
+        new_block = field_re.sub(f"\n  file = {{{rel_path}}},", block, count=1)
+    else:
+        new_block = block + f"\n  file = {{{rel_path}}},"
+    return text[: match.start()] + new_block + "\n}" + text[match.end() :]
+
+
+def copy_external_pdfs(entries: list[dict], text: str) -> tuple[str, list[str]]:
+    """For entries whose `file` field resolves to a real external absolute
+    path rather than a local repo copy, copy that PDF into
+    docs/references/<key>.pdf (shutil.copy2 -- never move; the source is
+    often the user's live Zotero library) and rewrite the field to the
+    local relative path. No-op for entries that already have a local PDF
+    or whose `file` field doesn't resolve to a real external file."""
+    notes = []
+    for entry in entries:
+        if has_local_pdf(entry):
+            continue
+        key = entry.get("key")
+        if not key:
+            continue
+        src = find_external_pdf(entry)
+        if not src:
+            continue
+        dest = REFS_DIR / f"{key}.pdf"
+        shutil.copy2(str(src), str(dest))
+        rel_path = str(dest.relative_to(REPO_ROOT))
+        new_text = set_file_field(text, key, rel_path)
+        if new_text is None:
+            continue
+        text = new_text
+        entry["file"] = rel_path
+        notes.append(f"{key}: copied external PDF ({src}) -> {rel_path}")
+    return text, notes
+
+
+def has_local_pdf(entry: dict) -> bool:
+    """True iff entry's `file` field resolves to an existing file under
+    REPO_ROOT. Mirrors verify_references.py's check_entry() path.is_file()
+    semantics — a `file` field that's merely present (e.g. a stale Zotero
+    absolute path like '/home/david/Zotero/storage/<hash>/...pdf' that was
+    never actually copied into docs/references/) does NOT count as having a
+    local PDF."""
+    file_field = entry.get("file")
+    if not file_field:
+        return False
+    return (REPO_ROOT / file_field).is_file()
+
+
 def sync_needs_pdf(all_entries: list[dict]) -> list[str]:
     """Reconcile docs/references/needs_pdf.md against the merged bib.
     Returns a list of human-readable notes about what changed."""
@@ -180,7 +281,7 @@ def sync_needs_pdf(all_entries: list[dict]) -> list[str]:
     if not open_lines or not confirmed_lines:
         return []  # unexpected shape — don't guess, leave it for a human pass
 
-    with_file = {e["key"] for e in all_entries if e.get("file")}
+    with_file = {e["key"] for e in all_entries if has_local_pdf(e)}
     open_heading, confirmed_heading = open_lines[0], confirmed_lines[0]
     open_rows = [l for l in open_lines if NEEDS_PDF_ROW_RE.match(l)]
     confirmed_keys = row_keys(confirmed_lines)
@@ -203,7 +304,7 @@ def sync_needs_pdf(all_entries: list[dict]) -> list[str]:
     tracked = row_keys(open_rows) | confirmed_keys
     for e in all_entries:
         key = e.get("key")
-        if not key or e.get("file") or key in tracked:
+        if not key or has_local_pdf(e) or key in tracked:
             continue
         title = e.get("title", "(no title)")
         locator = f"doi:{e['doi']}" if e.get("doi") else (f"url:{e['url']}" if e.get("url") else "no doi/url")
@@ -227,8 +328,16 @@ def main() -> int:
     existing_text = BIB_PATH.read_text() if BIB_PATH.exists() else ""
     existing = parse_bib(existing_text)
 
+    existing_text, external_notes = copy_external_pdfs(existing, existing_text)
+    if external_notes:
+        BIB_PATH.write_text(existing_text)
+
     if not INBOX_DIR.is_dir():
         print(f"No inbox at {INBOX_DIR} — nothing to merge.")
+        if external_notes:
+            print("\nEXTERNAL PDF COPIED:")
+            for note in external_notes:
+                print(f"  - {note}")
         for note in sync_needs_pdf(existing):
             print(f"  - {note}")
         return 0
@@ -297,7 +406,7 @@ def main() -> int:
                 existing_text = new_text
             updated.append(f"{key}: matched inbox PDF ({pdf_match.name}) -> {rel_path}")
 
-    if merged or updated:
+    if merged or updated or external_notes:
         BIB_PATH.write_text(existing_text)
 
     unused_pdfs = [p for p in pdfs if p not in used_pdfs]
@@ -309,6 +418,7 @@ def main() -> int:
     for label, items in (
         ("MERGED", merged),
         ("UPDATED EXISTING", updated),
+        ("EXTERNAL PDF COPIED", external_notes),
         ("SKIPPED (duplicate)", skipped),
         ("FLAGGED", flagged),
         ("NEEDS_PDF.MD", needs_pdf_notes),
