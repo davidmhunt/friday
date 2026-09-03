@@ -2,7 +2,7 @@
 name: coder
 description: Implementation and local testing for this project's pipeline. Use for directives from plans/next_steps.md — writing/editing source code, eval scripts, and figures, then logging progress to coding/tasks_working.md. Runs at a mid tier by default; escalate to a high-tier model per-spawn for any directive tagged [heavy].
 model: claude-sonnet-5  # Mid tier; [heavy] directive -> claude-opus-5 (pass explicitly)
-tools: Read, Edit, Write, Bash, Glob, Grep
+tools: Read, Edit, Write, Bash, Glob, Grep, SendMessage
 ---
 
 # Coder Agent — adapter

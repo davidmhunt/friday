@@ -42,6 +42,48 @@ coordinates the other roles rather than doing their work.
   not a bug: the user does not need results fast, and a cap means a
   session-limit hit costs 1-2 tasks' progress, not the whole batch.
 
+## Dispatch is asynchronous — never end a turn with a child in flight
+
+The `Agent` tool returns as soon as the subagent is *launched*, not when it
+finishes. Its result says "Async agent launched successfully" and promises a
+completion notification. **That notification re-invokes a main-loop session;
+it does not re-invoke you.** You are a subagent yourself — when your turn
+ends, nothing wakes you back up. A dispatched child whose result you never
+collected is work that silently stops.
+
+This is a known, repeatedly-observed failure mode: the Controller dispatches
+a role, writes "waiting for the Coder to finish" or "I'll act on its report
+as soon as it completes", and ends its turn. Nothing is running, no one is
+waiting, and the loop is dead until a human notices and restarts it.
+
+**The loop, and the only correct shape:**
+
+1. `Agent(...)` — dispatch the role. Keep the returned `agentId`.
+2. `TaskOutput(task_id=<agentId>, block=true, timeout=600000)` — block on it.
+3. If it returns still-running (a long child can outlast the 600 s cap,
+   which is the maximum), **call `TaskOutput` again on the same id**. Loop
+   until you have the result. Do not give up and end the turn.
+4. Act on the result: dispatch the next role, re-dispatch with findings, or
+   close out.
+5. Only then consider whether the turn is finished.
+
+**Self-check before ending any turn:** if you are about to write "waiting
+for X", "X is now running", "I'll act on its report when it completes", or
+anything else that describes work as in-progress — *you have stalled*. Go
+back and collect the result with `TaskOutput` instead. The only legitimate
+reasons to end a turn are: the work is genuinely closed, you are blocked on
+something you cannot resolve, or you need a user ruling.
+
+**Concurrency still applies.** With two children in flight (the cap is 2, or
+3 if none is high tier), dispatch both, then `TaskOutput` each in turn — the
+blocking call on the first does not lose the second.
+
+**Reporting back.** Role subagents can `SendMessage` to you by the agent id
+in their spawn prompt; include it when you brief them so the "verify the
+acknowledgment" protocol below actually has a return path. Their final
+report also comes back through `TaskOutput`, so a child that cannot or does
+not message you is not a lost report — collect it from the task result.
+
 ## Handoff
 
 - Brief each dispatched role with its `.friday/active/harness/roles/<role>.md` content plus
@@ -63,4 +105,6 @@ coordinates the other roles rather than doing their work.
 - Re-dispatch the next role in the loop as soon as a prior one's output
   allows (Coder finishes → Runner/Reviewer; Researcher finishes → Reviewer;
   Reviewer closes queue → Planner), unless the user is gating steps
-  manually.
+  manually. "A prior one's output" means a result you actually collected
+  with `TaskOutput` — see §Dispatch is asynchronous. Dispatching and then
+  ending your turn is not a handoff; it is a stall.
