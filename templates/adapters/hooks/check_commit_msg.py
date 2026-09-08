@@ -9,13 +9,16 @@ Advisory only: it prints a violation line, and the wrapper always exits 0, so
 a non-conforming message is never rejected. It exists to catch drift while
 never flagging a human's own commits, merges, or autosquash commits.
 
-A second, Reviewer-specific check runs only when the first line's role is
-`Reviewer`: since v0.13.0 moved harness state into `.friday/active/` (a
-different repo the consumer project never tracks), a `Reviewer:` commit's
-message is the only durable carrier of *why* the close-out happened — the
-directive it closes and the tracker issue it resolves. See
-`.friday/active/harness/rules/version_control.md` ("What the Reviewer
-commits") for the authoritative format. This check reads the WHOLE message
+A second check runs on every role commit that records project work: since
+v0.13.0 moved harness state into `.friday/active/` (a different repo the
+consumer project never tracks), a role commit's message is the only durable
+carrier of *why* the work happened — the directive it serves and the tracker
+issue it resolves. It applies to all roles rather than only `Reviewer:`
+because each role now commits its own work (see version_control.md, "Who
+records, and when"); `Harness:` is exempt, since a submodule-pointer bump
+serves no directive. See
+`.friday/active/harness/rules/version_control.md` ("What gets committed")
+for the authoritative format. This check reads the WHOLE message
 body (not just line 1) and, per git convention, ignores any line starting
 with `#` — git appends its own instructional comment block (diff summary,
 branch info) to the commit-msg file, and a directive/tracker reference that
@@ -42,6 +45,20 @@ import re
 import sys
 
 ROLE_PREFIX_RE = re.compile(r"^(Controller|Planner|Coder|Runner|Reviewer|Author|Researcher|Harness): .+")
+
+# Roles whose commits record directive work and therefore need a body with a
+# directive + tracker reference. `Harness:` is excluded: a submodule-pointer
+# bump is a real project-repo change but serves no directive. `Controller:`
+# is listed for completeness — the Controller produces no recordable work of
+# its own, so it should not be committing at all.
+BODY_REQUIRED_ROLES = (
+    "Planner",
+    "Coder",
+    "Runner",
+    "Reviewer",
+    "Author",
+    "Researcher",
+)
 
 # Never flagged: merge commits and fixup!/squash! autosquash commits.
 EXEMPT_PREFIXES = ("Merge ", "fixup!", "squash!")
@@ -79,10 +96,15 @@ def strip_git_comments(body: str) -> str:
     )
 
 
-def check_reviewer_body(body: str) -> list[str]:
-    """Reviewer-only check. Returns a list of missing-piece descriptions
-    (empty list means the body is fine). `body` should already have git's
-    comment lines stripped."""
+def role_requiring_body(first_line: str) -> str | None:
+    """The role name if this commit needs a directive/tracker body, else None."""
+    role = first_line.split(":", 1)[0]
+    return role if role in BODY_REQUIRED_ROLES else None
+
+
+def check_role_body(body: str) -> list[str]:
+    """Returns a list of missing-piece descriptions (empty list means the body
+    is fine). `body` should already have git's comment lines stripped."""
     missing = []
     if not DIRECTIVE_RE.search(body):
         missing.append("directive reference ('Directive: <id>' or 'directive <id>')")
@@ -115,12 +137,13 @@ def main() -> int:
         )
         flagged = True
 
-    if first_line.startswith("Reviewer: "):
+    role = role_requiring_body(first_line)
+    if role is not None:
         body = strip_git_comments(raw)
-        missing = check_reviewer_body(body)
+        missing = check_role_body(body)
         for item in missing:
             print(
-                f"WARN | commit-msg | Reviewer commit missing {item} "
+                f"WARN | commit-msg | {role} commit missing {item} "
                 f"(.friday/active/harness/rules/version_control.md): {first_line!r}"
             )
         if missing:

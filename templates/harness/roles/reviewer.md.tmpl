@@ -28,9 +28,10 @@ commit).
 3. The work is recorded per rule 12 — code, saved state/pointers, and
    result artifacts all covered by the record.
 4. The task is moved to `.friday/active/harness/coding/tasks_finished.md` **with that
-   record's reference pasted next to it** (the git commit hash you just
-   created — you are the one who commits, per `.friday/active/harness/rules/
-   version_control.md`).
+   record's reference pasted next to it** (the commit hash the producing role
+   created — since each role now commits its own work, your job is to verify
+   that record exists and is correctly attributed, not to create it; see
+   `.friday/active/harness/rules/version_control.md`).
 5. The entry contains the directive's `Verify:` command and an excerpt of
    its actual output — re-run it if the excerpt looks pasted-from-memory or
    doesn't match the claim.
@@ -42,20 +43,30 @@ commit).
    files you own; move closed tasks out of `tasks_working.md`; trim
    `tasks_finished.md` to current + prior cycle. Escalate second-pass WARNs to
    `.friday/active/harness/plans/suggestions.md`. Detail: `.friday/active/harness/rules/md_hygiene.md`.
-2. Commit finished work (rule 12): for each task verified `[DONE]` this
-   pass, check `git status --porcelain -- . ':!.friday'`. If non-empty,
-   `git commit -- . ':!.friday'` (that explicit pathspec is required — it
-   keeps a `.friday` submodule-pointer bump, if one is sitting in the
-   working tree, out of this commit; a pointer bump gets its own
-   `Harness:`-attributed commit) with a `Role: description` first line
-   attributed to whoever did the work (never sign as Reviewer unless it's
-   your own close-out edit), plus a body carrying a `Directive: <id>` and a
-   tracker reference (issue/MR, or `no tracker`) — this body is now the
-   durable record of *why*, since `.friday/active/` is tracked by neither
-   repo. Paste the resulting hash into `tasks_finished.md`. If the porcelain
-   check is empty (no project-repo diff this pass), make no commit — write
-   the literal token `no code changes` into `tasks_finished.md` instead.
-   Detail: `.friday/active/harness/rules/version_control.md`.
+2. Verify the work's record (rule 12): each role commits its own work, so
+   for each task verified `[DONE]` this pass, confirm a commit exists, is
+   attributed to the role that did the work, and carries a body with
+   `Directive: <id>` and a tracker reference. Paste its hash into
+   `tasks_finished.md`. If the producing role left work uncommitted, bounce
+   the pass back to it rather than committing on its behalf — committing
+   someone else's tree is how two roles' changes end up mingled in one
+   unattributable blob (rule 12, invariant 2). The one case where you commit
+   is **your own** close-out edit: check
+   `git status --porcelain -- . ':!.friday'` and, if non-empty and the diff
+   is genuinely yours, `git commit -- . ':!.friday'` (that explicit pathspec
+   is required — it keeps a `.friday` submodule-pointer bump, if one is
+   sitting in the working tree, out of this commit; a pointer bump gets its
+   own `Harness:`-attributed commit). If a pass produced no project-repo
+   diff at all, write the literal token `no code changes` into
+   `tasks_finished.md` instead. Detail:
+   `.friday/active/harness/rules/version_control.md`.
+   **Transition carve-out:** a directive dispatched *before* the per-role
+   commit policy landed may legitimately arrive with its work uncommitted,
+   because its producer was told the Reviewer would commit. Commit those on
+   the producer's behalf with correct `Role:` attribution — do not bounce
+   them back for following the instructions they were given. This applies
+   only to already-in-flight work; once a directive is dispatched under the
+   current policy, an uncommitted pass is a bounce.
 3. Sync the external issue tracker mirror (rule 13, if configured): every done-but-open WARN is
    yours to resolve THIS pass — close the issue, or confirm a multi-phase
    false positive by judgment. Closing it is a REQUIRED step of the same

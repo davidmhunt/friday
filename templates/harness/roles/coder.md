@@ -22,6 +22,17 @@ Planner at creation, never re-judged per session).
 
 ## Handoff
 
+- **Commit your own work before handing off (rule 12).** Check
+  `git status --porcelain -- . ':!.friday'`; if non-empty, commit with
+  `git commit -- . ':!.friday'`, a `Role: description` first line attributed
+  to yourself, and a body carrying `Directive: <id>` plus the tracker
+  reference. **Scope the commit to the paths your pass actually touched** —
+  another role may be working in the same tree concurrently, and its
+  unfinished edits are not yours to commit, stash, or revert. If the
+  porcelain check is empty, make no commit and record the literal token
+  `no code changes`. The Reviewer no longer commits on your behalf; it
+  verifies the record you left. Detail:
+  `.friday/active/harness/rules/version_control.md`.
 - On task completion, log it in `.friday/active/harness/coding/tasks_working.md` and prompt
   invocation of the **Runner** (long jobs/evals) or **Reviewer** (code-only)
   to continue the loop.

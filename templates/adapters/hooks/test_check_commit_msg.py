@@ -4,11 +4,13 @@
 Covers both checks the hook performs:
   1. the pre-existing 'Role: description' first-line check (unchanged
      behavior for non-Reviewer commits), and
-  2. the new Reviewer-only body check (directive reference + tracker
-     reference), added because v0.13.0 moved harness state out of the
-     consumer repo — the Reviewer's commit message is now the only durable
-     carrier of why a close-out happened (see version_control.md.tmpl,
-     "What the Reviewer commits").
+  2. the body check (directive reference + tracker reference), which runs
+     on every role commit that records directive work, added because
+     v0.13.0 moved harness state out of the consumer repo — a role commit's
+     message is now the only durable carrier of why the work happened (see
+     version_control.md.tmpl, "What gets committed"). It applies to all
+     roles in BODY_REQUIRED_ROLES rather than only `Reviewer:`, because
+     each role now commits its own work; `Harness:` is exempt.
 
 Tests invoke the actual `commit-msg` bash wrapper as a subprocess (the way
 `git commit` really reaches this hook), not `check_commit_msg.py` directly —
@@ -105,11 +107,38 @@ def test_no_code_changes_and_no_tracker_literal_passes(tmp_path):
     assert "WARN" not in result.stdout
 
 
-def test_non_reviewer_message_unaffected(tmp_path):
+def test_coder_message_with_body_passes(tmp_path):
+    # Each role now commits its own work, so a Coder commit carries the same
+    # mandatory body as a Reviewer one.
+    repo = _build_repo(tmp_path)
+    result = _run(
+        repo,
+        "Coder: implement incremental state update in the core pipeline\n\n"
+        "Directive: D-12\nTracker: #123\n",
+    )
+    assert result.returncode == 0
+    assert "WARN" not in result.stdout
+
+
+def test_coder_message_missing_body_is_flagged(tmp_path):
     repo = _build_repo(tmp_path)
     result = _run(
         repo,
         "Coder: implement incremental state update in the core pipeline\n",
+    )
+    assert result.returncode == 0  # advisory: never blocks
+    assert "directive reference" in result.stdout
+    assert "tracker reference" in result.stdout
+    assert "Coder commit missing" in result.stdout
+
+
+def test_harness_pointer_bump_is_exempt_from_body_check(tmp_path):
+    # A submodule-pointer bump is a real project-repo change but serves no
+    # directive, so it must not be asked for a directive/tracker body.
+    repo = _build_repo(tmp_path)
+    result = _run(
+        repo,
+        "Harness: bump .friday pointer to v0.14.0\n",
     )
     assert result.returncode == 0
     assert "WARN" not in result.stdout

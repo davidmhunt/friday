@@ -23,13 +23,31 @@ Whatever system you use, three things must be true:
 
 ## Who records, and when
 
-**The Reviewer commits everything at close-out.** No other role commits.
-Working state between passes stays uncommitted (or in the Reviewer's own
-staging) — this keeps history clean at the cost of the Reviewer needing to
-attribute correctly (see below): never sign a commit as itself when it's
-recording another role's work.
+**Each role commits its own work, scoped to the paths it touched.** The
+Reviewer does not commit on another role's behalf.
 
-## What the Reviewer commits
+This is a change from the older policy ("the Reviewer commits everything at
+close-out; no other role commits"), and the reason is invariant 2 above.
+That policy was coherent while roles ran one at a time: a role edited, left
+the working tree dirty, and the Reviewer committed it with the right `Role:`
+prefix. Under **concurrent dispatch** it inverts into its own failure mode —
+two roles editing one working tree leave exactly the mingled, unrecorded
+blob invariant 2 forbids, and no later commit can separate them. A role
+committing its own paths as it finishes is what keeps attribution
+recoverable.
+
+Committer and `Role:` prefix therefore always agree, which also removes the
+old footgun of the Reviewer having to correctly sign as somebody else.
+
+**Committing is not the review gate, and never was.** The Reviewer still
+owns `[DONE]`, the tracker close, and the status-row move, and may bounce a
+pass back or `git revert` a specific attributable commit — a cleaner remedy
+than untangling a shared dirty tree. What keeps unreviewed work from
+reaching anyone else is not the commit but the **push**: `origin` is pushed
+only as a separate, explicitly confirmed action (see "Remote" below), so
+review still stands between work and publication.
+
+## What gets committed
 
 Since v0.13.0, harness working state (`.friday/active/harness/status.md`,
 `plans/`, `coding/tasks_*.md`, etc.) lives in `.friday/active/` — a
@@ -49,10 +67,17 @@ commits as below.
 - If it's non-empty, commit with `git commit -- . ':!.friday'` —
   **always pass this pathspec explicitly.** Without it, a `.friday`
   submodule-pointer bump sitting in the working tree rides along silently
-  inside a `Reviewer:` commit. A pointer bump is a legitimate project-repo
-  change (it IS tracked, unlike everything under `.friday/active/`), but it
-  is a distinct kind of change and belongs in its own `Harness:`-attributed
-  commit, never folded into a `Reviewer:` close-out.
+  inside your commit. A pointer bump is a legitimate project-repo change (it
+  IS tracked, unlike everything under `.friday/active/`), but it is a
+  distinct kind of change and belongs in its own `Harness:`-attributed
+  commit, never folded into a role's close-out.
+- **Scope your commit to the paths your own pass touched**, naming them
+  explicitly rather than committing everything dirty. Another role may be
+  working in the same tree right now. If you find changes you did not make,
+  leave them alone — do not commit them, do not stash them, do not revert
+  them. Sweeping up someone else's in-flight edits is the exact failure
+  invariant 2 exists to prevent, and it will also destroy work that agent
+  has not finished writing.
 
 ## Attribution format
 
@@ -60,17 +85,17 @@ Every commit message starts with `Role: description` — capitalized role
 name exactly as it appears in `.friday/active/harness/harness.md` ("Roles:" line: Planner,
 Coder, Runner, Reviewer, Author, Researcher; Controller does not itself
 produce recordable work), colon, space, then a normal imperative summary.
-The Reviewer attributes to whichever role actually did the work being
-committed, never to itself unless the Reviewer's own edit (e.g. a
-close-out note) is what's being recorded.
+Attribute to the role that actually did the work — normally your own, since
+each role now commits for itself. `Reviewer:` is correct only when the
+Reviewer's own edit (a close-out note, a revert) is what's being recorded.
 
 Examples:
 - `Coder: implement incremental state update in the core pipeline`
 - `Researcher: draft formal model memo for the trust-scoring approach`
 - `Reviewer: close directive 3, verify eval provenance`
 
-**Reviewer commits carry a mandatory body**, because the commit message is
-now the durable record of *why* — `status_history.md` isn't tracked by
+**Every role commit carries a mandatory body**, because the commit message
+is now the durable record of *why* — `status_history.md` isn't tracked by
 either repo (see the durability note below). The body must include:
 - a directive reference: `Directive: <id>` (or an inline `directive <id>`
   mention), and
@@ -127,13 +152,17 @@ merges and `fixup!`/`squash!` commits. It runs two checks:
 1. **Role-prefix check (all commits):** anything whose first line doesn't
    match `ROLE_PREFIX_RE` (Planner, Coder, Runner, Reviewer, Author,
    Researcher, Controller, Harness) is flagged, never rejected.
-2. **Reviewer body check (Reviewer commits only):** when the first line's
-   role is `Reviewer`, the body (whole message, minus git's own trailing
-   `#`-comment block) is checked for a directive reference and a tracker
-   reference per "Attribution format" above. Missing either prints a WARN;
-   it still never blocks — `commit-msg` is symlinked straight into
-   `.git/hooks/commit-msg`, and a blocking check here would strand a
-   Reviewer mid-pass with no escape hatch.
+2. **Body check (every role commit that records directive work):** when the
+   first line's role is one of `BODY_REQUIRED_ROLES` (Planner, Coder,
+   Runner, Reviewer, Author, Researcher — `Harness:` is exempt, since a
+   submodule-pointer bump serves no directive), the body (whole message,
+   minus git's own trailing `#`-comment block) is checked for a directive
+   reference and a tracker reference per "Attribution format" above. It
+   covers all roles rather than only `Reviewer:` because each role now
+   commits its own work. Missing either prints a WARN; it still never
+   blocks — `commit-msg` is symlinked straight into `.git/hooks/commit-msg`,
+   and a blocking check here would strand an agent mid-pass with no escape
+   hatch.
 
 ## Durability note
 
@@ -146,7 +175,7 @@ Setup refuses to run any configuration that would put it anywhere else (see
 `check_status_history_not_gitignored()` in `init_harness.py`).
 
 It is therefore a real source of truth here, and commits that change it
-belong in the same `Reviewer:` commit as the work they describe.
+belong in the same role commit as the work they describe.
 <!-- SECTION:tracker_none:end -->
 <!-- SECTION:tracker_gitlab:start -->
 `[SET AT SETUP: STATUS_HISTORY_PATH]` (like the rest of `.friday/active/`)
@@ -172,6 +201,9 @@ history should follow commit hashes and tracker references, not
 ## Remote
 
 `origin` → `[SET AT SETUP: VCS_REMOTE]` (SSH, private repo). Commits happen
-at Reviewer close-out per above; pushing to `origin` is a separate, visible
-action — confirm with the user before pushing unless a given session has
-already authorized it for that pass.
+per-role as work finishes (see "Who records, and when"); pushing to `origin`
+is a separate, visible action — confirm with the user before pushing unless
+a given session has already authorized it for that pass. **The push, not the
+commit, is what makes work visible outside this machine**, so it is the
+point at which the Reviewer's gate matters: do not push a directive that has
+not been reviewed and closed.
