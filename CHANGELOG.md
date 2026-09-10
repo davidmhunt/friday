@@ -5,6 +5,98 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.15.0
+
+Adds two roles — **Editor** and **Architect** — and the shared rule and spec
+template they exist to serve. The through-line: every quality gate this
+harness carried measured correctness, none measured length or clarity, and
+review was structurally additive, so documents grew monotonically until they
+stopped being readable. The counterweights below are mechanical rather than
+exhortative, because "write concisely" is an instruction with no gate.
+
+**New shared rule 16, "Document budgets & concision."** A prose deliverable's
+page budget is now a `Verify:` criterion with the same force as a citation
+check: over budget is a defect with a standard remedy (move to an appendix or
+a supplemental, or cut), not a stylistic note. Full text in
+`harness/rules/document_budgets.md`, summarised as rule 16 in
+`harness/harness.md.tmpl`. The Planner states `Budget: <N> pp core body` and
+`Appendix budget: <M> pp` on every directive with a prose deliverable — one
+without a budget line is malformed and the Reviewer rejects it back rather
+than inventing one. Budgets come from the phase spec in `docs/specs/` where
+one exists. Assumption tables cap at 8 rows; every core concept gets a figure.
+Rule slot 14 is untouched — it remains the reserved per-project placeholder,
+so rule numbers stay stable across projects.
+
+**New Editor role** (`harness/roles/editor.md`, mid tier, `editor-heavy` for
+documents tagged `[heavy]`). The subtractive counterweight: its **only**
+output is deletions, consolidations, and moves-to-appendix, reported as
+`cut X lines / Y pages, math unchanged`, and it is scored on what it removed.
+It may not add explanatory prose, may not change the math, and does not
+adjudicate correctness — a passage it believes is wrong is a finding for the
+Reviewer. No prose deliverable closes without an Editor pass; a pass that
+finds nothing to cut on an at-budget document is a valid result.
+
+**New Architect role** (`harness/roles/architect.md`, mid tier,
+`architect-heavy` for phase-level specs, which are `[heavy]` by definition).
+It sits *upstream* of the loop and is the harness's only user-facing,
+interactive role — it interviews the user and writes a durable spec to
+`docs/specs/<slug>.md`, which is versioned in the project repo unlike
+everything under `.friday/active/`. The Planner then derives its directives
+from the spec: implementation goals become directives, spec budgets become
+`Verify:` budget lines, spec thresholds become tests. An Architect that
+writes a spec without talking to the user has failed at the job. Amending a
+signed-off spec is an Architect job, dated and appended, never a silent
+rewrite.
+
+**New spec template** (`harness/templates/spec_template.md`). Nine sections
+plus an Origin appendix: the objective (see below) plus a restated closing
+condition, scope (with an explicit out-of-scope list), specification, ordered
+implementation goals, test plan with acceptance thresholds set *before*
+implementation, must/stretch success criteria, open questions converted to
+dated resolutions, an explicit schedule-or-drop ruling on every
+carried-forward debt item, and process constraints.
+
+**Reviewer `[DONE]` gains four blocking checks for prose deliverables**
+(`harness/roles/reviewer.md.tmpl`): the mechanical budget check
+(`pdfinfo`/line count), the Editor pass having run with its cut report cited,
+a **cold-reader check** having run with its report attached, and the
+assumption table being ≤ 8 rows with a figure per core concept. The
+cold-reader check is deliberately a plain utility subagent, not a harness
+role, spawned with no prior conversation context — which is exactly why the
+Reviewer cannot perform it itself after having just verified the document.
+Its report is advisory input to the user, never an automatic edit.
+
+**Hook and adapter registrations.** `check_agent_spawn.py` registers `editor`
+and `architect` in `HARNESS_ROLES`, their `-heavy` variants in
+`VARIANT_TO_BASE` / `HEAVY_VARIANTS`, and both roles in `TIER_TABLE`. Claude
+adapters ship for both roles; Antigravity ships all four files
+(`editor`/`editor-heavy`, `architect`/`architect-heavy`), since Antigravity
+binds `model` to the agent file rather than accepting a per-invocation
+override. Ten new `MANIFEST.json` entries cover the lot.
+
+**The spec's objective is a translation, not a transcript.** The user's raw
+framing is input; §1 carries that intent rewritten into the register the
+downstream roles actually consume — a concrete noun for every deliverable, a
+named and located anchor for every external source, and no vague qualifier
+left as an adjective ("clean", "simple", "similar to X" get pushed into a
+test-plan threshold or a success criterion, and the conversion is stated so
+the user can check it). Interview step 2a covers the method. Two conditions
+keep this honest: the rewrite is performed **with** the user and confirmed
+before the spec leaves draft — an unconfirmed translation is a guess wearing
+a spec's formatting — and the original framing is preserved verbatim in the
+new **Origin appendix**, so the translation stays auditable and drift is
+detectable rather than requiring trust.
+
+**Planner constraint on signed-off specs.** `harness/roles/planner.md` now
+states that a signed-off spec in `docs/specs/` governs directive derivation.
+
+**`mainAgent` convention applied to the new Antigravity adapters.** `true` is
+for user-facing roles (planner, controller, reviewer), `false` for
+dispatched-only ones (author, coder, researcher, runner). `architect` is
+`true` — being user-facing is the role's defining property. `editor` is
+`false`: it is dispatched by the Reviewer before a close, never invoked
+directly.
+
 ## v0.14.3
 
 Gates the Claude adapter's files symmetrically with Antigravity's, grants the

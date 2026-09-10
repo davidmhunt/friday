@@ -30,7 +30,7 @@ from pathlib import Path
 
 # The base harness roles and their variant mappings.
 # Any subagent type not in this set is a utility spawn and exempt.
-HARNESS_ROLES = {"controller", "planner", "coder", "runner", "reviewer", "author", "researcher"}
+HARNESS_ROLES = {"controller", "planner", "coder", "runner", "reviewer", "author", "researcher", "editor", "architect"}
 
 # Map each variant name back to its base harness role
 VARIANT_TO_BASE = {
@@ -40,6 +40,8 @@ VARIANT_TO_BASE = {
     "reviewer-heavy": "reviewer",
     "researcher-heavy": "researcher",
     "researcher-quick": "researcher",
+    "editor-heavy": "editor",
+    "architect-heavy": "architect",
 }
 
 # Map base roles to their high-tier [heavy] escalation variant
@@ -48,6 +50,8 @@ HEAVY_VARIANTS = {
     "coder": "coder-heavy",
     "reviewer": "reviewer-heavy",
     "researcher": "researcher-heavy",
+    "editor": "editor-heavy",
+    "architect": "architect-heavy",
 }
 
 ALL_HARNESS_ROLE_TYPES = HARNESS_ROLES | set(VARIANT_TO_BASE.keys())
@@ -58,7 +62,9 @@ TIER_TABLE = (
     "Runner=light (flash) (judgment -> runner-judgment/inherit) | "
     "Reviewer=mid (inherit) ([heavy] task -> reviewer-heavy/pro) | Author=mid (inherit) | "
     "Researcher=mid (inherit) ([heavy]/proof-bearing task -> researcher-heavy/pro; "
-    "quick lookup -> researcher-quick/inherit)"
+    "quick lookup -> researcher-quick/inherit) | "
+    "Editor=mid (inherit) ([heavy] doc -> editor-heavy/pro) | "
+    "Architect=mid (inherit) (phase-level spec -> architect-heavy/pro)"
 )
 
 def _load_high_tier_keywords(default: tuple[str, ...] = ("opus",)) -> tuple[str, ...]:

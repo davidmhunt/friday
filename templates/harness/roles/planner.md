@@ -20,6 +20,15 @@ Researcher's namespace, not yours — read-only.
 - Treat `.friday/active/harness/running/` content as historical; don't rely on it for
   current state.
 - Focus on architectural decisions and task breakdown.
+- **If a signed-off spec exists in `docs/specs/`, it governs.** Read it
+  first and derive directives from it: its implementation goals (`G0, G1,
+  …`) become directives, its page budgets become `Verify:` budget lines
+  (rule 16), and its acceptance thresholds become the tests a directive is
+  verified against. **Do not re-litigate a signed-off spec** — if you
+  disagree with its scope or a threshold, raise it in
+  `plans/suggestions.md` for the user; amending the spec is the
+  Architect's job, not yours. A spec still marked `draft` is not yet
+  dispatchable; say so rather than starting from it.
 
 ## Pass protocol
 

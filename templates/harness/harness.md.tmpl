@@ -19,7 +19,7 @@ read the doc. Every rule should exist because of a real incident (see
 ## Roles and the loop
 
 **Roles:** Controller, Planner, Coder, Runner, Reviewer, Author,
-Researcher. The user assigns yours at chat start ("you are the planner
+Researcher, Editor, Architect. The user assigns yours at chat start ("you are the planner
 agent"); "run the coder and runner in this session" without a named role =
 act as **Controller**.
 
@@ -40,7 +40,20 @@ evidence. A quick single-fact lookup can skip the Reviewer gate
 (`researcher-quick`). The user may also invoke the Researcher directly.
 Memos land in `docs/research/` and inform directives. Drop the
 Researcher role entirely if your project has no literature/methodology-
-research component.
+research component. The **Editor** likewise sits outside the main loop and
+is dispatched per-deliverable: it runs a mandatory subtractive pass on any
+prose deliverable before the Reviewer can close it (rule 16), and its only
+output is deletions. Drop it if your project ships no prose.
+
+The **Architect** sits *upstream* of the whole loop and is the only
+user-facing, interactive role: the user invokes it directly, it interviews
+them, and it writes a durable spec to `docs/specs/<slug>.md` (versioned in
+the project repo, unlike everything under `.friday/active/`). The Planner
+then derives its directives from that spec rather than from a conversation
+— implementation goals become directives, spec budgets become `Verify:`
+budget lines, spec thresholds become tests. An Architect that writes a spec
+without talking to the user has failed at the job. Skip the role for small
+work; a one-directive change needs no spec.
 
 Tiers are relative — high/mid/light means "the strongest model you're
 willing to spend here" down to "the cheapest one that can do this." High =
@@ -55,6 +68,8 @@ willing to spend here" down to "the cheapest one that can do this." High =
 | Reviewer | Mid | `claude-sonnet-5` | task tagged `[heavy]` → high tier |
 | Author | Mid | `claude-sonnet-5` | — |
 | Researcher | Mid | `claude-sonnet-5` | task tagged `[heavy]` (proof-bearing) → high tier |
+| Editor | Mid | `claude-sonnet-5` | document tagged `[heavy]` → high tier |
+| Architect | Mid | `claude-sonnet-5` | phase-level spec → high tier |
 
 `[light]`/`[heavy]` is set by the Planner at directive creation, never
 re-judged per session. `[heavy]` means: deriving or verifying a formal
@@ -245,6 +260,20 @@ via SETUP.md; keep the invariant.
     un-detached child with it, leaving no traceback, no OOM signature, and
     no watchdog alert. **Trigger:** any `long_job ... &`-style launch →
     `.friday/active/harness/rules/environment.md` §Detached launches.
+
+16. **Document budgets & concision.** Every prose deliverable carries a
+    page budget stated in its directive's `Verify:` block, and **over budget
+    is a defect with the same force as a broken citation**, not a stylistic
+    note. No prose deliverable closes without an Editor subtractive pass
+    (reported as `cut X lines / Y pages, math unchanged`) and a cold-reader
+    check by a context-free utility spawn. Assumption tables cap at 8 rows;
+    every core concept gets a figure. Exists because, in the project this
+    rule originated in, a technically flawless long-form document was
+    shipped that its own reader could not learn from — every gate measured
+    correctness, none measured length, and review was structurally additive.
+    **Trigger:** drafting, editing, or reviewing any prose deliverable under
+    `docs/`, or opening a directive that produces one →
+    `.friday/active/harness/rules/document_budgets.md`.
 
 ## Execution
 
