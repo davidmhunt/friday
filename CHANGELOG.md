@@ -5,6 +5,41 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.17.0
+
+Closes three ways a rule-16 budget could pass while the discipline it exists
+to enforce did not. All three were found in one phase of real use, and each
+was surfaced by a role volunteering something rather than by a gate.
+
+**Layout lengths are frozen.** Float spacing, caption skips and
+list/bibliography item separation now live in the shared preamble at fixed
+values and may not be adjusted to make a document fit. A style exemplar met
+its 3 pp budget twice by pulling the same three spacing levers while its
+body prose grew ~10%; the page count stayed mechanical and truthful, but it
+had stopped measuring length. A document that does not fit at the frozen
+lengths is over budget — cut it, or amend the budget through the Architect.
+
+**"Core body" has one definition, emitted by a tool.** Markdown: first `##`
+through the last content section, excluding front and back matter. LaTeX:
+`pdfinfo`. Two roles previously spent a full review cycle disputing whether
+a five-line header counted, with both readings defensible from what was
+written — a budget whose measurement is arguable is not a budget.
+
+**Quoted source text is immutable under trimming.** No trimming pass may
+shorten, elide, paraphrase or re-punctuate a quotation — not the Editor, not
+an author trimming their own draft, not a fix pass after a bounce. A memo
+whose whole evidentiary warrant was "every claim carries a verbatim quote"
+was found to contain one with two terms silently dropped; the fix pass for
+that defect nearly produced a second altered quote under budget pressure.
+Mechanical checks cannot see this — the page and equation number still
+resolve — so the rule removes the pressure instead of adding a detector.
+
+The Reviewer gains two checks, both about not trusting a handed-over report:
+**diff every post-draft edit** (a role's claim that its pass was subtractive
+is not evidence; the diff is), and **any edit after a verdict re-opens that
+verdict in full** rather than only the findings raised. The edit had the run
+of the document, so the re-check must too.
+
 ## v0.16.1
 
 Fixes an incomplete role registration from v0.15.0. `Editor` and `Architect`
