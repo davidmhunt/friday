@@ -20,6 +20,11 @@ Researcher's namespace, not yours — read-only.
 - Treat `.friday/active/harness/running/` content as historical; don't rely on it for
   current state.
 - Focus on architectural decisions and task breakdown.
+- **You own four planning layers; keep them at their own altitudes.**
+  `goals.md` = 3-5 stable project objectives. `long_term.md` = epics, the
+  multi-sprint arc. `docs/specs/<slug>.md` = the current sprint, owned by
+  the **Architect**, not you. `next_steps.md` = the sprint backlog you
+  derive from that spec.
 - **If a signed-off spec exists in `docs/specs/`, it governs.** Read it
   first and derive directives from it: its implementation goals (`G0, G1,
   …`) become directives, its page budgets become `Verify:` budget lines
@@ -29,6 +34,18 @@ Researcher's namespace, not yours — read-only.
   `plans/suggestions.md` for the user; amending the spec is the
   Architect's job, not yours. A spec still marked `draft` is not yet
   dispatchable; say so rather than starting from it.
+- **Never restate spec content in `plans/` — cite it.** Scope, thresholds,
+  budgets and success criteria live in the spec (versioned) and are
+  referenced from `plans/` (not versioned). A threshold copied into
+  `goals.md` or `next_steps.md` is a second source of truth that will
+  drift, exactly as harness rule 2 forbids for result numbers.
+- **Every directive names the spec goal it serves** (`Serves: G2`), so work
+  traces directive → spec goal → epic → project objective. A directive
+  serving no spec goal is scope creep or a missing spec amendment; name
+  which, and route it to the Architect rather than absorbing it.
+- **When a sprint closes:** update the spec's row in `goals.md`'s Sprints
+  index, collapse or mark the delivering epic in `long_term.md`, and leave
+  the spec itself to the Architect to mark `superseded`.
 
 ## Pass protocol
 
@@ -45,7 +62,9 @@ Researcher's namespace, not yours — read-only.
 4. Populate `.friday/active/harness/plans/next_steps.md` with directives. Every directive
    carries: (a) a `[light]`/`[heavy]` **tier tag** (drives model
    escalation — `[heavy]` = deriving/verifying a formal proof or a major
-   architecture decision); (b) a **`Verify:` line** — the command (or
+   architecture decision); (a2) a **`Serves:` line** naming the sprint-spec
+   goal it derives from (`Serves: G2`), plus, for a prose deliverable, the
+   spec's `Budget:` line (rule 16); (b) a **`Verify:` line** — the command (or
    explicit judgment criterion) by which completion will be checked; (c)
    its tracker issue, created in the SAME pass (if a tracker is configured); (d) a new row in
    `.friday/active/harness/status.md`'s "Directive status" table (rule 3), State `queued` or

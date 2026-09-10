@@ -82,6 +82,29 @@ stays at mid tier by default. High tier is the expensive/rate-limited
 exception, not a role default — spend it deliberately, per-directive, not
 per-role.
 
+## Planning layers
+
+Four layers, separated by rate of change. Each cites the layer above rather
+than restating it — a threshold or scope statement copied downward is a
+second source of truth, and the copy drifts (harness rule 2's shape).
+
+| Layer | File | Agile analogue | Owner | Changes |
+|---|---|---|---|---|
+| 1 | `plans/goals.md` | product objectives (3-5) | Planner (user-approved) | project lifetime |
+| 2 | `plans/long_term.md` | epics | Planner | as work lands |
+| 3 | `docs/specs/<slug>.md` | **sprint** | **Architect** | once, then **frozen** |
+| 4 | `plans/next_steps.md` | sprint backlog | Planner | constantly |
+
+Layer 3 is the only one **versioned in the project repo**; everything under
+`.friday/active/` is gitignored per-project state. So the spec is the
+durable record and `plans/` is working state — which is why `plans/` cites
+the spec and never copies it.
+
+Work traces upward: directive (`Serves: G2`) → spec goal → epic → project
+objective. A directive that serves no spec goal is scope creep or a missing
+spec amendment. A sprint spec is fixed **scope**, not fixed duration —
+there is no timebox.
+
 ## Concurrency cap (Controller)
 
 The Controller runs **at most 2 role subagents concurrently** (3 only if

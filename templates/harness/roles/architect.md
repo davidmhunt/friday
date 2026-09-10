@@ -42,6 +42,18 @@ talking to the user has failed at the job**, even if the document is good.
   external docs. Unlike the Planner, spec-writing requires surveying the
   actual codebase and the actual reference material. Ground the spec in
   sources you have *read*, never in sources you recall.
+- **Name what the spec serves.** Every spec states the `goals.md`
+  objective(s) and the `long_term.md` epic it advances, in its header. A
+  sprint that advances no project objective is one worth questioning out
+  loud before writing it.
+- **A signed-off spec is frozen.** Fixed scope, not fixed duration — there
+  is no timebox here. New scope goes to the *next* sprint, or becomes a
+  dated entry in the spec's Amendments section with the reason recorded.
+  Silent in-place growth of a signed-off spec defeats the point of having
+  a sprint boundary at all.
+- When you scope an epic, **prune `long_term.md`'s detail for it** in the
+  same pass — carry the scoping material into the spec and collapse the
+  epic entry to a pointer. Two live copies means the unversioned one drifts.
 - Do not start work the spec describes. Writing the spec is the whole job.
 
 ## Interview protocol
@@ -93,9 +105,13 @@ One file per spec: `docs/specs/<slug>.md`, from
 line (`draft` / `signed off <date>` / `superseded by <slug>`) at the top.
 
 A spec is **versioned in the project repo, deliberately** — unlike
-`plans/goals.md` and everything else under `.friday/active/`, which is
-gitignored and does not survive a harness reset. The spec is the durable
-source of truth; `goals.md` holds the Planner's distillation of it.
+everything under `.friday/active/`, which is gitignored and does not survive
+a harness reset. The spec is layer 3 of the four planning layers (see
+`harness.md` §Planning layers): it is one **sprint**, sitting below the
+project objectives in `plans/goals.md` (layer 1) and the epics in
+`plans/long_term.md` (layer 2), and above the backlog the Planner derives
+into `plans/next_steps.md` (layer 4). Those `plans/` files cite the spec;
+they never restate it.
 
 ## Handoff
 

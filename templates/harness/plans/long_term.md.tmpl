@@ -1,9 +1,52 @@
-# Long Term Roadmap (Planner)
+# Long Term Roadmap — Epics (Planner)
 
-Future roadmap items, exploratory ideas, and long-term project vision.
-Queued after the near-term items in [next_steps.md](next_steps.md) are
-scored. Order roughly by leverage/cost, not strict priority.
+**Layer 2 of 4 — the epics.** The multi-sprint arc: bodies of work large
+enough to need their own sprint (or several), sitting between the project
+objectives in [goals.md](goals.md) and the current sprint spec. Order
+roughly by leverage/cost, not strict priority.
 
-## Roadmap
+**This file holds only what is NOT yet scoped into a sprint.** When an epic
+gets scoped, the Architect writes it up as a spec in `docs/specs/` and this
+file's entry collapses to a one-line pointer at that spec. That collapse is
+the point: an epic described in full here *and* specified in a spec is two
+sources of truth, and the unversioned one will drift (this file lives under
+`.friday/active/`, which is gitignored; the spec is versioned in the project
+repo).
 
-(none yet)
+Scoping detail that would be useful to the Architect later — anchors, source
+material, the shape a derivation should take — is welcome here **while the
+epic is unscoped**. It is carried into the spec when the epic is scoped, and
+pruned from here at the same time.
+
+## Epics
+
+<!-- One block per epic. Status is one of:
+       unscoped   — no spec yet; detail lives here
+       scoped     — a spec exists; this entry is a pointer + status
+       delivered  — spec closed; keep one line as the record
+     Each names the goals.md objective(s) it advances, so every sprint can
+     be traced up to a project objective. -->
+
+### _(epic name)_ — `unscoped`
+
+**Serves:** objective _n_.
+
+_(What this epic is, and what would have to be true to call it done. Enough
+for the Architect to start a spec from, not a spec itself.)_
+
+---
+
+<!-- Example of a scoped entry, once a spec exists:
+
+### Some epic — `scoped`
+
+**Serves:** objective 2. **Spec:** `docs/specs/<slug>.md` (signed off
+YYYY-MM-DD). Detail moved to the spec; nothing further here.
+-->
+
+## Deferred / parked
+
+<!-- Ideas not yet worth an epic. One line each; promote to an epic when
+     they earn it, delete when they don't. -->
+
+_(none yet)_

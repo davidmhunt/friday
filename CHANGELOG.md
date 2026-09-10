@@ -5,6 +5,61 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.16.0
+
+Restructures the planning namespace into **four layers separated by rate of
+change**, replacing an overlap in which `plans/goals.md` and a sprint spec
+both claimed to hold "objectives and success criteria" — one versioned, one
+not. In the project this originated in, the unversioned copy won and then
+drifted: `goals.md` accumulated three dated amendments correcting its own
+objective, including one that reversed the project's authorship model. Every
+one of those was sprint-scoped content living in the project-objectives file.
+
+| Layer | File | Agile analogue | Owner | Changes |
+|---|---|---|---|---|
+| 1 | `plans/goals.md` | product objectives (3-5) | Planner (user-approved) | project lifetime |
+| 2 | `plans/long_term.md` | epics | Planner | as work lands |
+| 3 | `docs/specs/<slug>.md` | **sprint** | Architect | once, then **frozen** |
+| 4 | `plans/next_steps.md` | sprint backlog | Planner | constantly |
+
+**`plans/goals.md` is now 3-5 stable project objectives** plus a Sprints
+index pointing at each spec. It is explicitly the user's file: objectives are
+written or approved by them, not inferred by the Planner. A goal that has
+grown a threshold or a deliverable list is a spec in the wrong file.
+
+**`plans/long_term.md` becomes epics**, each with a status
+(`unscoped`/`scoped`/`delivered`) and the objectives it serves. It holds only
+what is **not** yet scoped: when an epic gets a spec, its entry collapses to
+a pointer and its scoping detail moves into the spec. Two live copies means
+the unversioned one drifts.
+
+**`plans/next_steps.md` becomes the sprint backlog**, opened only from a
+signed-off spec — a spec still marked `draft` is not dispatchable.
+
+**Traceability is now explicit.** Every directive carries a `Serves: G<n>`
+line naming its spec goal, so work traces directive → spec goal → epic →
+project objective, and a closeout can state which objectives actually moved.
+A directive serving no spec goal is scope creep or a missing spec amendment;
+the Planner names which and routes it to the Architect rather than absorbing
+it.
+
+**No `plans/` file restates spec content — it cites it.** Scope, thresholds,
+budgets and success criteria live in the spec (versioned) and are referenced
+from `plans/` (not). This is harness rule 2's single-source-of-truth shape
+applied to specs rather than to result numbers.
+
+**A signed-off spec is frozen — fixed scope, not fixed duration.** There is
+deliberately no timebox: the sprint analogy is borrowed for the boundary, not
+for the clock. New scope goes to the next sprint or becomes a dated entry
+under the spec's Amendments with its reason.
+
+New `## Planning layers` section in `harness/harness.md.tmpl`; constraints
+added to `harness/roles/planner.md` and `harness/roles/architect.md`;
+`Serves:` header in `harness/templates/spec_template.md`; all three
+`harness/plans/*.md.tmpl` files rewritten. No new rule number — this is the
+structure of the planning namespace, not a constraint with a trigger, and
+minting rules for everything dilutes the ones that matter.
+
 ## v0.15.0
 
 Adds two roles — **Editor** and **Architect** — and the shared rule and spec

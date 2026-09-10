@@ -2,6 +2,13 @@
 
 **Status: draft | signed off <YYYY-MM-DD> | superseded by `<slug>`**
 
+**Serves:** objective(s) `<n>` in `plans/goals.md` · epic `<name>` in
+`plans/long_term.md`
+
+<!-- This spec is one SPRINT: fixed scope, not fixed duration. Once signed
+     off it is frozen — new scope goes to the next sprint, or becomes a
+     dated entry under Amendments with its reason. -->
+
 <One paragraph: what this spec covers and who executes it. Note that this
 file is the versioned source of truth, and that the Planner distills it into
 `.friday/active/harness/plans/goals.md` — which is NOT version-controlled,
