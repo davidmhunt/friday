@@ -5,6 +5,25 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.16.1
+
+Fixes an incomplete role registration from v0.15.0. `Editor` and `Architect`
+were added to `check_agent_spawn.py`'s `HARNESS_ROLES` but not to
+`check_commit_msg.py`'s `ROLE_PREFIX_RE`, so those two roles could be spawned
+but could not land a correctly-prefixed commit — every `Editor:` or
+`Architect:` commit drew a rule-12 `WARN` for a first line that in fact
+conformed. Found when the first real `Architect:` commit warned.
+
+`Architect` is deliberately **not** in `BODY_REQUIRED_ROLES`: a spec is
+written before the directives that implement it exist, so requiring a
+directive + tracker reference would make every spec commit unlandable.
+`Editor` **is** required to carry one — a subtractive pass is work on a
+directive's deliverable like any other role's.
+
+Three regression tests added (50 total, all passing). The two hooks keep
+independent role lists by design, so adding a role means touching both;
+noted here because the same omission is easy to repeat.
+
 ## v0.16.0
 
 Restructures the planning namespace into **four layers separated by rate of

@@ -44,13 +44,18 @@ project.
 import re
 import sys
 
-ROLE_PREFIX_RE = re.compile(r"^(Controller|Planner|Coder|Runner|Reviewer|Author|Researcher|Harness): .+")
+ROLE_PREFIX_RE = re.compile(
+    r"^(Controller|Planner|Coder|Runner|Reviewer|Author|Researcher"
+    r"|Editor|Architect|Harness): .+"
+)
 
 # Roles whose commits record directive work and therefore need a body with a
 # directive + tracker reference. `Harness:` is excluded: a submodule-pointer
 # bump is a real project-repo change but serves no directive. `Controller:`
 # is listed for completeness — the Controller produces no recordable work of
-# its own, so it should not be committing at all.
+# its own, so it should not be committing at all. `Architect:` is excluded
+# because a spec is written *before* the directives that implement it exist,
+# so requiring a directive reference would make every spec commit unlandable.
 BODY_REQUIRED_ROLES = (
     "Planner",
     "Coder",
@@ -58,6 +63,7 @@ BODY_REQUIRED_ROLES = (
     "Reviewer",
     "Author",
     "Researcher",
+    "Editor",
 )
 
 # Never flagged: merge commits and fixup!/squash! autosquash commits.

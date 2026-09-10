@@ -168,3 +168,39 @@ def test_directive_and_tracker_only_in_git_comment_block_does_not_count(tmp_path
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_architect_spec_commit_is_exempt_from_body_check(tmp_path):
+    # A spec is written *before* the directives implementing it exist, so
+    # requiring a directive reference would make every spec commit unlandable.
+    repo = _build_repo(tmp_path)
+    result = _run(
+        repo,
+        "Architect: fix FMCW sign convention to conventional dechirp / IFFT\n",
+    )
+    assert result.returncode == 0
+    assert "WARN" not in result.stdout
+
+
+def test_editor_message_with_body_passes(tmp_path):
+    # An Editor pass is subtractive work on a directive's deliverable, so it
+    # records directive work like any other role and needs the body.
+    repo = _build_repo(tmp_path)
+    result = _run(
+        repo,
+        "Editor: subtractive pass on T2, cut 41 lines / 1.2 pages\n\n"
+        "Math unchanged.\n\n"
+        "Directive: D-26\n"
+        "Tracker: #48\n",
+    )
+    assert result.returncode == 0
+    assert "WARN" not in result.stdout
+
+
+def test_editor_message_missing_body_is_flagged(tmp_path):
+    repo = _build_repo(tmp_path)
+    result = _run(
+        repo,
+        "Editor: subtractive pass on T2, cut 41 lines / 1.2 pages\n",
+    )
+    assert "Editor commit missing" in result.stdout
