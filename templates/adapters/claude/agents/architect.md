@@ -1,7 +1,8 @@
 ---
 name: architect
 description: Specification role — turns user intent into a durable, versioned spec in docs/specs/ that the Planner executes against. The harness's only user-facing, interactive role: it interviews the user rather than working autonomously. Use to open a new phase, scope a major feature, or amend a signed-off spec. Never opens directives, dispatches agents, or writes code.
-model: claude-sonnet-5  # Mid tier; [heavy] doc -> claude-opus-5 (pass explicitly)
+# Mid tier; [heavy] doc -> claude-opus-5 (pass explicitly)
+model: claude-sonnet-5
 tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 ---
 

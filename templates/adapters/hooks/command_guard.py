@@ -26,6 +26,7 @@ regresses.
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -233,6 +234,72 @@ DENY_PATTERNS = [
     (r"\b(mkfs|dd\s+if=)", "Direct disk formatting / raw writing is forbidden."),
 ]
 
+# --- Sprint-branch policy -------------------------------------------------
+#
+# Branch-per-sprint workflow: a sprint's work lives on its own branch, where
+# the Reviewer commits freely at each directive close-out (so history stays
+# bisectable even while the operator is away). `main` stays protected — a
+# commit on it, and every merge and push, still requires confirmation.
+#
+# Fails closed: if the branch cannot be determined (not a repo, detached
+# HEAD, git unavailable), the commit falls through to force_ask.
+
+PROTECTED_BRANCHES = {"main", "master"}
+
+
+def current_branch() -> Optional[str]:
+    """Return the checked-out branch name, or None if it cannot be determined."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    branch = result.stdout.strip()
+    # "HEAD" means detached — there is no branch to reason about.
+    if not branch or branch == "HEAD":
+        return None
+    return branch
+
+
+def is_sprint_branch_commit(sub_cmd: str) -> bool:
+    """True for a plain `git commit` on a non-protected (sprint) branch.
+
+    Deliberately narrow: only `commit`. Merge, push, checkout, switch, reset
+    and the rest stay on their existing force_ask path regardless of branch,
+    because those are how work reaches `main` or leaves the machine.
+    """
+    if not re.search(r"\bgit\s+commit\b", sub_cmd):
+        return False
+    # `git -C <path> commit`, `--git-dir`, `--work-tree`: the commit would
+    # land in a repo other than the one current_branch() just inspected.
+    if re.search(r"\bgit\s+(-C\b|--git-dir\b|--work-tree\b)", sub_cmd):
+        return False
+    branch = current_branch()
+    if branch is None:
+        return False
+    return branch not in PROTECTED_BRANCHES
+
+
+def line_redirects_directory(command_line: str) -> bool:
+    """True if the command line changes directory or repo before running.
+
+    current_branch() inspects the hook's own cwd. A line like
+    `cd /other/repo && git commit` would therefore be judged against the
+    wrong repository, so the sprint-branch exemption is withheld for the
+    whole line and the commit falls back to force_ask.
+    """
+    return bool(re.search(r"(^|[;&|]|\s)cd\s", command_line)) or bool(
+        re.search(r"\bgit\s+(-C\b|--git-dir\b|--work-tree\b)", command_line)
+    )
+
+
 FORCE_ASK_PATTERNS = [
     (r"\bgit\s+(commit|push|checkout|switch|reset|stash|merge|rebase|tag|cherry-pick|revert)\b", "Git branch/remote state modification requires confirmation."),
     (r"\b(systemd-run|setsid)\b", "Launching detached/background service requires confirmation."),
@@ -307,7 +374,11 @@ def is_container_environment() -> bool:
     )
 
 
-def evaluate_subcommand(sub_cmd: str, in_container: bool = False) -> Tuple[str, Optional[str]]:
+def evaluate_subcommand(
+    sub_cmd: str,
+    in_container: bool = False,
+    allow_branch_exemption: bool = True,
+) -> Tuple[str, Optional[str]]:
     """Evaluate a single sub-command and return (decision, reason)."""
     # 1. Deny check (always active, in container and on host)
     for pattern, reason in DENY_PATTERNS:
@@ -318,17 +389,22 @@ def evaluate_subcommand(sub_cmd: str, in_container: bool = False) -> Tuple[str, 
     if in_container:
         return "allow", None
 
-    # 2. Force-ask check (host mode)
+    # 2. Sprint-branch exemption: `git commit` is auto-allowed off `main`
+    #    so the harness loop can record each directive close-out unattended.
+    if allow_branch_exemption and is_sprint_branch_commit(sub_cmd):
+        return "allow", None
+
+    # 3. Force-ask check (host mode)
     for pattern, reason in FORCE_ASK_PATTERNS:
         if re.search(pattern, sub_cmd):
             return "force_ask", reason
 
-    # 3. Allow check (host mode)
+    # 4. Allow check (host mode)
     for pattern in ALLOW_COMMAND_PATTERNS:
         if re.match(pattern, sub_cmd):
             return "allow", None
 
-    # 4. Default for unrecognized commands (host mode)
+    # 5. Default for unrecognized commands (host mode)
     return "force_ask", f"Command '{sub_cmd}' is not in the auto-allow list and requires confirmation."
 
 
@@ -348,10 +424,17 @@ def evaluate_command_line(command_line: str, in_container: Optional[bool] = None
     if not sub_commands:
         return {"decision": "allow"}
 
+    # Withheld for the whole line if it hops directories or repos.
+    branch_exemption_ok = not line_redirects_directory(command_line)
+
     highest_ask_reason = None
 
     for sub_cmd in sub_commands:
-        decision, reason = evaluate_subcommand(sub_cmd, in_container=container_mode)
+        decision, reason = evaluate_subcommand(
+            sub_cmd,
+            in_container=container_mode,
+            allow_branch_exemption=branch_exemption_ok,
+        )
         if decision == "deny":
             return {"decision": "deny", "reason": reason or "Command is strictly forbidden by policy."}
         if decision == "force_ask":

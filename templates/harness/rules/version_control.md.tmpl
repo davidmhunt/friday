@@ -198,6 +198,48 @@ history should follow commit hashes and tracker references, not
 `status_history.md`.
 <!-- SECTION:tracker_github:end -->
 
+## Branching
+
+**Each sprint's work lives on its own branch; `main` only ever receives
+reviewed, user-approved work.**
+
+This is what makes "each role commits its own work" actually reachable. The
+commit guard (`command_guard.py`) auto-allows `git commit` on any branch
+that is not `main`/`master`, so roles record their passes as they finish —
+including during an unattended autonomous loop, when nobody is present to
+approve anything. On `main`, `git commit` stays `force_ask`. If the branch
+cannot be determined (detached HEAD, not a repo), the guard fails closed to
+`force_ask`.
+
+Merge, push, checkout and switch are **unchanged** — all still `force_ask`,
+regardless of branch. Those are how work reaches `main` or leaves the
+machine, and they stay the operator's decision.
+
+The lifecycle:
+
+1. **Sprint opens.** Once the Architect's spec is signed off, branch from
+   `main`: `git switch -c sprint-<n>-<slug>`, matching the spec's slug so
+   branch and spec are obviously the same sprint. One confirmation, at a
+   point where the user is present anyway.
+2. **Sprint runs.** Every role commits its own scoped paths at the end of
+   its pass, per "Who records, and when" above. No approval needed, so an
+   accepted directive becomes a record immediately instead of stacking into
+   an undifferentiated working tree.
+3. **Sprint closes.** The Reviewer verifies the spec's closing condition,
+   then the user reviews the branch as a whole and approves. Only then does
+   it merge to `main` — a confirmed action, as is any push.
+
+**Why this exists.** Sprint 1 closed twelve Reviewer-verified directives
+into a single commit. Not because anyone chose that: `git commit` was
+`force_ask` on `main`, the operator was away for most of the sprint, and
+every close-out that wanted to record itself hit an approval prompt with
+nobody there. The loop kept running because nothing *else* it does needs
+approval. The cost was real — `src/console_core/store.py` ended up carrying
+four directives' work interleaved, so no single directive can now be
+reverted or bisected on its own. The approval gate and an unattended loop
+were simply incompatible, and the loop won silently. Branching resolves it
+without loosening anything that protects `main`.
+
 ## Remote
 
 `origin` → `[SET AT SETUP: VCS_REMOTE]` (SSH, private repo). Commits happen

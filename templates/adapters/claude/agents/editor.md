@@ -1,7 +1,8 @@
 ---
 name: editor
 description: Concision and clarity pass for this project's prose deliverables (theory documents, reports, memos). Use before any prose directive closes — its only output is deletions, consolidations, and moves-to-appendix, reported as "cut X lines / Y pages, math unchanged". Never adds prose, never changes the math, never adjudicates correctness.
-model: claude-sonnet-5  # Mid tier; [heavy] doc -> claude-opus-5 (pass explicitly)
+# Mid tier; [heavy] doc -> claude-opus-5 (pass explicitly)
+model: claude-sonnet-5
 tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 ---
 

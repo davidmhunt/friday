@@ -44,7 +44,7 @@ your task needs, per this index:**
 | Environment | [SET AT SETUP: PACKAGE_MANAGER] (`[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD] ...`); see `.friday/active/harness/rules/environment.md` |
 | Accelerators | [SET AT SETUP: none / GPU details, or delete this row] |
 | Work record (rule 12) | git + `[SET AT SETUP: VCS_REMOTE]`; a "record" = a commit, referenced by hash |
-| Who records work | Reviewer, at close-out (never each role individually) |
+| Who records work | Each role commits its own scoped paths as its pass finishes (harness rule 12). Sprint work happens on a `sprint-<n>-<slug>` branch where `git commit` is auto-allowed; the Reviewer still owns `[DONE]` and the close, and only the user approves the merge to `main`. |
 | Queue mirror (rule 13) | [SET AT SETUP: TRACKER_KIND] — Planner opens, Reviewer closes (or "none" if not tracked externally) |
 | Docker dev container | `[SET AT SETUP: DOCKER_ENABLED]` — when enabled, the image installs `[SET AT SETUP: PACKAGE_MANAGER]` plus the `[SET AT SETUP: ADAPTERS_ENABLED]` CLI(s); see `.friday/active/harness/USER_GUIDE.md` §12 to set up or reconfigure |
 
@@ -122,9 +122,14 @@ Command execution is programmatically guarded by `.agents/hooks.json` via
 <!-- SECTION:latex_on:end -->
   read-only git queries
   (`git status`, `git diff`, `git log`, `git show`, `git branch`),
+  and `git commit` **when the checked-out branch is not `main`/`master`** —
+  the branch-per-sprint workflow (see
+  `.friday/active/harness/rules/version_control.md` §Branching).
   and non-destructive inspections (`ls`, `cat`, `grep`, `rg`, `find`, `pwd`).
-- **Requires user approval (`force_ask`)**: State-modifying git commands (`git commit`,
-  `git push`, `git checkout`, `git switch`, `git reset`), background jobs (`systemd-run`,
+- **Requires user approval (`force_ask`)**: `git commit` **on `main`/`master`** (or when the
+  branch cannot be determined — the guard fails closed), and every other state-modifying
+  git command on any branch (`git push`, `git merge`, `git checkout`, `git switch`,
+  `git reset`), background jobs (`systemd-run`,
   `setsid`), dependency modifications (`[SET AT SETUP: PACKAGE_MANAGER_ADD_CMD]` and its
   remove counterpart), file deletions (`rm`, `unlink`), and unclassified commands.
 - **Strictly forbidden (`deny`)**: Privilege escalation (`sudo`, `su`), force pushes

@@ -1,7 +1,8 @@
 ---
 name: reviewer
 description: Quality assurance and loop closure for this project's harness. Use to verify Coder/Runner output against a directive's Verify line, check eval outputs and provenance sidecars, decide [DONE] vs. needs-more-work, and close or re-open the working queue. Does not write code or run training jobs.
-model: claude-sonnet-5  # Mid tier; [heavy] pass -> claude-opus-5 (pass explicitly)
+# Mid tier; [heavy] pass -> claude-opus-5 (pass explicitly)
+model: claude-sonnet-5
 tools: Read, Grep, Glob, Bash, Edit, Write, WebFetch, SendMessage
 ---
 

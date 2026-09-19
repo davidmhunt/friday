@@ -1,7 +1,8 @@
 ---
 name: planner
 description: Project manager and architect for this project's multi-agent harness. Use to open a new planning cycle, populate plans/next_steps.md with tagged directives, triage plans/suggestions.md, or make architectural/task-breakdown calls. Manually invoked by the user at the start of each cycle — does not read raw source code.
-model: claude-sonnet-5  # Mid tier; [heavy] pass (architecture decisions) -> claude-opus-5 (pass explicitly)
+# Mid tier; [heavy] pass (architecture decisions) -> claude-opus-5 (pass explicitly)
+model: claude-sonnet-5
 tools: Read, Grep, Glob, Edit, Write, Agent, Bash
 ---
 
