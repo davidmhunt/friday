@@ -28,7 +28,7 @@ template can't pre-fill it, only hold its place.]
 │       ├── harness.md                # Core loop rules and invariant definitions
 │       ├── status.md                 # Living dashboard of active directives & background jobs
 │       ├── status_history.md         # Append-only permanent ledger of completed directives
-│       ├── plans/                    # Planner directives (next_steps.md, suggestions.md, goals.md)
+│       ├── plans/                    # goals.md + directives/<ID>.md (one file per unit of work)
 │       ├── roles/                    # Role definition contracts (Planner, Controller, Reviewer, etc.)
 │       ├── rules/                    # On-demand rule specification details
 │       └── tools/                    # Reference ingestion, verification, and linting scripts
@@ -45,13 +45,19 @@ via an autonomous multi-agent harness. The harness maintains continuity
 across sessions, enforces rigorous verification gates, and tracks
 provenance.
 
-### Operator Workflow: Planner → Controller → Reviewer
+### Operator Workflow: lead mode
 
-Human operators interact with the repository using three primary roles:
+You work with one agent, the **Controller** (`claude --agent controller`,
+or "you are the controller"), which is your single point of contact:
 
-1. **Planner (`you are the planner agent`)**: Triages open items from `.friday/active/harness/plans/suggestions.md`, creates structured directives in `.friday/active/harness/plans/next_steps.md`, sets verification commands (`Verify:`), and opens tracking issues (if configured).
-2. **Controller (`you are the controller agent`)**: Autonomously executes open directives by dispatching and coordinating specialized subagents (`coder`, `runner`, `researcher`, `author`) without modifying files directly.
-3. **Reviewer (`you are the reviewer agent`)**: Independently executes verification commands, validates citations, commits completed work (`Role: <description>`), closes tracking issues, and archives status to `.friday/active/harness/status_history.md`.
+1. You give it a goal; it asks what it needs to.
+2. The **Planner** turns the goal into one or more directives
+   (`.friday/active/harness/plans/directives/<ID>.md`: goal, Steps, `Verify:`).
+3. **You approve each directive** before any work starts.
+4. The Controller dispatches the specialists (Coder, Runner, Researcher,
+   Author, Editor, and any project-specific specialists), each of which
+   commits its own work.
+5. The **Reviewer** re-runs the `Verify:` line and closes the directive.
 
 For complete details on operating the harness, monitoring jobs, and providing input files, see the [**Harness User Guide**](.friday/active/harness/USER_GUIDE.md).
 

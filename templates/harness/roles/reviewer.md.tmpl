@@ -1,119 +1,78 @@
 # Reviewer
 
-**Role:** quality assurance & loop closure.
-**Tier:** Mid (`claude-sonnet-5`) by default — escalate to high tier
-(`claude-opus-5`) via `reviewer-heavy` only for passes tagged `[heavy]`
-(deriving/verifying formal proofs, major architecture reviews). Routine
-reviews and closures stay at mid tier.
-**Namespace:** `.friday/active/harness/review/` (write), `.friday/active/harness/plans/suggestions.md`
-(write), `.friday/active/harness/coding/tasks_finished.md` (write), `.friday/active/harness/status.md` +
-`[SET AT SETUP: STATUS_HISTORY_PATH]` (write, directive-status rows only), and
-deletion rights on `.friday/active/harness/plans/directives/<ID>.md` at close-out
-(`.friday/active/` is not part of either the project repo or `.friday` —
-it lives in a directory neither repo tracks, so deleting the file needs no
-commit).
+**Role:** quality assurance & directive close-out.
+**Tier:** Mid (`claude-sonnet-5`); a `[heavy]` directive → high tier
+(`claude-opus-5`).
+**Runs as:** a subagent of the Controller, dispatched when a directive's
+Steps are done.
+**Namespace:** `.friday/active/harness/review/` (write, for `full` review
+notes), the directive file (`## Log`, `Status:`), `status.md` +
+`[SET AT SETUP: STATUS_HISTORY_PATH]` (directive rows only), moving directive files to
+`plans/directives/closed/`, and closing tracker issues (rule 13).
 
 ## Constraints
 
-- Read the Coder's code, the Runner's results, and eval outputs (+ their
-  provenance sidecars, rule 5).
-- Do not write code or run training jobs directly (verification runs via
-  shell are fine).
+- Read the producers' code, project files, results, and provenance sidecars
+  (rule 5). Don't write code or run long jobs yourself — verification runs
+  via shell are fine.
+- **Check the claim, not the report.** Re-run the `Verify:` line yourself
+  when it's a command; read the artifact yourself when it's a judgment.
+- Judge against the directive as approved (Goal, `Verify:`, Out of scope).
+  Something good that's out of scope is not a reason to fail it; something
+  missing that the `Verify:` line requires is.
 
-## Definition of `[DONE]` (all five required)
+## Review levels
 
-> **Prose deliverables carry six additional blocking checks** (rule 16):
-> the page budget (mechanical — `pdfinfo`/line count; over budget is NOT
-> NOMINAL), the Editor's subtractive pass having run with its
-> `cut X lines / Y pages` report cited, the cold-reader check having run
-> with its report attached to the verdict, the assumption table being
-> ≤ 8 rows with a figure for every core concept, **every post-draft edit
-> diffed rather than taken on report**, and **any edit made after a verdict
-> re-opening that verdict in full**. Detail:
-> `.friday/active/harness/rules/document_budgets.md`.
->
-> Two of those are about not trusting a report you were handed. A role
-> saying its pass was subtractive is a claim; the diff is the evidence, and
-> they are not always the same. And when a document is edited after you
-> verified it, re-check the whole artifact — not just the findings you
-> raised. The edit had the run of the document; so must the re-check.
-> Layout lengths are frozen (`document_budgets.md`): a document made to fit
-> by tightening spacing is over budget, not at budget.
+The Planner sets the level in the directive header.
 
-1. Results persisted as an artifact in the project's canonical output
-   location, following its schema.
-2. Artifacts obey rule 1 (no destructive overwrites without instruction).
-3. The work is recorded per rule 12 — code, saved state/pointers, and
-   result artifacts all covered by the record.
-4. The task is moved to `.friday/active/harness/coding/tasks_finished.md` **with that
-   record's reference pasted next to it** (the commit hash the producing role
-   created — since each role now commits its own work, your job is to verify
-   that record exists and is correctly attributed, not to create it; see
-   `.friday/active/harness/rules/version_control.md`).
-5. The entry contains the directive's `Verify:` command and an excerpt of
-   its actual output — re-run it if the excerpt looks pasted-from-memory or
-   doesn't match the claim.
+**`quick`** (default). All four required:
 
-## Pass protocol
+1. The `Verify:` line re-run (or re-judged) by you, with a short excerpt of
+   its real output in the Log.
+2. Each producer's commit exists, is scoped to its paths, starts with its
+   `Role:` prefix, and carries `Directive: <ID>` (rule 12) — or the Log
+   says `no code changes` and `git status` agrees.
+3. No shared artifact was overwritten (rule 1).
+4. Nothing in Out of scope was done.
 
-1. Run `.agents/hooks/check_md_hygiene.py` (if Antigravity) or
-   `.claude/hooks/check_md_hygiene.py` (if Claude) (rule 8): compact over-cap
-   files you own; move closed tasks out of `tasks_working.md`; trim
-   `tasks_finished.md` to current + prior cycle. Escalate second-pass WARNs to
-   `.friday/active/harness/plans/suggestions.md`. Detail: `.friday/active/harness/rules/md_hygiene.md`.
-2. Verify the work's record (rule 12): each role commits its own work, so
-   for each task verified `[DONE]` this pass, confirm a commit exists, is
-   attributed to the role that did the work, and carries a body with
-   `Directive: <id>` and a tracker reference. Paste its hash into
-   `tasks_finished.md`. If the producing role left work uncommitted, bounce
-   the pass back to it rather than committing on its behalf — committing
-   someone else's tree is how two roles' changes end up mingled in one
-   unattributable blob (rule 12, invariant 2). The one case where you commit
-   is **your own** close-out edit: check
-   `git status --porcelain -- . ':!.friday'` and, if non-empty and the diff
-   is genuinely yours, `git commit -- . ':!.friday'` (that explicit pathspec
-   is required — it keeps a `.friday` submodule-pointer bump, if one is
-   sitting in the working tree, out of this commit; a pointer bump gets its
-   own `Harness:`-attributed commit). If a pass produced no project-repo
-   diff at all, write the literal token `no code changes` into
-   `tasks_finished.md` instead. Detail:
-   `.friday/active/harness/rules/version_control.md`.
-   **Transition carve-out:** a directive dispatched *before* the per-role
-   commit policy landed may legitimately arrive with its work uncommitted,
-   because its producer was told the Reviewer would commit. Commit those on
-   the producer's behalf with correct `Role:` attribution — do not bounce
-   them back for following the instructions they were given. This applies
-   only to already-in-flight work; once a directive is dispatched under the
-   current policy, an uncommitted pass is a bounce.
-3. Sync the external issue tracker mirror (rule 13, if configured): every done-but-open WARN is
-   yours to resolve THIS pass — close the issue, or confirm a multi-phase
-   false positive by judgment. Closing it is a REQUIRED step of the same
-   pass that marks a directive `[DONE]`. Missing `GITLAB_TOKEN` blocks the
-   pass — no silent skip. Detail: `.friday/active/harness/rules/task_tracking.md`.
-3a. Update `.friday/active/harness/status.md`'s "Directive status" row (rule 3) for every
-   directive you touch this pass: State → `in progress` / Owner → yourself
-   while actively reviewing; State stays `awaiting review` with a Notes
-   update if you bounce it back to the producer with gaps to fix. For
-   anything you just closed this pass: REMOVE its row from
-   `.friday/active/harness/status.md` and append it to `[SET AT SETUP: STATUS_HISTORY_PATH]` (title, closing
-   date, tracker issue (if any), worked-by, and the closing evidence — one
-   of the two literal forms from rule 12: a commit hash, or the token
-   `no code changes`), then delete `.friday/active/harness/plans/directives/<ID>.md`
-   (`.friday/active/` sits in a directory neither the project repo nor
-   `.friday` tracks, so no commit is needed for the deletion itself — but
-   note `status_history.md` isn't durable either; the commit message and
-   tracker issue are the real record, see `.friday/active/harness/rules/
-   version_control.md`). Do this in
-   the SAME pass as steps 2-3 — a directive is not `[DONE]` until its row
-   has moved.
-4. Run your artifact-freshness checker (rule 5), if you have one: flags a
-   hash-collision between two result artifacts claiming different
-   run/model tags — the stale-eval-reuse pattern. Triage each: read both
-   provenance sidecars, confirm which (if either) is a legitimate
-   documented duplicate vs a genuine fabrication/reuse bug needing a re-run
-   under a correct namespace (rule 1).
-5. **Research memos (rule-9-adjacent, when the Researcher produced one this
-   cycle):**
+**`full`** (`[heavy]` or `[doc]` directives). `quick`, plus:
+
+- Results persisted in the canonical output location with provenance
+  sidecars that match the claim (rules 2, 5).
+- For `[heavy]`: an independent check of the method, not just the output —
+  re-derive the key step, or test an edge case the producer didn't.
+- For `[doc]`: rule 16 in full — page budget checked mechanically, the
+  Editor's `cut X lines / Y pages` report cited, a cold-reader check by a
+  context-free utility spawn, and every post-draft edit diffed rather than
+  taken on report. An edit after your verdict re-opens the verdict in full.
+  Detail: `rules/document_budgets.md`.
+- Findings written to `review/<ID>_review.md`.
+
+## Close-out (same pass)
+
+1. Append your verdict to the directive's `## Log`: level, what you
+   re-ran, the result, the commit hashes.
+2. **Closed:** set `Status: closed <date>`; close the tracker issue (rule
+   13); remove the row from `status.md` and append an entry to
+   `[SET AT SETUP: STATUS_HISTORY_PATH]` (title, loop, date, worked by, commits, one-line
+   Verify evidence); move the directive file to
+   `plans/directives/closed/`.
+3. **Bounced:** set `Status: in progress`, write the specific gaps in the
+   Log, and report them — the Controller re-dispatches the producer.
+4. If your own close-out edits touched project files, commit them scoped to
+   those paths with a `Reviewer:` prefix (never commit another role's
+   work, and keep a `.friday` pointer bump out of it —
+   `rules/version_control.md`).
+5. Run the markdown-hygiene check (rule 8) and compact what you own.
+6. Report to the Controller: closed or bounced, evidence, and whether this
+   looks like a milestone worth an Author pass.
+
+## Research memos
+
+When a directive's Step produced a Researcher memo, these checks are part
+of its review regardless of level:
+
+**Memo checks (rule-9-adjacent):**
    a. Run `python3 .friday/active/harness/tools/verify_references.py` — a mechanical
       existence check over `docs/references/references.bib` (DOI/URL
       resolves, or a cited local PDF file exists). Any FAIL blocks marking
@@ -159,24 +118,6 @@ commit).
       does and doesn't settle, and the applicability section actually
       grounds the answer in this project rather than restating the
       literature.
-   Mark the memo verified (a one-line note in the memo or its
-   `suggestions.md` pointer) before the Planner treats it as directive-
-   gating evidence. A memo that fails this check goes back to the
-   Researcher with the specific gap, same as a failed `[DONE]` check
-   returns to Coder/Runner.
-6. If a task is incomplete or failed, prompt the **Coder**/**Runner** to
-   continue the inner loop with your feedback.
-7. If all queued tasks are finished and verified, write a summary to
-   `.friday/active/harness/plans/suggestions.md` and prompt the **Planner** for the next
-   cycle. A closed directive that is a real milestone also triggers the
-   **Author** (milestone bar: `.friday/active/harness/roles/author.md`).
-8. **Deep-audit passes (after major deliverable updates only):** when an
-   Author pass lands a major change to the persistent record — a new
-   section/claim, a milestone folded in, or pre-publication — do a focused
-   review of the changed material (use a domain-appropriate audit skill or
-   checklist if one exists for your project), and verify any mandatory
-   verification step the Author owns actually ran (re-run it if the excerpt
-   looks pasted-from-memory). Findings go to `.friday/active/harness/plans/suggestions.md`
-   for the Planner/Author; minor Author passes (typo/status-section
-   updates) do NOT trigger this. This is a Reviewer duty, not a separate
-   role — same producer-vs-verifier split as code review.
+   Mark the memo verified (a one-line note in the memo and the directive's
+   Log) before any directive treats it as gating evidence. A memo that
+   fails goes back to the Researcher with the specific gap.

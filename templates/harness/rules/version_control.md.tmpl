@@ -14,12 +14,12 @@ Whatever system you use, three things must be true:
    a decision with no code to show for it), the literal token
    `no code changes`. Either way, that reference is recorded in two places:
    `[SET AT SETUP: STATUS_HISTORY_PATH]` and next to the task in
-   `.friday/active/harness/coding/tasks_finished.md`.
+   the directive file's `## Log`.
 2. **The record is attributable to the role that did the work.** Two agents'
    changes must never sit mingled in one unrecorded blob — an
    un-attributable working state turns a one-line revert into archaeology.
 3. **A task is not `[DONE]` until its record exists and its reference is
-   pasted next to the task** in `.friday/active/harness/coding/tasks_finished.md`.
+   pasted next to the task** in the directive file's `## Log`.
 
 ## Who records, and when
 
@@ -50,7 +50,7 @@ review still stands between work and publication.
 ## What gets committed
 
 Since v0.13.0, harness working state (`.friday/active/harness/status.md`,
-`plans/`, `coding/tasks_*.md`, etc.) lives in `.friday/active/` — a
+`plans/`, directive files, etc.) lives in `.friday/active/` — a
 directory that belongs to neither the project repo nor `.friday` itself,
 tracked by nothing. A close-out commit in the project repo can therefore
 only ever contain **project-repo content**: source, tests, and `docs/`.
@@ -61,7 +61,7 @@ commits as below.
 - Before committing, check `git status --porcelain -- . ':!.friday'`. If
   that is empty, the pass produced no project-repo diff — **make no
   commit.** Record the literal token `no code changes` in
-  `tasks_finished.md` and `status_history.md` instead (still write the
+  the directive's `## Log` and `status_history.md` instead (still write the
   commit-message-shaped record described below into those files' notes,
   so the directive/tracker trail survives even without a commit).
 - If it's non-empty, commit with `git commit -- . ':!.friday'` —
@@ -82,9 +82,11 @@ commits as below.
 ## Attribution format
 
 Every commit message starts with `Role: description` — capitalized role
-name exactly as it appears in `.friday/active/harness/harness.md` ("Roles:" line: Planner,
-Coder, Runner, Reviewer, Author, Researcher; Controller does not itself
-produce recordable work), colon, space, then a normal imperative summary.
+name exactly as it appears in `.friday/active/harness/harness.md` ("The team"
+table: Planner, Coder, Runner, Reviewer, Author, Researcher, Editor,
+Architect, plus any project-specific specialist such as `Hardware`;
+Controller does not itself produce recordable work), colon, space, then a
+normal imperative summary.
 Attribute to the role that actually did the work — normally your own, since
 each role now commits for itself. `Reviewer:` is correct only when the
 Reviewer's own edit (a close-out note, a revert) is what's being recorded.
@@ -123,19 +125,29 @@ no tracker
 - Never force-push.
 - Never commit `.env`, `harness.config.env`, or any credential/token file.
 <!-- SECTION:lfs_policy:start -->
-[SET AT SETUP: delete this bullet + the git-LFS bullet below if the project
+[SET AT SETUP: delete this bullet + the git-LFS bullets below if the project
 has no large generated binary artifacts checked into git — otherwise fill
 in the actual paths:]
 - Never commit raw reference/source PDFs under `[SET AT SETUP: LARGE_BINARY_EXCLUDE_PATHS]`
   (gitignored — see repository layout in `AGENTS.md`).
-- Never commit a generated large binary (report PDF, checkpoint, etc.) as a
-  plain git object — route it through git LFS (`.gitattributes` tracks
-  `[SET AT SETUP: LFS_TRACKED_PATTERNS]`), and only the latest version is
-  meant to be kept (don't accumulate history — prune old LFS objects
-  periodically).
+- Never commit a generated large binary (report PDF, checkpoint, firmware
+  image, capture file) as a plain git object — route it through git LFS
+  (`.gitattributes` tracks `[SET AT SETUP: LFS_TRACKED_PATTERNS]`); extend
+  the patterns before adding a new kind of binary.
+- **Understand what LFS does and does not do.** It does *not* keep only the
+  latest version of a file — it stores **every** committed version in LFS
+  storage, merely moving the bytes out of the packfile so clones stay fast.
+  Nothing is pruned automatically, and most hosts enforce an LFS quota per
+  namespace, so:
+  - Commit generated artifacts at **milestones**, not on every rebuild. A
+    PDF or binary regenerated on each iteration consumes quota permanently.
+  - If an artifact genuinely only ever needs its latest version, do not
+    version it at all — publish it as a release asset or CI artifact.
+  - Pruning old LFS objects after the fact requires history rewriting,
+    which "never force-push" above forbids. Prevention is the only cheap
+    option; treat each LFS commit as permanent.
 <!-- SECTION:lfs_policy:end -->
 <!-- SECTION:data_policy:start -->
-[SET AT SETUP: delete this bullet if not applicable]
 - Never commit large/generated `data/` artifacts without checking first
   whether that path should be gitignored for that artifact (ask before
   assuming if the project's data policy isn't settled yet).
@@ -150,12 +162,16 @@ symlinks to `.git/hooks/commit-msg` — warn-only, exits 0 always, exempts
 merges and `fixup!`/`squash!` commits. It runs two checks:
 
 1. **Role-prefix check (all commits):** anything whose first line doesn't
-   match `ROLE_PREFIX_RE` (Planner, Coder, Runner, Reviewer, Author,
-   Researcher, Controller, Harness) is flagged, never rejected.
+   match `ROLE_PREFIX_RE` (Controller, Planner, Coder, Runner, Reviewer,
+   Author, Researcher, Editor, Architect, Harness — plus each
+   project-specific specialist registered under `.friday-project/roles/`,
+   capitalized) is flagged, never rejected.
 2. **Body check (every role commit that records directive work):** when the
    first line's role is one of `BODY_REQUIRED_ROLES` (Planner, Coder,
-   Runner, Reviewer, Author, Researcher — `Harness:` is exempt, since a
-   submodule-pointer bump serves no directive), the body (whole message,
+   Runner, Reviewer, Author, Researcher, Editor, and every project-specific
+   specialist — `Harness:` and
+   `Architect:` are exempt: a pointer bump serves no directive, and a spec
+   predates its directives), the body (whole message,
    minus git's own trailing `#`-comment block) is checked for a directive
    reference and a tracker reference per "Attribution format" above. It
    covers all roles rather than only `Reviewer:` because each role now
@@ -200,45 +216,24 @@ history should follow commit hashes and tracker references, not
 
 ## Branching
 
-**Each sprint's work lives on its own branch; `main` only ever receives
-reviewed, user-approved work.**
+**Work is committed on a non-`main` branch; `main` only receives reviewed,
+user-approved work.** The commit guard (`command_guard.py`) auto-allows
+`git commit` on any branch that is not `main`/`master`, so each role
+records its own pass as it finishes without an approval prompt. On `main`,
+and on a detached HEAD, `git commit` stays `force_ask`. Merge, push,
+checkout and switch stay `force_ask` on every branch — how work reaches
+`main` or leaves the machine is the user's decision.
 
-This is what makes "each role commits its own work" actually reachable. The
-commit guard (`command_guard.py`) auto-allows `git commit` on any branch
-that is not `main`/`master`, so roles record their passes as they finish —
-including during an unattended autonomous loop, when nobody is present to
-approve anything. On `main`, `git commit` stays `force_ask`. If the branch
-cannot be determined (detached HEAD, not a repo), the guard fails closed to
-`force_ask`.
+**Loops share a branch:** all loops share one working tree, and so one checked-out
+branch; every role commits only its own paths (see "Who records, and
+when"). Roles never create, switch or merge branches. The user picks the
+branch, and the Controller raises it when a loop's work looks like it
+wants its own (e.g. before starting a large, separable body of work).
 
-Merge, push, checkout and switch are **unchanged** — all still `force_ask`,
-regardless of branch. Those are how work reaches `main` or leaves the
-machine, and they stay the operator's decision.
-
-The lifecycle:
-
-1. **Sprint opens.** Once the Architect's spec is signed off, branch from
-   `main`: `git switch -c sprint-<n>-<slug>`, matching the spec's slug so
-   branch and spec are obviously the same sprint. One confirmation, at a
-   point where the user is present anyway.
-2. **Sprint runs.** Every role commits its own scoped paths at the end of
-   its pass, per "Who records, and when" above. No approval needed, so an
-   accepted directive becomes a record immediately instead of stacking into
-   an undifferentiated working tree.
-3. **Sprint closes.** The Reviewer verifies the spec's closing condition,
-   then the user reviews the branch as a whole and approves. Only then does
-   it merge to `main` — a confirmed action, as is any push.
-
-**Why this exists.** Sprint 1 closed twelve Reviewer-verified directives
-into a single commit. Not because anyone chose that: `git commit` was
-`force_ask` on `main`, the operator was away for most of the sprint, and
-every close-out that wanted to record itself hit an approval prompt with
-nobody there. The loop kept running because nothing *else* it does needs
-approval. The cost was real — `src/console_core/store.py` ended up carrying
-four directives' work interleaved, so no single directive can now be
-reverted or bisected on its own. The approval gate and an unattended loop
-were simply incompatible, and the loop won silently. Branching resolves it
-without loosening anything that protects `main`.
+**Why this exists.** In the project this rule came from, a sprint closed twelve Reviewer-verified
+directives into a single commit: `git commit` needed approval on `main`,
+nobody was present, and the loop ran on without recording anything, so no
+directive could be reverted or bisected on its own.
 
 ## Remote
 

@@ -23,17 +23,17 @@ from the role's default, the spawner MUST pass the model explicitly too —
 this is exactly the case a `[heavy]` Coder escalation or an escalated
 Runner will silently miss if only the title is changed. Per-role defaults
 (kept in sync with the tier table in `.friday/active/harness/harness.md`):
-controller/planner/coder/reviewer/author/researcher = mid tier
+controller/planner/architect/coder/reviewer/author/researcher/editor (and
+any project-specific specialist) = mid tier
 (`claude-sonnet-5`), runner = light tier (`claude-haiku-4-5-20251001`).
 High tier (`claude-opus-5`) is never a role default — it's a per-directive
-escalation for a task tagged `[heavy]` (Planner/Coder/Reviewer/Researcher)
-only, since that's what makes the "differs from default" check checkable.
+escalation for a directive tagged `[heavy]` only, since that's what makes the "differs from default" check checkable.
 This is also a cost control: a role that defaults to high tier makes every
 concurrent spawn of it expensive, and a burst of them can burn through the
 account's session budget fast. See also the Controller's concurrency cap
-(`.friday/active/harness/harness.md` §Concurrency cap): at most 2-3 concurrent role
-subagents regardless of tier, so a session-limit hit only costs a couple of
-in-flight tasks.
+(`.friday/active/harness/harness.md` §Concurrency): at most 3 concurrent role
+subagents per Controller session (2 if any is high tier), so a session-limit
+hit only costs a few in-flight tasks.
 
 **Verifying the model that actually ran:** every role adapter should
 instruct the agent to open its first message and every report with
@@ -72,15 +72,19 @@ into `.friday/active/harness/`, never edit `.friday/active/harness/` itself for 
 
 ## Controller-never-executes (dispatch rule)
 
-The Controller never executes task work itself — no driving jobs, evals,
-monitor loops, file edits, or work records via its own tool calls, even to
-save resume-loop overhead. It reads state, relays, and dispatches; ALL execution
-and monitoring goes to Runner/Coder/Reviewer subagents. Before any
-state-mutating tool call, a Controller asks "is this read-only state
-inspection (log/status read, process list, device query, log tail)?"; if
-not, it is task work and MUST be dispatched. A Controller work record,
-publish, background launch, or source edit is a violation regardless of
-urgency, token cost, or how small the task seems.
+*(v0.18.0, lead mode: amended to allow coordination records.)*
+
+The Controller never executes specialist work itself — no source, project-file
+or doc edits, no driving jobs, evals or monitor loops, no work-record commits,
+even to save dispatch overhead. It reads state, talks to the user, and
+dispatches; all execution goes to the specialist roles. Its only writes are
+**coordination records**: `status.md` rows for loops it owns (Loops,
+Directives, Claims), a directive's `Status:` line on approval, a directive
+it writes itself for a trivial task, tracker issues on approval (rule 13),
+and `plans/history.md` rulings. Before any other state-mutating tool call,
+a Controller asks "is this read-only inspection or a coordination record?";
+if neither, it is specialist work and MUST be dispatched — regardless of
+urgency, token cost, or how small it seems.
 
 ## Mid-task steering (binding)
 

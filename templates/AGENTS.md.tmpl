@@ -28,7 +28,8 @@ your task needs, per this index:**
 | Run any script or test | `.friday/active/harness/rules/environment.md` (env, launch pattern) |
 | Launch/check/trust a long-running job or monitor | `.friday/active/harness/rules/monitoring.md` |
 | Mutate any canonical data artifact (re-generate, re-render, ground truth) | `.friday/active/harness/rules/data_artifacts.md` — snapshot FIRST |
-| [SET AT SETUP: add/remove rows for this project's own on-demand docs, e.g. an architecture doc, a GPU rule, a hardware-interface doc] | |
+| [SET AT SETUP: add/remove rows for this project's own on-demand docs, e.g. an architecture doc, a GPU rule, a project specialist's facts README] | |
+| Drive the harness (as the user) | `.friday/active/harness/USER_GUIDE.md` |
 | Act as an assigned agent role | `.friday/active/harness/harness.md` (core rules) + `.friday/active/harness/roles/<your-role>.md` only |
 
 ## Project facts
@@ -44,8 +45,9 @@ your task needs, per this index:**
 | Environment | [SET AT SETUP: PACKAGE_MANAGER] (`[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD] ...`); see `.friday/active/harness/rules/environment.md` |
 | Accelerators | [SET AT SETUP: none / GPU details, or delete this row] |
 | Work record (rule 12) | git + `[SET AT SETUP: VCS_REMOTE]`; a "record" = a commit, referenced by hash |
-| Who records work | Each role commits its own scoped paths as its pass finishes (harness rule 12). Sprint work happens on a `sprint-<n>-<slug>` branch where `git commit` is auto-allowed; the Reviewer still owns `[DONE]` and the close, and only the user approves the merge to `main`. |
-| Queue mirror (rule 13) | [SET AT SETUP: TRACKER_KIND] — Planner opens, Reviewer closes (or "none" if not tracked externally) |
+| Who records work | Each producing role commits its own work, scoped to the paths it touched, on a non-`main` branch where `git commit` is auto-allowed (rule 12); the Reviewer verifies the record at close-out, and only the user approves a merge to `main` |
+| Queue mirror (rule 13, opt-in) | [SET AT SETUP: TRACKER_KIND] — one issue per directive; the Controller opens it when the user approves the directive, the Reviewer closes it ("none" = not tracked externally) |
+| Project specialists | [SET AT SETUP: none, or each project-specific role (e.g. `hardware` — board design under `hardware/`) with a pointer to its facts doc; role files in `.friday-project/roles/`] |
 | Docker dev container | `[SET AT SETUP: DOCKER_ENABLED]` — when enabled, the image installs `[SET AT SETUP: PACKAGE_MANAGER]` plus the `[SET AT SETUP: ADAPTERS_ENABLED]` CLI(s); see `.friday/active/harness/USER_GUIDE.md` §12 to set up or reconfigure |
 
 ## Project Overview
@@ -61,18 +63,22 @@ template can pre-fill. Cover: the problem domain, the shape of the repo
 Multiple agents/sessions work here, sometimes concurrently — treat state as
 shared, not private to one session.
 
-- **`.friday/active/harness/status.md`** is the living dashboard: per-directive status for
-  OPEN directives only (owner, state, what's left — the answer to "what is
-  directive X doing right now"), what's running, recent milestones, open
+- **`.friday/active/harness/status.md`** is the living dashboard: the open
+  loops (named workstreams, each owned by one Controller session), the OPEN
+  directives (owner, state, what's left — the answer to "what is directive
+  X doing right now"), claims on single-user resources (a hardware board, a
+  file a GUI tool holds open), what's running, recent milestones, open
   issues. Read it at session start; update it on real progress, directive
   pickup/handoff, job start/finish, or blockers — it must reflect current
-  reality. Keep entries terse; link to your results doc or the relevant
-  script/output instead of duplicating detail. `[SET AT SETUP: STATUS_HISTORY_PATH]`
-  holds the same directive's record once the Reviewer closes it (rows move
-  there, not deleted) — check it for the outcome of past directives.
-  `.friday/active/harness/plans/directives/<ID>.md` is gitignored (except `TEMPLATE.md`)
-  and deleted by the Reviewer at close-out — it's the working spec while a
-  directive is open, not the durable record.
+  reality. Edit only rows belonging to your own loop. Keep entries terse;
+  link to your results doc or the relevant script/output instead of
+  duplicating detail. `[SET AT SETUP: STATUS_HISTORY_PATH]` holds a
+  directive's record once the Reviewer closes it — check it for the outcome
+  of past directives. `.friday/active/harness/plans/directives/<ID>.md` is
+  the directive itself — goal, steps, `Verify:`, and a running Log — and
+  moves to `plans/directives/closed/` at close-out. Like everything under
+  `.friday/active/`, it is local state; the commits and tracker issue are
+  the durable record.
 - **[SET AT SETUP: this project's results doc]** is the comprehensive
   results reference (see harness rule 2 — single source of truth for
   numbers). Update on significant milestones (new version, finalized
@@ -87,7 +93,8 @@ shared, not private to one session.
 | Dir | Contents |
 |-----|----------|
 | [SET AT SETUP: fill in this project's own top-level dirs and what lives in each — e.g. `src/`, `notebooks/`, `docs/`, `data/`] | |
-| `.friday/active/harness/` | Multi-agent harness: core rules, role definitions, per-rule detail docs, the live dashboard (`status.md` + `status_history.md`, unless `[SET AT SETUP: STATUS_HISTORY_PATH]` points elsewhere), and the role working folders (`plans/`, `coding/`, `running/`, `review/`). |
+| `.friday/active/harness/` | Multi-agent harness: core rules, role definitions, per-rule detail docs, the live dashboard (`status.md` + `status_history.md`, unless `[SET AT SETUP: STATUS_HISTORY_PATH]` points elsewhere), goals and directives (`plans/`), and the Reviewer/Runner working folders (`review/`, `running/`). |
+| `.friday-project/` | Project-owned harness extensions, tracked in this repo: `roles/<role>.md` for each project specialist (linked into `.friday/active/harness/roles/` by `init_harness.py`). Omit if the project has none. |
 | `docs/research/` | The Researcher's memos — tracked project content, not part of the `.friday/` submodule's generated output. |
 
 Conventions: all paths relative to the repo root
@@ -97,12 +104,25 @@ through `[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD]`.
 
 ## Multi-Agent Workflow
 
-Development uses seven roles — Controller, Planner, Coder, Runner, Reviewer,
-Author, Researcher — assigned by the user at chat start ("you are the
-planner agent"). If told to "run the coder and runner in this session," act
-as Controller and spawn the roles as subagents (spawn titles `role(model):
-task`, e.g. `coder(<mid-tier model>): <task>`; utility spawns keep plain
-titles).
+The harness runs as a small team with a lead. The user works with the
+**Controller** (start it with `claude --agent controller`, or "you are the
+controller"), which is the user's single point of contact:
+
+1. The user gives the Controller a goal; the Controller asks whatever it
+   needs to.
+2. The **Planner** turns the goal into one or more directives.
+3. **The user approves each directive before any work starts.**
+4. The Controller dispatches the specialists — **Coder**, **Runner**,
+   **Researcher**, **Author**, **Editor**, plus any project specialists
+   listed under Project facts — and iterates inside the approved scope.
+5. The **Reviewer** closes each directive against its `Verify:` line.
+
+The **Architect** is optional. It writes a short (≤ 2-page) requirements
+spec in `docs/specs/` when work needs a signed scope. Several loops can run
+at once, in one Controller session or one per terminal. Roles other than
+the Controller and a directly-opened Architect run as subagents, with spawn
+titles `role(model): task` (e.g. `coder(<mid-tier model>): <task>`);
+utility spawns keep plain titles.
 
 **CRITICAL:** `.friday/active/harness/harness.md` holds the loop and the shared rules every
 role must follow; `.friday/active/harness/roles/<role>.md` holds your role's namespace,
@@ -122,9 +142,8 @@ Command execution is programmatically guarded by `.agents/hooks.json` via
 <!-- SECTION:latex_on:end -->
   read-only git queries
   (`git status`, `git diff`, `git log`, `git show`, `git branch`),
-  and `git commit` **when the checked-out branch is not `main`/`master`** —
-  the branch-per-sprint workflow (see
-  `.friday/active/harness/rules/version_control.md` §Branching).
+  `git commit` **when the checked-out branch is not `main`/`master`** (see
+  `.friday/active/harness/rules/version_control.md` §Branching),
   and non-destructive inspections (`ls`, `cat`, `grep`, `rg`, `find`, `pwd`).
 - **Requires user approval (`force_ask`)**: `git commit` **on `main`/`master`** (or when the
   branch cannot be determined — the guard fails closed), and every other state-modifying

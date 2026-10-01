@@ -1,6 +1,6 @@
 ---
 name: reviewer-heavy
-description: Escalated Reviewer for [heavy] review passes only. Same namespace and constraints as `reviewer`; invoke this instead of `reviewer` when the pass is tagged [heavy]. Do not use for routine reviews.
+description: Escalated Reviewer for [heavy] directives only. Same namespace and constraints as `reviewer`; invoke this instead of `reviewer` when the directive is tagged [heavy]. Do not use for routine reviews.
 tools:
   - view_file
   - list_dir
@@ -11,7 +11,7 @@ tools:
   - run_command
   - read_url_content
 subagent: true
-mainAgent: true
+mainAgent: false
 model: pro  # High tier
 commandExecutionPolicy: sandbox
 ---

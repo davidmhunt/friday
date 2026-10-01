@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from check_md_hygiene import FILE_CAPS, PER_ENTRY_FILE
+from check_md_hygiene import DIRECTIVE_CAP, FILE_CAPS
 
 HOOK_SOURCE = Path(__file__).parent / "check_md_hygiene.py"
 
@@ -30,7 +30,7 @@ def _build_consumer_repo(tmp_path: Path) -> Path:
         tmp_path/consumer/
             harness.config.env          <- marks this as the repo root
             .friday/active/harness/status.md   <- deliberately over its 150-line cap
-            <every other FILE_CAPS/PER_ENTRY_FILE path>  <- empty stub, so
+            <every other FILE_CAPS path>  <- empty stub, so
                 only status.md's over-cap WARN fires by default
             .friday/templates/adapters/hooks/check_md_hygiene.py   <- the real file
             .claude/hooks/check_md_hygiene.py            <- symlink -> above
@@ -50,7 +50,7 @@ def _build_consumer_repo(tmp_path: Path) -> Path:
     # Every other configured path must exist too, or the "path not found"
     # WARN added for the missing-path case would fire here and pollute the
     # existing tests' output assertions. Stub them out empty (well under cap).
-    for rel_path in {*FILE_CAPS, PER_ENTRY_FILE} - {".friday/active/harness/status.md"}:
+    for rel_path in set(FILE_CAPS) - {".friday/active/harness/status.md"}:
         stub = repo / rel_path
         stub.parent.mkdir(parents=True, exist_ok=True)
         stub.write_text("")
@@ -161,6 +161,35 @@ def test_direct_invocation_without_symlink_still_works(tmp_path):
 
     assert result.returncode == 1
     assert "WARN | hygiene | .friday/active/harness/status.md is 151 lines (cap 150)" in result.stdout
+
+
+def test_open_directive_over_cap_warns_closed_and_template_exempt(tmp_path):
+    """Each open directive file is capped at DIRECTIVE_CAP; closed directives
+    (plans/directives/closed/) and TEMPLATE.md are exempt."""
+    repo = _build_consumer_repo(tmp_path)
+    (repo / ".friday" / "active" / "harness" / "status.md").write_text("short file\n")
+    ddir = repo / ".friday" / "active" / "harness" / "plans" / "directives"
+    (ddir / "closed").mkdir(parents=True)
+    long_text = "\n".join(f"line {i}" for i in range(DIRECTIVE_CAP + 1)) + "\n"
+    (ddir / "core-01.md").write_text(long_text)
+    (ddir / "TEMPLATE.md").write_text(long_text)
+    (ddir / "closed" / "core-00.md").write_text(long_text)
+    symlink_hook = repo / ".claude" / "hooks" / "check_md_hygiene.py"
+
+    result = subprocess.run(
+        [sys.executable, str(symlink_hook)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert (
+        f"WARN | hygiene | .friday/active/harness/plans/directives/core-01.md is "
+        f"{DIRECTIVE_CAP + 1} lines (cap {DIRECTIVE_CAP})"
+    ) in result.stdout
+    assert "TEMPLATE.md" not in result.stdout
+    assert "core-00.md" not in result.stdout
 
 
 CONFIG_MODULE_DIR = Path(__file__).parent.parent.parent / "harness" / "tools"

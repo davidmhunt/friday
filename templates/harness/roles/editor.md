@@ -34,7 +34,7 @@ output is measured by subtraction.
   claim, the citation goes with it and you say so.
 - Rewording for compression is allowed and expected (three sentences → one).
   Rewording that changes register or voice is not; match the document's
-  approved style exemplar where the phase defines one.
+  approved style exemplar where the governing spec or directive names one.
 
 ## What to cut, in priority order
 
@@ -56,7 +56,7 @@ output is measured by subtraction.
 
 ## Pass protocol
 
-1. Read the directive's budget line, the document, and the phase's style
+1. Read the directive's budget line, the document, and the style
    exemplar if one exists.
 2. Measure first: current page count (`pdfinfo`) or line count, and the gap
    to budget. State it before cutting.

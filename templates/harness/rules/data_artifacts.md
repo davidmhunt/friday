@@ -9,7 +9,7 @@ Never mutate a data artifact an existing eval or training run consumes
 (precomputed priors/features, result CSVs, model checkpoints, ground
 truth). Every new experiment writes under new, experiment-specific
 filenames; canonical filenames are append-only history — replacing one
-requires an explicit directive in `.friday/active/harness/plans/next_steps.md`.
+requires an explicit, user-approved directive that says so.
 
 **Re-run clause:** a crash-forced restart may overwrite its OWN
 directive-assigned artifact filename only if the prior checkpoint + result
@@ -45,7 +45,7 @@ produced — a fabricated provenance call, or a prior run's output relabelled
 as a new one. Nothing else in the loop detects it, because the number looks
 perfectly plausible. Mechanical backstop if you can build one: a script
 flagging identical-content artifacts that claim different run tags, run by
-the Reviewer at pass start alongside the other checkers.
+the Reviewer at close-out alongside the other checkers.
 
 ## Rule 6 — Pre-mutation snapshots for canonical data (full text + procedure)
 

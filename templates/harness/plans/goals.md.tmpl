@@ -1,51 +1,47 @@
-# Project Goals (Planner)
+# Project Goals
 
-**Layer 1 of 4 — the product objectives.** The project's 3-5 top-level
-objectives: what this project is ultimately for. Deliberately few,
-deliberately high-level, and **stable across sprints** — if this file
-changes more than once or twice in a project's life, something that belongs
-in a spec has leaked into it.
+What [SET AT SETUP: PROJECT_NAME] is for, and the standing facts every
+Controller and Planner should know. A reference, not a gate: directives say
+which objective they serve (`Serves: 3`), or `Serves: —` when none fits.
+Only the user changes the objectives.
 
-The four planning layers, by rate of change:
-
-| Layer | File | Agile analogue | Changes |
-|---|---|---|---|
-| 1 | `plans/goals.md` (this file) | product objectives | project lifetime — rarely |
-| 2 | `plans/long_term.md` | epics | reordered as work lands |
-| 3 | `docs/specs/<slug>.md` | **sprint** — the current scope | once per sprint, then **frozen** |
-| 4 | `plans/next_steps.md` | sprint backlog | constantly |
-
-**No file in `plans/` restates a spec's content — it cites it.** Objectives
-here stay at the "what is this project for" altitude; scope, acceptance
-thresholds, and success criteria belong to the sprint spec that owns them
-(the same single-source-of-truth shape as harness rule 2). A goal that has
-grown a threshold or a deliverable list is a spec wearing the wrong file's
-name.
+Planning is two layers: this file, and the directives themselves
+(`plans/directives/<ID>.md`). **The directive is the plan.** When a body of
+work needs a signed, durable scope, the Architect writes a short spec in
+`docs/specs/` and directives cite its requirement IDs.
 
 ## Objectives
 
 <!-- 3-5, numbered, each one sentence plus a line on how you'd know it was
      met. Written or approved by the USER — these are their objectives, not
-     the Planner's inference. Set from the user's own framing; if they
-     haven't given it yet, leave the placeholders and ask. -->
+     the Planner's inference. If they haven't given them yet, leave the
+     placeholders and ask. -->
 
 1. _(objective — set by the user)_
+   *Met when:* _(checkable outcome)_
 2. _(objective — set by the user)_
+   *Met when:* _(checkable outcome)_
 3. _(objective — set by the user)_
+   *Met when:* _(checkable outcome)_
 
-## Sprints
+## Standing context
 
-<!-- Index of every sprint spec, newest last. The Architect writes the spec;
-     the Planner adds its row here when the spec is signed off, and updates
-     the row's status at close-out. One line each — the spec is the record,
-     this is the pointer. -->
+<!-- One line per fact every Controller/Planner needs and would otherwise
+     re-ask: who owns what, what is superseded and must not be built on,
+     where project facts live (e.g. a project specialist's README). -->
 
-| Sprint | Spec | Status | Objectives served |
-|---|---|---|---|
-| _(none yet)_ | | | |
+- _(none yet)_
+
+## Specs
+
+Only for work whose scope must outlive the harness or be handed to a
+person (see `roles/architect.md`). Everything else is just directives.
+
+| Spec | Status | Serves |
+|---|---|---|
+| _(none yet)_ | | |
 
 ## Amendments
 
 <!-- Dated. Amending a project objective is a significant act — say what
-     changed and why. If an amendment is really about the current sprint's
-     scope, it belongs in that spec's Amendments section instead. -->
+     changed and why. -->

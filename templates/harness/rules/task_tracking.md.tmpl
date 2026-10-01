@@ -1,15 +1,23 @@
 # Task Queue Sync (harness rule 13 — full detail)
 
-Read when opening or closing a directive, or when a sync check WARNs.
+Read when approving or closing a directive, or when a sync check WARNs.
+
+**Opt-in.** This rule applies only while a tracker is configured below. To
+turn it off for this project, set the kind to `none` and say so in
+`log.md`. The issue is opened by the **Controller when the user approves**
+a directive (not at proposal, so rejected proposals leave no issues), and
+closed by the **Reviewer** at close-out. Title it `[<ID>] <directive
+title>`.
 
 `[SET AT SETUP: TRACKER_KIND]` selects which section below applies
 (`none` | `gitlab-issues` | `github-issues` | other — add a new section
 following the same shape if this project uses a different tracker).
 
 <!-- SECTION:tracker_none:start -->
-**`TRACKER_KIND=none`** — this project tracks work only in
-`.friday/active/harness/plans/`; there is no external issue tracker to sync. Skip the rest
-of this file.
+**`TRACKER_KIND=none`** — this project tracks work only in its directive
+files (`.friday/active/harness/plans/directives/`); there is no external
+issue tracker to sync. Directive headers say `Tracker: n/a`, and commit
+bodies carry the literal `no tracker`. Skip the rest of this file.
 <!-- SECTION:tracker_none:end -->
 <!-- SECTION:tracker_gitlab:start -->
 **`TRACKER_KIND=gitlab-issues`**
@@ -20,7 +28,8 @@ The files under `.friday/active/harness/plans/` are the harness's own queue. Thi
 also tracks work in **GitLab Issues** on the project `origin` remote
 (`[SET AT SETUP: VCS_REMOTE_PROJECT_PATH]` on `[SET AT SETUP:
 TRACKER_HOST]`), so that view must reflect real project state rather than
-lag it. This is a hard MUST for both bookending roles.
+lag it. This is a hard MUST for both bookending roles (Controller at
+approval, Reviewer at close-out).
 
 ## Credentials
 
@@ -34,12 +43,11 @@ API base: `https://[SET AT SETUP: TRACKER_HOST]/api/v4/projects/<url-encoded
 GITLAB_PROJECT>/issues`, authenticated with header `PRIVATE-TOKEN:
 $GITLAB_TOKEN`.
 
-## Planner — opening a directive
+## Controller — approving a directive
 
-A directive is not "opened" until its GitLab issue exists. In the SAME pass
-you add it to `.friday/active/harness/plans/next_steps.md` or create
-`.friday/active/harness/plans/directives/<ID>.md`, create the issue with a checklist
-mirroring the phase/`Verify:` structure:
+A directive is not approved until its GitLab issue exists. In the SAME pass
+you set `Status: approved`, create the issue with a checklist mirroring the
+directive's Steps and `Verify:` line:
 
 ```bash
 curl -sS --request POST \
@@ -49,8 +57,8 @@ curl -sS --request POST \
   "https://[SET AT SETUP: TRACKER_HOST]/api/v4/projects/$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['GITLAB_PROJECT'],safe=''))")/issues"
 ```
 
-Paste the returned issue IID/URL into the directive file. This is a step of
-opening the directive, not an optional follow-up.
+Paste the returned issue URL into the directive header's `Tracker:` field.
+This is a step of approving the directive, not an optional follow-up.
 
 ## Reviewer — closing a directive
 
@@ -73,8 +81,8 @@ dismiss it by judgment rather than force-closing.
 ## Missing-credentials clause
 
 **Block, do not skip.** If `GITLAB_TOKEN`/`GITLAB_PROJECT` are missing or
-the API is unreachable, the Planner/Reviewer pass stops and surfaces the
-problem to the user rather than opening/closing the directive without its
+the API is unreachable, the Controller's approval step or the Reviewer's
+close-out stops and surfaces the problem to the user rather than opening/closing the directive without its
 GitLab mirror. There is no silent-skip path for this rule.
 
 ## Mechanical check (optional)
@@ -82,16 +90,35 @@ GitLab mirror. There is no silent-skip path for this rule.
 A script cross-referencing `.friday/active/harness/plans/directives/*.md` plus the
 `[DONE]` markers against live GitLab issue state, WARNing on (i) a
 directive with no issue and (ii) a done directive whose issue is still
-open. Planner and Reviewer run it at pass start. Its done-but-open output
-is a candidate list, not a verdict. A WARN surviving two consecutive passes
-becomes a finding in `.friday/active/harness/plans/suggestions.md`.
+open. The Controller runs it at session start and the Reviewer at
+close-out. Its done-but-open output is a candidate list, not a verdict. A
+WARN surviving two consecutive passes is reported to the Controller, which
+raises it with the user.
 <!-- SECTION:tracker_gitlab:end -->
 <!-- SECTION:tracker_github:start -->
 **`TRACKER_KIND=github-issues`**
 
-Same shape as the GitLab section above, substituting the GitHub REST API
-(`https://api.github.com/repos/<owner>/<repo>/issues`, header
-`Authorization: Bearer $GITHUB_TOKEN`) for issue creation/closing. Fill in
-the exact request bodies during setup by adapting the GitLab example above
-to GitHub's issue API if this project uses GitHub Issues as its tracker.
+This project tracks work in **GitHub Issues** on
+`[SET AT SETUP: VCS_REMOTE_PROJECT_PATH]`. `GITHUB_TOKEN` (fine-grained,
+Issues read/write) lives in the repo-root `.env` (gitignored); never print
+it. The same bookends apply: the **Controller** opens the issue in the
+same pass it sets `Status: approved` and pastes its URL into the
+directive's `Tracker:` field; the **Reviewer** closes it in the close-out
+pass.
+
+```bash
+# open (Controller, at approval)
+curl -sS -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/[SET AT SETUP: VCS_REMOTE_PROJECT_PATH]/issues \
+  -d '{"title":"[<ID>] <directive title>","body":"<summary + Steps/Verify checklist>"}'
+# close (Reviewer, at close-out)
+curl -sS -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/[SET AT SETUP: VCS_REMOTE_PROJECT_PATH]/issues/<number> \
+  -d '{"state":"closed"}'
+```
+
+**Block, do not skip:** a missing token or unreachable API stops the
+approval or close-out step and is surfaced to the user.
 <!-- SECTION:tracker_github:end -->

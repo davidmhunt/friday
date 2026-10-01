@@ -8,7 +8,11 @@ Everything the multi-agent system needs lives under `.friday/active/harness/`:
 | `.friday/active/harness/roles/<role>.md` | Your role's namespace, constraints, handoff | Your role only |
 | `.friday/active/harness/rules/<topic>.md` | Full detail behind a shared rule | Only when its trigger applies |
 | `.friday/active/harness/log.md` | Rule provenance + amendment history (append-only) | On demand |
-| `.friday/active/harness/plans/ coding/ running/ review/` | Role working state (namespaces) | Per role file |
+| `.friday/active/harness/status.md` | Loops, open directives, running jobs, resource claims | Every session, start and end |
+| `.friday/active/harness/plans/goals.md` | Project objectives (layer 1) | Controller, Planner, Architect |
+| `.friday/active/harness/plans/directives/<ID>.md` | One directive: the unit of work (layer 2); `closed/` once done | Whoever is working it |
+| `.friday/active/harness/templates/` | Directive-independent templates: spec, research memo | The role that writes one |
+| `.friday/active/harness/review/`, `running/` | Reviewer verdicts (`full` reviews), Runner launch notes and logs | Reviewer, Runner |
 
 The token contract: this file stays lean; each rule below is the invariant
 plus a **trigger** naming the detail doc. If your next action matches a
@@ -16,44 +20,99 @@ trigger, reading that doc first IS part of the rule — if it doesn't, don't
 read the doc. Every rule should exist because of a real incident (see
 `.friday/active/harness/log.md`); never relax one without a dated entry there.
 
-## Roles and the loop
+## The team
 
-**Roles:** Controller, Planner, Coder, Runner, Reviewer, Author,
-Researcher, Editor, Architect. The user assigns yours at chat start ("you are the planner
-agent"); "run the coder and runner in this session" without a named role =
-act as **Controller**.
+| Role | Job | Talks to the user? |
+|------|-----|--------------------|
+| **Controller** | Team lead. Takes the user's goal, gets it planned, gets approval, dispatches, iterates, reports. | **Yes — the user's single point of contact** |
+| **Planner** | Scopes a goal into one or more directives. Called by the Controller. | Via the Controller |
+| **Architect** | Writes a short requirements spec (≤ 2 pages) when work needs a signed scope, e.g. for a human teammate or a finalized project. | Via the Controller, or directly if the user opens a session with it |
+| **Coder** | Code: source, `tests/`, `notebooks/`, scripts. | No |
+| **Runner** | Launches and monitors long jobs the Coder built. | No |
+| **Researcher** | Literature, datasheets, methodology memos; drafts `docs/theory/` if the LaTeX suite is on. | No |
+| **Author** | Folds closed milestones into the results doc (and `docs/report/` if the LaTeX suite is on). | No |
+| **Editor** | Subtractive pass on prose deliverables (rule 16). | No |
+| **Reviewer** | Checks a directive against its `Verify:` line and closes it. | No |
+| *Project specialists* | Optional roles a project adds for its own domain (e.g. board design), listed in `AGENTS.md`; role files sit in `roles/` beside the core ones. | No |
 
-**The loop:** the user kicks off the **Planner**, which writes directives to
-`.friday/active/harness/plans/next_steps.md`. **Coder** (implement) → **Runner** (execute/
-monitor) → **Reviewer** (verify, close or re-open) loop autonomously until
-the queue is empty; the Reviewer then feeds the Planner's next cycle. The
-**Author** folds Reviewer-closed milestones into the project's persistent
-docs (results README, manuscripts, decks — whatever your project's record
-is). The **Controller** is an optional layer that spawns/resumes the other
-roles as subagents — it dispatches and relays, never executes. The
-**Researcher** sits outside the Coder/Runner/Reviewer loop but is dispatched
-the same way those roles are: the Planner raises a research/methodology
-question, the Controller dispatches the Researcher to answer it with
-literature or external evidence, and the Reviewer gates the resulting memo
-(citation/existence checks) before the Planner treats it as directive-gating
-evidence. A quick single-fact lookup can skip the Reviewer gate
-(`researcher-quick`). The user may also invoke the Researcher directly.
-Memos land in `docs/research/` and inform directives. Drop the
-Researcher role entirely if your project has no literature/methodology-
-research component. The **Editor** likewise sits outside the main loop and
-is dispatched per-deliverable: it runs a mandatory subtractive pass on any
-prose deliverable before the Reviewer can close it (rule 16), and its only
-output is deletions. Drop it if your project ships no prose.
+The user assigns a role at chat start ("you are the controller"); a session
+with no named role that is asked to coordinate work acts as **Controller**.
+The Controller must be the **top-level session** — it needs to ask the user
+questions and spawn subagents, and a subagent can do neither. Every other
+role runs as a subagent the Controller spawns.
 
-The **Architect** sits *upstream* of the whole loop and is the only
-user-facing, interactive role: the user invokes it directly, it interviews
-them, and it writes a durable spec to `docs/specs/<slug>.md` (versioned in
-the project repo, unlike everything under `.friday/active/`). The Planner
-then derives its directives from that spec rather than from a conversation
-— implementation goals become directives, spec budgets become `Verify:`
-budget lines, spec thresholds become tests. An Architect that writes a spec
-without talking to the user has failed at the job. Skip the role for small
-work; a one-directive change needs no spec.
+**Project specialists** follow every rule here exactly as the core roles
+do. Their role files are project-owned — authored in
+`.friday-project/roles/<role>.md` in the project repo and linked into
+`roles/` by `init_harness.py` — and `AGENTS.md` lists them.
+
+## The loop
+
+```
+user ── goal ──> Controller ── "scope this" ──> Planner
+                     │   <── proposed directive(s) + questions ──┘
+                     │── questions / proposal ──> user ── approve / amend
+                     │── dispatch (per the directive's Steps) ──> Coder · Runner · Researcher · …
+                     │── when Steps are done ──> Reviewer ── close, or bounce with gaps
+                     └── report ──> user
+```
+
+1. **Goal.** The user states a goal to the Controller in plain words. The
+   Controller asks as many clarifying questions as it needs; a
+   well-understood goal is cheaper than a re-plan.
+2. **Plan.** For anything beyond a trivial one-step task, the Controller
+   dispatches the Planner, which writes one or more directives to
+   `plans/directives/<ID>.md` with `Status: proposed`. Questions the
+   Planner cannot answer come back in its report; the Controller asks the
+   user and re-dispatches. **Trivial tasks** (one role, one step, obvious
+   `Verify:`) may skip the Planner — the Controller writes the directive
+   itself from the template — but never skip approval.
+3. **Approve.** The Controller shows the user each proposed directive
+   (goal, steps, `Verify:`, out of scope). **No directive is executed until
+   the user approves it.** Approval sets `Status: approved <date>`; an
+   amendment goes back to the Planner and returns for approval.
+4. **Execute.** The Controller dispatches the roles named in the
+   directive's Steps. **Inside an approved directive it iterates freely**:
+   re-dispatching on a failed step, bouncing work back after review,
+   calling a Researcher to unblock a step. It returns to the user for
+   anything that changes the directive's goal, scope or `Verify:` line, and
+   to relay any question a role cannot resolve itself.
+5. **Close.** The Reviewer checks the `Verify:` line at the directive's
+   review level and closes it (rule 3, rule 13), or bounces it with the
+   specific gap. The Controller reports the outcome to the user.
+
+**Loops.** A loop is a named workstream (`core`, `eval`, `docs`, …) with its
+own goal and directives. Several loops may be open at once — in one
+Controller session, or one per terminal. Each loop has exactly one owning
+Controller session at a time, recorded in `status.md`'s Loops table; a
+Controller touches only the loops it owns. Loops share one git working
+tree, so every role commits only the paths it touched (rule 12), and loops
+that need the same single-user resource (a hardware board, a project file
+open in a GUI tool) claim it in `status.md`'s Claims table first. Directive
+IDs are `<loop>-<NN>` (`core-01`), numbered per loop, so loops never collide
+on IDs.
+
+**Planning is two layers.** `plans/goals.md` holds the 3–5 project
+objectives: a stable, high-level reference, not a gate. A directive names
+the objective it serves where one fits (`Serves: 3`) and says `Serves: —`
+otherwise; that is fine. **The directive is the plan.** There is no epic
+list, sprint backlog, or suggestions inbox. When a body of work needs a
+signed, durable scope (a human teammate's task, a finalized project), the
+Architect writes a short spec in `docs/specs/`, and directives cite its
+requirement IDs (`Serves: hw_1 R3`).
+
+**Review scales with risk.** The Planner sets each directive's review level:
+`quick` (default — re-run the `Verify:` line, confirm the commit) or `full`
+(`[heavy]` or `[doc]` work — the full `[DONE]` checklist, plus rule 16 for
+prose). See `roles/reviewer.md`.
+
+**Retired files (v0.18.0).** `plans/long_term.md`, `plans/next_steps.md`,
+`plans/suggestions.md` and `coding/` are no longer part of the harness. If
+any doc still names one, it means the directive file (for tasks and
+progress) or your report to the Controller (for findings and questions) —
+and report the stale reference.
+
+## Tiers
 
 Tiers are relative — high/mid/light means "the strongest model you're
 willing to spend here" down to "the cheapest one that can do this." High =
@@ -61,60 +120,30 @@ willing to spend here" down to "the cheapest one that can do this." High =
 
 | Role | Tier | Model | Escalation |
 |------|------|-------|-----------|
-| Controller | Mid | `claude-sonnet-5` | — |
-| Planner | Mid | `claude-sonnet-5` | task tagged `[heavy]` → high tier |
-| Coder | Mid | `claude-sonnet-5` | task tagged `[heavy]` → high tier |
+| Controller | Mid | `claude-sonnet-5` | user may run it high tier for a large multi-loop session |
+| Planner | Mid | `claude-sonnet-5` | goal is a major architecture decision → high tier |
+| Architect | Mid | `claude-sonnet-5` | project-level spec → high tier |
+| Coder | Mid | `claude-sonnet-5` | directive tagged `[heavy]` → high tier |
+| Project specialists | Mid | `claude-sonnet-5` | directive tagged `[heavy]` → high tier |
 | Runner | Light | `claude-haiku-4-5-20251001` | needs judgment → mid tier |
-| Reviewer | Mid | `claude-sonnet-5` | task tagged `[heavy]` → high tier |
+| Reviewer | Mid | `claude-sonnet-5` | directive tagged `[heavy]` → high tier |
+| Researcher | Mid | `claude-sonnet-5` | `[heavy]` (proof-bearing) → high tier |
 | Author | Mid | `claude-sonnet-5` | — |
-| Researcher | Mid | `claude-sonnet-5` | task tagged `[heavy]` (proof-bearing) → high tier |
 | Editor | Mid | `claude-sonnet-5` | document tagged `[heavy]` → high tier |
-| Architect | Mid | `claude-sonnet-5` | phase-level spec → high tier |
 
-`[light]`/`[heavy]` is set by the Planner at directive creation, never
-re-judged per session. `[heavy]` means: deriving or verifying a formal
-proof/method (particle-filter convergence, trust-estimation guarantees,
-etc.), or a major architecture decision (core pipeline/estimator design
-choices affecting multiple components). Escalate to high tier only for
-directives actually tagged `[heavy]` — nearly all Coder/Planner/Reviewer/
-Researcher work, including routine literature synthesis and memo-writing,
-stays at mid tier by default. High tier is the expensive/rate-limited
-exception, not a role default — spend it deliberately, per-directive, not
-per-role.
+`[light]`/`[heavy]` is set by the Planner in the directive, never re-judged
+per session. `[heavy]` means deriving or verifying a formal method, or a
+major architecture decision (core pipeline or system architecture). `[doc]` marks a directive whose deliverable is prose (rule
+16). High tier is the deliberate exception, spent per directive, not per
+role.
 
-## Planning layers
+## Concurrency (Controller)
 
-Four layers, separated by rate of change. Each cites the layer above rather
-than restating it — a threshold or scope statement copied downward is a
-second source of truth, and the copy drifts (harness rule 2's shape).
-
-| Layer | File | Agile analogue | Owner | Changes |
-|---|---|---|---|---|
-| 1 | `plans/goals.md` | product objectives (3-5) | Planner (user-approved) | project lifetime |
-| 2 | `plans/long_term.md` | epics | Planner | as work lands |
-| 3 | `docs/specs/<slug>.md` | **sprint** | **Architect** | once, then **frozen** |
-| 4 | `plans/next_steps.md` | sprint backlog | Planner | constantly |
-
-Layer 3 is the only one **versioned in the project repo**; everything under
-`.friday/active/` is gitignored per-project state. So the spec is the
-durable record and `plans/` is working state — which is why `plans/` cites
-the spec and never copies it.
-
-Work traces upward: directive (`Serves: G2`) → spec goal → epic → project
-objective. A directive that serves no spec goal is scope creep or a missing
-spec amendment. A sprint spec is fixed **scope**, not fixed duration —
-there is no timebox.
-
-## Concurrency cap (Controller)
-
-The Controller runs **at most 2 role subagents concurrently** (3 only if
-none of them is high tier). This is deliberate: the account's session
-budget is shared across every concurrent agent, so if a cap is hit mid-run,
-capping concurrency at 2-3 means at most 2-3 in-flight tasks lose progress
-— not five or six racing in parallel. Spreading dispatches out over a
-longer wall-clock window is the intended tradeoff, not a bug: queue the
-next dispatch rather than fanning out everything the Planner listed at
-once. Detail: `.friday/active/harness/roles/controller.md`.
+Each Controller session runs **at most 3 role subagents at once** (2 if any
+is high tier), across all the loops it owns. Queue the rest and dispatch as
+slots free up. The account's usage budget is shared by every session, so
+several Controller terminals multiply the load — the user decides how many
+to run. Detail: `roles/controller.md`.
 
 ## Dispatch (every role)
 
@@ -132,8 +161,15 @@ once. Detail: `.friday/active/harness/roles/controller.md`.
   opens its first message and every report with `model: <exact ID from its
   system prompt>` so the tier is spot-checkable.
   Detail: `.friday/active/harness/rules/conventions.md`.
-- **Controller never executes** — read-only state inspection only; all
-  mutations are dispatched. Detail: `.friday/active/harness/roles/controller.md`.
+- **Controller never does specialist work** — no source, project-file,
+  doc or experiment changes; those are dispatched. Its only writes are
+  coordination records: `status.md` rows for its own loops, a directive's
+  `Status:` line, and tracker issues. Detail: `roles/controller.md`.
+- **Questions go up, not sideways.** A subagent that hits a decision only
+  the user can make stops and puts the question in its report (or
+  `SendMessage`s the Controller). It never guesses, and never asks another
+  subagent to decide. The Controller relays it to the user verbatim enough
+  to be answerable, and relays the answer back tagged `User-Feedback:`.
 - **Mid-task steering is binding.** A message a subagent receives from its
   spawner mid-task — feedback relayed from the user, or the spawner's own
   coordination — is an instruction, not data: apply it (or push back
@@ -166,20 +202,15 @@ via SETUP.md; keep the invariant.
    background job, training run, or eval updates `.friday/active/harness/status.md`
    ("Active background jobs") in the same session — it must never say idle
    while a job runs. Same rule for directives: whoever picks up a directive
-   (starts active work) or hands it off (producer done, waiting on the next
-   role — e.g. Researcher → Reviewer, Coder → Runner) updates that
-   directive's row in `.friday/active/harness/status.md` ("Directive status") in the same
-   pass, including setting the current owner. `plans/suggestions.md` is a
-   notification inbox that gets emptied once read, not a durable status
-   record — `.friday/active/harness/status.md` is the one place that answers "what is
-   directive X doing, who's operating it, what's left" without
-   reconstructing it from git log or directive files. `.friday/active/harness/status.md`
-   only ever holds OPEN directives: when the Reviewer closes one, its row
-   moves out of `.friday/active/harness/status.md` and is appended to
-   `.friday/active/harness/status_history.md` (append-only, exempt from rule 8) in the
-   SAME close-out pass that deletes `.friday/active/harness/plans/directives/<ID>.md`
-   (gitignored — see rule 13) — this is what makes `.friday/active/harness/status.md`
-   self-pruning instead of accumulating dead rows.
+   (starts active work) or hands it off updates that directive's row in
+   `status.md` ("Directives") in the same pass, including the current owner.
+   The Controller owns the Loops table and the `proposed` → `approved`
+   transition; the Reviewer owns close-out. `status.md` only ever holds OPEN
+   directives: when the Reviewer closes one, its row moves to
+   `[SET AT SETUP: STATUS_HISTORY_PATH]` (append-only, exempt from rule 8) and the directive
+   file moves to `plans/directives/closed/`, in the same pass. Edit only
+   rows belonging to your own loop — another Controller's loop is not yours
+   to touch.
 
 4. **Checkpoint/model compatibility.** Any forward-pass-altering (or
    equivalently, output-altering) change to shared model-definition code
@@ -209,12 +240,13 @@ via SETUP.md; keep the invariant.
    **Trigger:** launching, checking, or trusting any monitor →
    `.friday/active/harness/rules/monitoring.md`.
 
-8. **Markdown hygiene.** Hot-path files (`.friday/active/harness/status.md`, `plans/*.md`,
-   `coding/*.md`) stay under defined line caps; whoever next edits an
-   over-cap file compacts it in the same edit. Planner + Reviewer run
+8. **Markdown hygiene.** Hot-path files (`status.md`, `plans/goals.md`, open
+   directive files) stay under defined line caps; whoever next edits an
+   over-cap file compacts it in the same edit. The Controller (session
+   start) and Reviewer (close-out) run
    `.agents/hooks/check_md_hygiene.py` (if Antigravity) or
-   `.claude/hooks/check_md_hygiene.py` (if Claude) at pass start. **Trigger:** a
-   Planner/Reviewer pass start, or a cap WARN →
+   `.claude/hooks/check_md_hygiene.py` (if Claude). **Trigger:** a
+   Controller session start or Reviewer close-out, or a cap WARN →
    `.friday/active/harness/rules/md_hygiene.md`.
 
 9. **Controlled reproduction for root-cause claims.** A root-cause claim is
@@ -251,14 +283,14 @@ via SETUP.md; keep the invariant.
     **Trigger:** recording completed work, or judging whether work is
     done → `.friday/active/harness/rules/version_control.md`.
 
-13. **External queue sync.** If this project's `.friday/active/harness/rules/
-    task_tracking.md` configures an external tracker (`TRACKER_KIND` !=
-    `none`), work is also mirrored there. Planner — a directive is not
-    "opened" until its tracker issue exists (same pass); Reviewer — not
-    closed until that issue is ticked and closed (same pass). Missing
-    credentials **block** the pass — no silent-skip path for this rule.
-    **Trigger:** opening or closing a directive →
-    `.friday/active/harness/rules/task_tracking.md`.
+13. **External queue sync (opt-in).** Applies only when the project opts in
+    by setting a tracker in `rules/task_tracking.md` (`TRACKER_KIND` !=
+    `none`; this project: `[SET AT SETUP: TRACKER_KIND]`). Then every directive gets
+    one issue: the Controller opens it **when the user approves the
+    directive** (not at proposal, so rejected proposals leave no issues),
+    and the Reviewer closes it at close-out, same pass in both cases.
+    Missing credentials **block** that step — no silent skip. **Trigger:**
+    approving or closing a directive → `rules/task_tracking.md`.
 
 <!-- SECTION:accel_none:start -->
 14. *(reserved for a project-specific rule, e.g. accelerator/hardware
@@ -284,18 +316,21 @@ via SETUP.md; keep the invariant.
     no watchdog alert. **Trigger:** any `long_job ... &`-style launch →
     `.friday/active/harness/rules/environment.md` §Detached launches.
 
-16. **Document budgets & concision.** Every prose deliverable carries a
+16. **Document budgets & concision.** Applies to directives tagged `[doc]`
+    (a prose deliverable — theory, report, memo) and to Architect specs.
+    Short working notes (READMEs, board summaries, a directive's Log) are
+    exempt. Every `[doc]` deliverable carries a
     page budget stated in its directive's `Verify:` block, and **over budget
     is a defect with the same force as a broken citation**, not a stylistic
     note. No prose deliverable closes without an Editor subtractive pass
     (reported as `cut X lines / Y pages, math unchanged`) and a cold-reader
     check by a context-free utility spawn. Assumption tables cap at 8 rows;
     every core concept gets a figure. Exists because, in the project this
-    rule originated in, a technically flawless long-form document was
-    shipped that its own reader could not learn from — every gate measured
-    correctness, none measured length, and review was structurally additive.
-    **Trigger:** drafting, editing, or reviewing any prose deliverable under
-    `docs/`, or opening a directive that produces one →
+    rule originated in, a technically flawless long-form document shipped
+    that its own reader could not learn from — every gate measured
+    correctness, none measured length, and review was structurally
+    additive. **Trigger:** working, planning or reviewing a
+    `[doc]` directive, or writing a spec →
     `.friday/active/harness/rules/document_budgets.md`.
 
 ## Execution

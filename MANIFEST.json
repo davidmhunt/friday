@@ -1,6 +1,6 @@
 {
   "MANIFEST_VERSION": 2,
-  "_comment": "Every symlink-source path in this repo, and where init_harness.py should link it in a consumer project. Each entry's \"dest\" is resolved against a base directory chosen by \"dest_root\": \"repo\" (default when absent) resolves against the consumer repo root, \"active\" resolves against .friday/active/ — used for every generated harness/... path now that the harness's generated output lives inside the submodule instead of at the consumer root. Each entry's \"src\" is resolved against a base directory chosen by \"src_root\": \"templates\" (default when absent) resolves against templates/ in this repo, \"submodule\" resolves against this repo's own root — used for the one file (USER_GUIDE.md) that deliberately lives at the submodule root rather than under templates/. Adding a new symlink-source file to this template only requires an entry here, not a change to init_harness.py. Each entry may also carry an \"owner\" key: \"harness\" (the default when absent) means the file is derived tooling/state the harness regenerates and is therefore excluded from the consumer repo's git history via .git/info/exclude — see compute_excluded_paths() in init_harness.py; \"project\" means the PROJECT authors/owns this file (README, AGENTS.md, docs/RESULTS.md, the Docker build inputs, ...) and it is always committed regardless. Every symlinks entry is \"harness\" by construction — a link straight into the .friday/ submodule is never hand-edited in the consumer repo — so \"owner\" only ever needs to be written explicitly on a handful of repo-rooted materialize entries. A per-entry \"tracker\" key (\"none\" or \"configured\") additionally gates an entry on whether this project's TRACKER_KIND is \"none\" or something else — see status_history.md's two entries below, the only place this currently matters.",
+  "_comment": "Every symlink-source path in this repo, and where init_harness.py should link it in a consumer project. Each entry's \"dest\" is resolved against a base directory chosen by \"dest_root\": \"repo\" (default when absent) resolves against the consumer repo root, \"active\" resolves against .friday/active/ — used for every generated harness/... path now that the harness's generated output lives inside the submodule instead of at the consumer root. Each entry's \"src\" is resolved against a base directory chosen by \"src_root\": \"templates\" (default when absent) resolves against templates/ in this repo, \"submodule\" resolves against this repo's own root — used for the one file (USER_GUIDE.md) that deliberately lives at the submodule root rather than under templates/. Adding a new symlink-source file to this template only requires an entry here, not a change to init_harness.py. Each entry may also carry an \"owner\" key: \"harness\" (the default when absent) means the file is derived tooling/state the harness regenerates and is therefore excluded from the consumer repo's git history via .git/info/exclude — see compute_excluded_paths() in init_harness.py; \"project\" means the PROJECT authors/owns this file (README, AGENTS.md, docs/RESULTS.md, the Docker build inputs, ...) and it is always committed regardless. Every symlinks entry is \"harness\" by construction — a link straight into the .friday/ submodule is never hand-edited in the consumer repo — so \"owner\" only ever needs to be written explicitly on a handful of repo-rooted materialize entries. A per-entry \"tracker\" key (\"none\" or \"configured\") additionally gates an entry on whether this project's TRACKER_KIND is \"none\" or something else — see status_history.md's two entries below, the only place this currently matters. Project-specific specialist roles are deliberately NOT listed here: a consumer project authors them in its own tracked .friday-project/roles/<role>.md (plus its own adapter files), and init_harness.py links each one into .friday/active/harness/roles/ by discovery — see sync_project_roles().",
   "legacy_dests": {
     "_comment": "Snapshot of every current 'harness/…' dest (from both symlinks and materialize below) as of the last version before v0.13.0 relocates the whole harness/ tree into .friday/active/harness/. --untrack-harness works by intersecting `git ls-files` with the CURRENT manifest's dests — once v0.13.0 lands, no dest anywhere in this file has a 'harness/…' prefix any more, so that intersection goes empty and a project that adopted HARNESS_TRACKING pre-move gets 'Nothing to untrack' instead of the migration it's asking for. legacy_dests is the fallback list --untrack-legacy intersects with `git ls-files` instead, so the move-off-root step keeps working for every project that committed harness/** before upgrading past 'since'. Deliberately does NOT include .claude/ or .agents/ dests — those stay at the consumer repo root even after v0.13.0 (only harness/** moves), so they remain reachable through the ordinary --untrack-harness path and don't belong in a list of paths that are going away.",
     "since": "0.13.0",
@@ -45,6 +45,18 @@
       "harness/tools/intake_references.py",
       "harness/tools/lint_research_memo.py",
       "harness/tools/verify_references.py"
+    ]
+  },
+  "retired_dests": {
+    "_comment": "Dests a previous harness version generated and v0.18.0 (lead mode) no longer does. init_harness.py never deletes them from a consumer project (they may hold the project's only copy of old planning notes); it prints them under '=== Retired files ===' on every sync so the operator can archive and remove them by hand.",
+    "since": "0.18.0",
+    "paths": [
+      ".friday/active/harness/coding/tasks_working.md",
+      ".friday/active/harness/coding/tasks_finished.md",
+      ".friday/active/harness/coding/history.md",
+      ".friday/active/harness/plans/next_steps.md",
+      ".friday/active/harness/plans/suggestions.md",
+      ".friday/active/harness/plans/long_term.md"
     ]
   },
   "symlinks": [
@@ -111,13 +123,7 @@
     { "src": "harness/status_history.md.tmpl", "dest": "docs/status_history.md", "owner": "project", "tracker": "none" },
     { "src": "harness/log.md.tmpl", "dest": "harness/log.md", "dest_root": "active" },
     { "src": "harness/templates/research_memo_template.md.tmpl", "dest": "harness/templates/research_memo_template.md", "dest_root": "active" },
-    { "src": "harness/coding/tasks_working.md.tmpl", "dest": "harness/coding/tasks_working.md", "dest_root": "active" },
-    { "src": "harness/coding/tasks_finished.md.tmpl", "dest": "harness/coding/tasks_finished.md", "dest_root": "active" },
-    { "src": "harness/coding/history.md.tmpl", "dest": "harness/coding/history.md", "dest_root": "active" },
-    { "src": "harness/plans/next_steps.md.tmpl", "dest": "harness/plans/next_steps.md", "dest_root": "active" },
-    { "src": "harness/plans/suggestions.md.tmpl", "dest": "harness/plans/suggestions.md", "dest_root": "active" },
     { "src": "harness/plans/goals.md.tmpl", "dest": "harness/plans/goals.md", "dest_root": "active" },
-    { "src": "harness/plans/long_term.md.tmpl", "dest": "harness/plans/long_term.md", "dest_root": "active" },
     { "src": "harness/plans/history.md.tmpl", "dest": "harness/plans/history.md", "dest_root": "active" },
     { "src": "docs/RESULTS.md.tmpl", "dest": "docs/RESULTS.md", "owner": "project" },
     { "src": "docs/ARCHITECTURE.md.tmpl", "dest": "docs/ARCHITECTURE.md", "owner": "project" },

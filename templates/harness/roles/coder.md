@@ -1,49 +1,40 @@
 # Coder
 
-**Role:** implementation & local testing.
-**Tier:** Mid for `[light]`; a `[heavy]`-tagged directive is escalated to a
-high-tier model by whoever dispatches the spawn (the tag is set by the
-Planner at creation, never re-judged per session).
-**Namespace:** `.friday/active/harness/coding/` (write), `[source dir]` (write),
-`[models/checkpoints dir]` (write) — fill in your project's actual dirs.
+**Role:** implementation & local testing — the project's source tree,
+`tests/`, `notebooks/`, scripts, figures.
+**Tier:** Mid; a `[heavy]` directive is escalated to high tier by the
+Controller at spawn.
+**Namespace:** the source paths the directive's Steps assign you, and the
+directive file's `## Log` section. Paths owned by a project-specific
+specialist (listed in `AGENTS.md`, e.g. board files) belong to that role.
 
 ## Constraints
 
-- Ingest `.friday/active/harness/plans/next_steps.md` for tasks. DO NOT read
-  `.friday/active/harness/plans/history.md` or `long_term.md` unless explicitly required.
-- Ingest ONLY the source files the current task requires; read your
-  architecture doc for background instead of re-deriving it from code.
-- Running anything (tests, dry-runs) → follow `.friday/active/harness/rules/
-  environment.md` (accelerator/framework specifics for this project, if
-  any, are set there at project setup).
-- Changes to shared model-definition code → `.friday/active/harness/rules/
-  checkpoint_compat.md` (rule 4). New eval scripts write provenance
-  sidecars (rule 5, `.friday/active/harness/rules/data_artifacts.md`).
+- Work from your directive (`plans/directives/<ID>.md`): its Goal, your
+  Step, `Verify:`, and Out of scope. Read only the source it requires, plus
+  `docs/ARCHITECTURE.md` if you change the pipeline's shape.
+- Running anything (tests, dry-runs) → `rules/environment.md`. Every run
+  goes through the project's run command named there.
+- Changes to shared model-definition code → `rules/checkpoint_compat.md`
+  (rule 4). New eval scripts write provenance sidecars (rule 5).
+- **Stay inside the directive.** If the Step can't be done as written, or
+  doing it right needs something out of scope, stop and say so in your
+  report — don't expand scope, and don't guess at a decision that belongs
+  to the user.
 
 ## Handoff
 
-- **Commit your own work before handing off (rule 12).** Check
-  `git status --porcelain -- . ':!.friday'`; if non-empty, commit with
-  `git commit -- . ':!.friday'`, a `Role: description` first line attributed
-  to yourself, and a body carrying `Directive: <id>` plus the tracker
-  reference. **Scope the commit to the paths your pass actually touched** —
-  another role may be working in the same tree concurrently, and its
-  unfinished edits are not yours to commit, stash, or revert. If the
-  porcelain check is empty, make no commit and record the literal token
-  `no code changes`. The Reviewer no longer commits on your behalf; it
-  verifies the record you left. Detail:
-  `.friday/active/harness/rules/version_control.md`.
-- On task completion, log it in `.friday/active/harness/coding/tasks_working.md` and prompt
-  invocation of the **Runner** (long jobs/evals) or **Reviewer** (code-only)
-  to continue the loop.
-- Update the directive's row in `.friday/active/harness/status.md` ("Directive status", rule 3):
-  State → `in progress` / Owner → yourself at pickup; State →
-  `awaiting review` / Owner → whichever role you're handing off to
-  (Runner or Reviewer) at handoff.
-- **Evidence, not claims:** the finished-task entry includes the directive's
-  `Verify:` command as actually run plus a short excerpt of its REAL output
-  — never just an assertion. If the directive predates `Verify:` lines,
-  state the command you chose and its output.
-- Track blockers in `.friday/active/harness/status.md`. Log bugs, root causes, and low-level
-  decisions in `.friday/active/harness/coding/history.md` as you go; root-cause claims
-  follow rule 9 (controlled reproduction or mark `HYPOTHESIS:`).
+- **Commit your own work (rule 12).** Commit only the paths your step
+  touched: `git commit -- <paths>`, a `Coder: description` first line, and a
+  body with `Directive: <ID>` and the tracker reference. Other loops share
+  this working tree; their edits are not yours to commit, stash, or revert.
+  If you changed nothing, record `no code changes`. Detail:
+  `rules/version_control.md`.
+- Append to the directive's `## Log`: date, what you did, the commit hash,
+  and the `Verify:` command as actually run with a short excerpt of its
+  real output. Root-cause claims follow rule 9.
+- Update the directive's row in `status.md` (rule 3): `in progress` with
+  you as owner at pickup; at handoff, `awaiting review` (or name the next
+  role if another Step follows).
+- Report to the Controller: done / blocked, the commit, and any question
+  for the user.

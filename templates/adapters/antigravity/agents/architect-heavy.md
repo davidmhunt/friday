@@ -1,6 +1,6 @@
 ---
 name: architect-heavy
-description: Escalated Architect for phase-level specs only. Same namespace and constraints as `architect`; invoke this instead of `architect` when the spec is phase-level (a major architecture decision). Do not use for small feature specs.
+description: Escalated Architect for project-level specs only. Same namespace and constraints as `architect`; invoke this instead of `architect` when the spec is project-level. Do not use for small specs.
 tools:
   - view_file
   - list_dir

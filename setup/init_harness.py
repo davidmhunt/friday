@@ -498,6 +498,19 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
                 dest.symlink_to(rel_target)
 
 
+def report_retired_dests(manifest: dict) -> None:
+    """List files an older harness version generated that this one no
+    longer does (MANIFEST.json "retired_dests"). Never deletes them — they
+    may be a project's only copy of old planning notes."""
+    retired = manifest.get("retired_dests", {})
+    present = [p for p in retired.get("paths", []) if (REPO_ROOT / p).exists()]
+    if not present:
+        return
+    print(f"\n=== Retired files (no longer used since v{retired.get('since', '?')}) ===")
+    for p in present:
+        print(f"  RETIRED (archive and delete by hand): {p}")
+
+
 def compute_excluded_paths(manifest: dict, cfg: dict[str, str]) -> list[str]:
     """The consumer-repo-relative dest paths that must never touch git
     history — every repo-rooted entry with "owner": "harness" (the default),
@@ -1216,7 +1229,7 @@ def _manifest_dest_dirs(manifest: dict) -> tuple[set[str], set[str]]:
 
 def check_hardcoded_path_tables(manifest: dict) -> None:
     """Fail loudly if templates/adapters/hooks/check_md_hygiene.py's FILE_CAPS /
-    PER_ENTRY_FILE, or templates/harness/tools/check_unavailable_sources.py's
+    DIRECTIVE_GLOB, or templates/harness/tools/check_unavailable_sources.py's
     SCAN_GLOBS, name a path MANIFEST.json no longer knows about.
 
     Both modules carry their own hardcoded copy of a subset of the path
@@ -1250,9 +1263,9 @@ def check_hardcoded_path_tables(manifest: dict) -> None:
     for path in file_caps:
         if not _covered(path):
             errors.append(f"check_md_hygiene.py FILE_CAPS[{path!r}] is not a manifest dest or a harness-generated path")
-    per_entry_file = _parse_module_constant(hygiene_path, "PER_ENTRY_FILE")
-    if not _covered(per_entry_file):
-        errors.append(f"check_md_hygiene.py PER_ENTRY_FILE={per_entry_file!r} is not a manifest dest or a harness-generated path")
+    directive_glob = _parse_module_constant(hygiene_path, "DIRECTIVE_GLOB")
+    if str(PurePosixPath(directive_glob).parent) not in allowed_dirs:
+        errors.append(f"check_md_hygiene.py DIRECTIVE_GLOB={directive_glob!r} is not under a manifest dest directory or a harness-generated directory")
 
     scan_path = TEMPLATES_DIR / "harness" / "tools" / "check_unavailable_sources.py"
     scan_globs = _parse_module_constant(scan_path, "SCAN_GLOBS")
@@ -1374,7 +1387,8 @@ def closing_checklist(cfg: dict[str, str]) -> None:
         print("  [ ] LFS is set up for docs/theory/, docs/report/'s generated PDFs — see .friday/active/harness/rules/version_control.md's lfs_policy section")
     print("  [ ] python3 .claude/hooks/check_md_hygiene.py (or .agents/hooks/) runs clean — not checked automatically, run it yourself")
     print("  [ ] .friday/active/harness/status.md reflects reality (probably: nothing running yet)")
-    print("  [ ] first directive opened from .friday/active/harness/plans/directives/TEMPLATE.md")
+    print("  [ ] .friday/active/harness/plans/goals.md objectives set by the user")
+    print("  [ ] first goal handed to a Controller session (`claude --agent controller`, or \"you are the controller\") — it plans, you approve each directive")
     print("  [ ] anything surprising you learned during setup recorded in .friday/active/harness/log.md — that file is the \"why\" behind your rules, and it starts on day one")
 
 
@@ -1474,6 +1488,8 @@ def main() -> int:
         if not args.dry_run:
             apply_docker_volumes(cfg)
             maybe_build_docker(cfg, args.dry_run)
+
+    report_retired_dests(manifest)
 
     closing_checklist(cfg)
     return 0

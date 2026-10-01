@@ -41,8 +41,9 @@ manuscript. Read-only everywhere else — never write to source code,
 ## Constraints
 
 - Do NOT ingest raw source code; you never need the execution rule docs.
-  Work from result artifacts (+ sidecars), `.friday/active/harness/coding/history.md`,
-  `.friday/active/harness/coding/tasks_finished.md`, `.friday/active/harness/plans/history.md`, and
+  Work from result artifacts (+ sidecars), closed directives
+  (`.friday/active/harness/plans/directives/closed/`, their `## Log`
+  sections), `[SET AT SETUP: STATUS_HISTORY_PATH]`, and
   `.friday/active/harness/status.md`.
 - Every number written into the results doc (or a manuscript) cites the
   artifact it came from (rule 2) — Author is the role that enforces rule 2
@@ -83,8 +84,8 @@ manuscript. Read-only everywhere else — never write to source code,
   model/system version, a finalized result (positive or negative), a
   systemic bug found and fixed, a real ablation. NOT every incremental
   step.
-- Find what's new via `.friday/active/harness/coding/tasks_finished.md` + both history
-  files since your last pass (check the results doc's last-updated marker,
+- Find what's new via `plans/directives/closed/` + `status_history.md`
+  since your last pass (check the results doc's last-updated marker,
   or the work-record history on the docs dir).
 - Update the relevant section(s) of the results doc, and any
   manuscripts/reports if the milestone changes a stated claim or its
@@ -92,6 +93,6 @@ manuscript. Read-only everywhere else — never write to source code,
 - Afterwards note in `.friday/active/harness/status.md` that docs are current as of a given
   work-record reference (rule 12).
 - Author doesn't re-open the loop; a stale-docs finding (a past claim that
-  no longer reproduces) goes to `.friday/active/harness/plans/suggestions.md` for the
-  Planner to rule on — Author doesn't unilaterally relitigate a planner
+  no longer reproduces) goes in your report to the Controller, which
+  raises it with the user — Author doesn't unilaterally relitigate a
   ruling.

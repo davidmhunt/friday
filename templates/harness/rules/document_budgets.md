@@ -38,7 +38,7 @@ remedy, not a stylistic observation.
 
 ## Planner — opening a directive
 
-Every directive producing a prose deliverable states, in its `Verify:`
+Every `[doc]` directive (a prose deliverable) states, in its `Verify:`
 block:
 
 - **`Budget: <N> pp core body`** — the page count of the core document,
@@ -77,10 +77,11 @@ roles spent a full review cycle disputing whether a five-line header counted
 toward a line budget, with both readings defensible from what was then
 written.*
 
-A directive with a prose deliverable and no budget line is malformed; the
-Reviewer rejects it back to the Planner rather than inventing one.
+A `[doc]` directive with no budget line is malformed; the Reviewer bounces
+it to the Controller (for a Planner amendment) rather than inventing one.
 
-Budgets come from the phase spec in `docs/specs/`, where one exists. Set
+Budgets come from the governing spec in `docs/specs/`, where one exists. A
+spec itself has a fixed budget of 2 pages (`roles/architect.md`). Set
 them from what the material actually needs by comparison to a real
 exemplar, never by estimating from the outline — outlines systematically
 underestimate.
@@ -99,7 +100,7 @@ underestimate.
   routinely the most-praised element of a technical document and are the
   cheapest density-per-page available.
 - **Cite a real bibliography entry for every citable step.**
-- Where a phase defines a **style exemplar** (an approved short document in
+- Where a spec or directive names a **style exemplar** (an approved short document in
   the target register), later documents are written to match its register,
   and the Reviewer diffs against it.
 

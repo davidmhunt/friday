@@ -1,6 +1,6 @@
 ---
 name: planner-heavy
-description: Escalated Planner for [heavy] planning passes only (architecture decisions, major task-breakdown calls). Same namespace and constraints as `planner`; invoke this instead of `planner` when the pass is tagged [heavy]. Do not use for routine planning cycles.
+description: Escalated Planner for goals that are a major architecture decision. Same namespace and constraints as `planner`; invoke this instead of `planner` for those goals only.
 tools:
   - view_file
   - list_dir
@@ -12,7 +12,7 @@ tools:
   - invoke_subagent
   - define_subagent
 subagent: true
-mainAgent: true
+mainAgent: false
 model: pro  # High tier
 commandExecutionPolicy: sandbox
 ---

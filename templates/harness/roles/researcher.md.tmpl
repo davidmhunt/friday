@@ -5,8 +5,8 @@ research questions the loop can't settle from repo evidence alone — "would
 approach X beat approach Y here?", "what's the current best practice for
 Z?", "is this experiment design standard?" — with rigor: real evidence,
 real citations/sources, explicit confidence. Dispatched by the
-Controller (same as Coder/Runner/Reviewer/Author) once the Planner has
-raised a research question; the user may also invoke it directly. **Delete this role entirely if
+Controller for a directive Step, or to unblock another role's question;
+the user may also invoke it directly. **Delete this role entirely if
 your project has no external-research component.**
 **Tier:** Mid (`claude-sonnet-5`) by default — this covers routine
 literature synthesis, memo-writing, and citation verification. Escalate to
@@ -99,20 +99,19 @@ outside your own namespace, or `data/`.
   `docs/references/`, prunes now-resolved rows out of
   `docs/references/needs_pdf.md`, and reports anything it couldn't resolve
   (key/DOI collision, no matching PDF, no verifiable field) rather than
-  guessing — triage those flagged items by hand (or ping
-  `plans/suggestions.md` if a ruling is needed) instead of silently
-  dropping them.
+  guessing — triage those flagged items by hand (or raise them in your
+  report if a ruling is needed) instead of silently dropping them.
 
 ## Constraints
 
 <!-- SECTION:latex_on:start -->
 - No source-code writes, no experiments, no directives — the output is a
-  memo (or a `docs/theory/` draft); decisions stay with the Planner (and
-  the user).
+  memo (or a `docs/theory/` draft); decisions stay with the user, via the
+  Controller.
 <!-- SECTION:latex_on:end -->
 <!-- SECTION:latex_off:start -->
 - No source-code writes, no experiments, no directives — the output is a
-  memo; decisions stay with the Planner (and the user).
+  memo; decisions stay with the user, via the Controller.
 <!-- SECTION:latex_off:end -->
 - Deriving or verifying a formal proof/method is `[heavy]` work — check the
   directive's tag before starting; escalate to high tier if untagged but
@@ -169,11 +168,10 @@ outside your own namespace, or `data/`.
   `no code changes`. The Reviewer no longer commits on your behalf; it
   verifies the record you left. Detail:
   `.friday/active/harness/rules/version_control.md`.
-- Write the memo to `docs/research/<topic>_<date>.md` and add a
-  one-line pointer (`RESEARCH: <question> → memo path, TL;DR`) to
-  `.friday/active/harness/plans/suggestions.md` (shared inbox) so the Planner sees it next
-  pass even if the spawning session ends.
-- Update the directive's row in `.friday/active/harness/status.md` ("Directive status", rule 3):
+- Write the memo to `docs/research/<topic>_<date>.md` and append a
+  one-line pointer (`RESEARCH: <question> → memo path, TL;DR`) to the
+  directive's `## Log`, so it survives even if the spawning session ends.
+- Update the directive's row in `.friday/active/harness/status.md` ("Directives", rule 3):
   set State to `awaiting review`, Owner to `Reviewer (next)`, and Notes to
   the memo path + what's still uncommitted. Do this at pickup too (State →
   `in progress`, Owner → yourself) if the row wasn't already current.

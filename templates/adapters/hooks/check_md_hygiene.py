@@ -2,12 +2,13 @@
 """Mechanical markdown-hygiene checker (harness.md rule 8).
 
 Checks the hot-path markdown files against line-count caps and prints a WARN
-line per violation. Plain Python, no dependencies — run it at every Planner/
-Reviewer pass start and from a warn-only pre-commit hook.
+line per violation. Plain Python, no dependencies — the Controller runs it
+at session start, the Reviewer at close-out, and a warn-only pre-commit hook
+on every commit.
 
 Exit code: 1 if any file is over its cap, 0 otherwise. The pre-commit wrapper
 ignores the code (always exits 0) so hygiene never blocks a commit; the
-Planner/Reviewer loop treats exit 1 as the signal to compact per rule 8.
+Controller/Reviewer treat exit 1 as the signal to compact per rule 8.
 
 CONFIGURE: FILE_CAPS below is the authoritative copy of the caps quoted in
 .friday/active/harness/rules/md_hygiene.md — keep the two in sync.
@@ -26,7 +27,6 @@ reader rather than importing `_config.py` or `check_agent_spawn.py`'s
 so it stays exercisable in isolation (see module docstring above).
 """
 
-import re
 import sys
 from pathlib import Path
 
@@ -59,46 +59,20 @@ REPO_ROOT = find_repo_root()
 # append-only permanent records and are intentionally exempt — don't add them.
 FILE_CAPS = {
     ".friday/active/harness/status.md": 150,
-    ".friday/active/harness/plans/suggestions.md": 60,
-    ".friday/active/harness/plans/next_steps.md": 400,
-    ".friday/active/harness/coding/tasks_working.md": 250,
-    ".friday/active/harness/coding/tasks_finished.md": 200,
+    ".friday/active/harness/plans/goals.md": 120,
 }
 
-# Additional warn-only per-entry cap: a single task block that sprawls is the
-# usual reason a working file blows its total cap.
-PER_ENTRY_FILE = ".friday/active/harness/coding/tasks_working.md"
-PER_ENTRY_CAP = 12
-_HEADING_RE = re.compile(r"^(#{2,4})\s+(.*)$")
+# Each OPEN directive file is capped individually. Closed directives live in
+# plans/directives/closed/ (not matched by this glob) and are exempt, as
+# append-only records; TEMPLATE.md is not a directive.
+DIRECTIVE_GLOB = ".friday/active/harness/plans/directives/*.md"
+DIRECTIVE_CAP = 200
+DIRECTIVE_SKIP = {"TEMPLATE.md"}
 
 
 def count_lines(path: Path) -> int:
     with path.open("r", encoding="utf-8", errors="replace") as f:
         return sum(1 for _ in f)
-
-
-def check_per_entry_caps(path: Path) -> list:
-    """WARN for any task block (a `##`-`####` heading through the line before
-    the next such heading, or EOF) longer than PER_ENTRY_CAP. Warn-only."""
-    with path.open("r", encoding="utf-8", errors="replace") as f:
-        lines = f.readlines()
-
-    headings = [
-        (i, m.group(2).strip())
-        for i, line in enumerate(lines)
-        if (m := _HEADING_RE.match(line))
-    ]
-
-    warnings = []
-    for idx, (start, text) in enumerate(headings):
-        end = headings[idx + 1][0] if idx + 1 < len(headings) else len(lines)
-        n = end - start
-        if n > PER_ENTRY_CAP:
-            warnings.append(
-                f"WARN | hygiene | {PER_ENTRY_FILE} entry '{text}' is "
-                f"{n} lines (per-entry cap {PER_ENTRY_CAP})"
-            )
-    return warnings
 
 
 def main() -> int:
@@ -119,13 +93,14 @@ def main() -> int:
             print(f"WARN | hygiene | {rel_path} is {n} lines (cap {cap})")
             any_warn = True
 
-    per_entry_path = REPO_ROOT / PER_ENTRY_FILE
-    if not per_entry_path.exists():
-        # Same rationale as the FILE_CAPS loop above: warn, don't block.
-        print(f"WARN | hygiene | configured path not found: {PER_ENTRY_FILE}")
-    else:
-        for msg in check_per_entry_caps(per_entry_path):
-            print(msg)  # warn-only: deliberately does not affect the exit code
+    for path in sorted(REPO_ROOT.glob(DIRECTIVE_GLOB)):
+        if path.name in DIRECTIVE_SKIP:
+            continue
+        n = count_lines(path)
+        if n > DIRECTIVE_CAP:
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            print(f"WARN | hygiene | {rel} is {n} lines (cap {DIRECTIVE_CAP})")
+            any_warn = True
 
     return 1 if any_warn else 0
 

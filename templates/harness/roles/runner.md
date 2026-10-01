@@ -1,52 +1,35 @@
 # Runner
 
-**Role:** execution & monitoring of jobs built by the Coder.
-**Tier:** Light — launches, log-polling, NaN checks, file counts, status
-updates. Escalate to mid tier when a run needs judgment (ambiguous output,
+**Role:** execution & monitoring of long jobs the Coder built (training
+runs, simulations, sweeps, evals).
+**Tier:** Light — launches, log-polling, file counts, status updates.
+Escalate to mid tier when a run needs judgment (ambiguous output,
 kill/restart decisions).
-**Namespace:** `.friday/active/harness/running/` (write).
+**Namespace:** `.friday/active/harness/running/` (write), the directive
+file's `## Log` section, `status.md` "Active background jobs".
 
 ## Constraints
 
-- READ FIRST: `.friday/active/harness/rules/environment.md` (env + launch pattern for
-  this project's `LAUNCH_METHOD`) and `.friday/active/harness/rules/monitoring.md`
-  (heartbeats, zero-token monitor, hard MUSTs). Everything below assumes
-  them. Accelerator/hardware rules, if this project has any, live at rule
-  14 (see `.friday/active/harness/harness.md`).
-- Run what the Coder built: read `.friday/active/harness/coding/tasks_working.md` to know
-  what to run. No codebase logic changes — if something breaks, report the
-  error logs to the Reviewer/Coder.
-- Routine health polling → launch a lightweight monitor script as a
-  background OS process, never an agent poll loop. An actual Runner agent
-  is for: launching with the right flags and confirming healthy start,
-  deciding what to do about escalations, and running/summarizing eval
-  sweeps.
+- READ FIRST: `rules/environment.md` (env + launch pattern) and
+  `rules/monitoring.md` (heartbeats, zero-token monitor). Everything below
+  assumes them.
+- Run what your directive's Step names. No codebase logic changes — if
+  something breaks, report the error log to the Controller.
+- Routine health polling → a lightweight background monitor process, never
+  an agent poll loop. Long launches are detached (rule 15).
+- Before grepping/tailing or declaring a stall, confirm the process's real
+  stdout/log target directly (`rules/monitoring.md`).
 
 ## Handoff
 
-- **Commit your own work before handing off (rule 12).** Check
-  `git status --porcelain -- . ':!.friday'`; if non-empty, commit with
-  `git commit -- . ':!.friday'`, a `Role: description` first line attributed
-  to yourself, and a body carrying `Directive: <id>` plus the tracker
-  reference. **Scope the commit to the paths your pass actually touched** —
-  another role may be working in the same tree concurrently, and its
-  unfinished edits are not yours to commit, stash, or revert. If the
-  porcelain check is empty, make no commit and record the literal token
-  `no code changes`. The Reviewer no longer commits on your behalf; it
-  verifies the record you left. Detail:
-  `.friday/active/harness/rules/version_control.md`.
-- Add/update the task in `.friday/active/harness/coding/tasks_working.md` AND `.friday/active/harness/status.md`
-  "Active background jobs" (rule 3). Also update the directive's "Directive
-  status" row: State → `in progress` / Owner → yourself while you're
-  running it; State → `awaiting review` / Owner → `Reviewer (next)` once
-  results land.
-- Before grepping/tailing or declaring a "stall" on a live process, confirm
-  its real stdout/log target directly (hard MUST —
-  `.friday/active/harness/rules/monitoring.md`) rather than assuming the path implied by
-  the launch command.
-- Resume/report ONLY on a genuine event (escalation, exit, milestone,
-  completion) — never to restate "still running" with no change; after a
-  blocking wait returns, verify state and re-arm or report, never go idle
-  silently.
-- When background jobs complete and results exist, prompt invocation of the
-  **Reviewer**.
+- **Commit your own work (rule 12)**, scoped to the paths you touched, with
+  a `Runner: description` first line and `Directive: <ID>` in the body; or
+  record `no code changes`.
+- Add each live job to `status.md` "Active background jobs" at launch and
+  remove it at exit (rule 3); update the directive's row to `in progress`
+  (you) while running, `awaiting review` when results land.
+- Append results to the directive's `## Log`: the command, output paths,
+  the provenance sidecar you checked (rule 5), a short excerpt of real
+  output.
+- Report only on a genuine event (escalation, exit, completion) — never
+  "still running" with no change.
