@@ -108,13 +108,20 @@ Then:
    `.friday/active/harness/harness.md`, `roles/{reviewer,researcher,author}.md`,
    `rules/{task_tracking,version_control}.md`,
    `templates/research_memo_template.md`, and — with Antigravity —
-   every `.agents/agents/*.md`. Then re-apply real project facts (e.g. a
-   filled-in LFS bullet in `version_control.md`).
+   every `.agents/agents/*.md`. Also `plans/history.md`,
+   `rules/environment.md` and (with the biblio tools)
+   `docs/references/needs_pdf.md`: their old copies still name retired
+   files (`suggestions.md`) or the old Reviewer-only wording. Then re-apply
+   real project facts (e.g. a filled-in LFS bullet in `version_control.md`,
+   project notes in `environment.md`).
 3. **Restructure live state by hand**, don't force-render it: `status.md`
    to the Loops / Directives / Claims / jobs skeleton, `plans/goals.md` to
    Objectives / Standing context / Specs. Carry anything open in
    `next_steps.md`/`suggestions.md`/`coding/` into directives, archive the
-   retired files, delete them.
+   retired files, delete them. `status_history.md` too: keep its entries
+   but replace the header, which still names `coding/tasks_finished.md`
+   and the old `D<NN>` format (or `--force-materialize` it if it is
+   empty).
 4. **`AGENTS.md` is project-owned:** port the new Multi-Agent Workflow
    section, the "Who records work", "Queue mirror" and "Project specialists"
    Project-facts rows, the `.friday-project/` layout row, and the "Drive the
