@@ -1,14 +1,16 @@
 # friday
 
-A portable multi-agent development harness — role contracts (Planner,
-Coder, Controller, Runner, Reviewer, Author, Researcher), a shared loop and
-rule set, adapters for Claude Code and Antigravity, hook-based guardrails,
+A portable multi-agent development harness — a lead-and-delegate team
+(a Controller that is your single point of contact; Planner, Architect,
+Coder, Runner, Researcher, Author, Editor and Reviewer as its specialists;
+plus any project-specific specialists you add), a shared loop and rule set, adapters for Claude Code and Antigravity, hook-based guardrails,
 and a Docker dev-container setup. Drop it into a project as a git
 submodule, run the setup interview once, and get a working harness without
 re-authoring it.
 
-The full operator manual — how the Planner → Controller → Reviewer loop
-works, where status lives, how to feed the agents inputs, and the complete
+The full operator manual — how the lead-mode loop works (goal →
+Controller → Planner proposes directives → you approve → specialists
+execute → Reviewer closes), where status lives, how to feed the agents inputs, and the complete
 Docker container workflow — is `USER_GUIDE.md` in this repo. It's the same
 file for every project (symlinked in as `.friday/active/harness/USER_GUIDE.md`,
 never templated), so read it here or in any consumer project.
@@ -45,8 +47,8 @@ it up, go there instead.
    `README.md`, and — if Docker/accelerators are enabled —
    `docker/docker-compose.yml`, `docker/Dockerfile`, `docker/entrypoint.sh`,
    and `gpu.md`) — plus a starter `docs/` and
-   `.friday/active/harness/{coding,plans}/` scaffold (empty working-state
-   files with the right headers, `docs/
+   `.friday/active/harness/plans/` scaffold (`goals.md`, `history.md`, the
+   directive `TEMPLATE.md`, `docs/
    references/` with its inbox + `needs_pdf.md`, and `docs/theory/`/`docs/
    report/` if the LaTeX suite is on), the three core state files
    `.friday/active/harness/status.md`, `.friday/active/harness/status_history.md`,
@@ -62,8 +64,15 @@ it up, go there instead.
    file every agent session loads first — it's where this project's own
    facts (name, working root, results doc, package manager, task tracker,
    repository layout) live.
-4. **Start working**: tell an agent "you are the planner agent" to open the
-   first cycle. See `USER_GUIDE.md` for the full workflow.
+4. **Start working**: `claude --agent controller` (or tell a session "you
+   are the controller") and give it a goal. It asks what it needs, has the
+   Planner propose directives, and runs nothing until you approve each
+   one. See `USER_GUIDE.md` §2 for the full workflow.
+5. **Optional — project-specific specialists.** If the project has a domain
+   the core roles shouldn't own (board design, a firmware toolchain), add a
+   role in the project's own repo: `.friday-project/roles/<role>.md` plus
+   its adapter files. See "Project-owned extensions" below and
+   `templates/examples/project_roles/`.
 
 A human can also skip the agent and either hand-write `harness.config.env`
 (see `setup/harness.config.env.example`) or run the script's own bare
@@ -161,16 +170,16 @@ about them is ever rendered or project-specific.
 | Consumer path | Points into `.friday/` | Notes |
 |---|---|---|
 | `.friday/active/harness/USER_GUIDE.md` | `USER_GUIDE.md` | the operator manual you're reading a copy of right now |
-| `.friday/active/harness/roles/{coder,controller,planner,runner}.md` | `templates/harness/roles/` | 4 of the 7 role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
-| `.friday/active/harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts}.md` | `templates/harness/rules/` | the 5 rules docs with zero project-specific content |
-| `.friday/active/harness/plans/directives/TEMPLATE.md` | `templates/harness/plans/directives/` | the directive template every real directive is copied from |
+| `.friday/active/harness/roles/{architect,coder,controller,editor,planner,runner}.md` | `templates/harness/roles/` | 6 of the 9 core role contracts, always present — an unused role is inert (only read when a session is assigned that role), so there's no pruning step |
+| `.friday/active/harness/rules/{conventions,md_hygiene,monitoring,checkpoint_compat,data_artifacts,document_budgets}.md` | `templates/harness/rules/` | the 6 rules docs with zero project-specific content |
+| `.friday/active/harness/plans/directives/TEMPLATE.md` | `templates/harness/plans/directives/` | the directive template every real directive is copied from (goal, Steps, `Verify:`, out of scope, open questions, Log, Amendments) |
+| `.friday/active/harness/templates/spec_template.md` | `templates/harness/templates/` | the Architect's ≤ 2-page requirements-spec template |
 | `.friday/active/harness/review/README.md`, `.friday/active/harness/running/README.md` | same paths, under `templates/harness/` | namespace explainers for the Reviewer/Runner working directories — zero project-specific content |
 | `docs/research/README.md` | `templates/docs/research/` | namespace explainer for the Researcher's memo directory — lives at the project root (tracked, not gitignored) since research memos must survive the harness being removed, unlike the `active/`-rooted rows above |
 | `docs/references/inbox/README.md` | `templates/docs/references/inbox/` | explains the drop-a-PDF-here + `intake_references.py` workflow |
 | `.friday/active/harness/tools/{_config,intake_references,verify_references,check_unavailable_sources,lint_research_memo,find_open_access_pdf}.py` | `templates/harness/tools/` | bibliography-workflow tools; config-driven via `harness.config.env` (see `.friday/active/harness/tools/_config.py`), not templated |
-| `.claude/agents/{author,coder,controller,planner,researcher,reviewer,runner}.md` | `templates/adapters/claude/agents/` | Claude Code role adapter files — present only if `ADAPTERS_ENABLED` includes `claude` |
+| `.claude/agents/{architect,author,coder,controller,editor,planner,researcher,reviewer,runner}.md` | `templates/adapters/claude/agents/` | Claude Code role adapter files — present only if `ADAPTERS_ENABLED` includes `claude` |
 | `.claude/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.claude/hooks/{pre-commit,commit-msg,README.md}` | `templates/adapters/hooks/` | same physical files as `.agents/hooks/*` below — one canonical implementation, two symlink targets |
-| `.agents/agents/{author,coder,coder-heavy,controller,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `templates/adapters/antigravity/agents/` | Antigravity role + tier-variant adapter files — present only if `ADAPTERS_ENABLED` includes `antigravity` |
 | `.agents/hooks/{check_agent_spawn,check_md_hygiene,check_commit_msg,command_guard}.py`, `.agents/hooks/{pre-commit,commit-msg,README.md}` | `templates/adapters/hooks/` | same canonical files as the `.claude/hooks/*` row above |
 | `.dockerignore` | `templates/docker/` | only present if `DOCKER_ENABLED=true` — the only Docker file that's still a plain symlink, and the only one that stays at the repo root rather than moving into `docker/`: Compose reads `.dockerignore` from the build-context root, not from the compose file's directory; `docker/Dockerfile`, `docker/entrypoint.sh` and `docker/antigravity_settings.json` are materialized (see below) since they now render per-project |
 | `.git/hooks/{pre-commit,commit-msg}` | *(anchored to `.claude/hooks/`, per `MANIFEST.json`'s `git_hooks` key — not a manifest `symlinks` entry)* | a second-order symlink: `.git/hooks/*` → `.claude/hooks/*` → `.friday/templates/adapters/hooks/*`; installed by `install_git_hooks()` |
@@ -195,8 +204,7 @@ one that already exists and differs from a fresh render; use
 | `.friday/active/harness/rules/version_control.md` | `templates/harness/rules/version_control.md.tmpl` | — |
 | `.friday/active/harness/rules/gpu.md` | `templates/harness/rules/gpu.md.tmpl` | `ACCELERATORS_ENABLED=true` |
 | `.friday/active/harness/templates/research_memo_template.md` | `templates/harness/templates/research_memo_template.md.tmpl` | — |
-| `.friday/active/harness/coding/tasks_working.md`, `tasks_finished.md`, `history.md` | `templates/harness/coding/*.md.tmpl` | — (starter working-state files, blank; real content accrues per-project and is never re-rendered) |
-| `.friday/active/harness/plans/next_steps.md`, `suggestions.md`, `goals.md`, `long_term.md`, `history.md` | `templates/harness/plans/*.md.tmpl` | — (same starter/blank-skeleton pattern as `coding/` above) |
+| `.friday/active/harness/plans/goals.md`, `history.md` | `templates/harness/plans/*.md.tmpl` | — (starter skeletons; real content accrues per-project and is never re-rendered). `coding/` and `plans/{next_steps,suggestions,long_term}.md` were retired in v0.18.0 — see MANIFEST.json `retired_dests` |
 | `docs/RESULTS.md` | `templates/docs/RESULTS.md.tmpl` | — |
 | `docs/ARCHITECTURE.md` | `templates/docs/ARCHITECTURE.md.tmpl` | — |
 | `docs/references/needs_pdf.md` | `templates/docs/references/needs_pdf.md.tmpl` | `LATEX_DRAFTING_ENABLED` toggles the theory/report clause in its "do not cite" wording |
@@ -209,6 +217,7 @@ one that already exists and differs from a fresh render; use
 | `README.md` | `templates/README.md.tmpl` | — |
 | `.claude/settings.json` | `templates/adapters/claude/settings.json.tmpl` | `ADAPTERS_ENABLED` includes `claude` |
 | `.agents/hooks.json` | `templates/adapters/antigravity/hooks.json.tmpl` | `ADAPTERS_ENABLED` includes `antigravity` |
+| `.agents/agents/{architect,architect-heavy,author,coder,coder-heavy,controller,editor,editor-heavy,planner,planner-heavy,researcher,researcher-heavy,researcher-quick,reviewer,reviewer-heavy,runner,runner-judgment}.md` | `templates/adapters/antigravity/agents/` | `ADAPTERS_ENABLED` includes `antigravity` (role + tier-variant adapter files) |
 | `docker/docker-compose.yml` | `templates/docker/docker-compose.yml.tmpl` | `DOCKER_ENABLED=true`; the `docker_gpu` section (an NVIDIA GPU device reservation) is further gated on `ACCELERATORS_ENABLED=true`. Each adapter's contribution is gated by `docker_agent_claude_compose` / `docker_agent_antigravity_compose`: its config volume (`claude-config`, `gemini-config`) and, for antigravity, the `ANTIGRAVITY_CONTAINER`/`CONTAINER_AUTO_ALLOW` environment variables that put `command_guard.py` in container mode. `agent-cache` is ungated (uv/pip/npm all use `~/.cache`), which also keeps the top-level `volumes:` map non-empty when no adapter is enabled. `name:` is pinned to `PROJECT_NAME_LOWER` so volume/container prefixes don't fall back to the directory basename. `.env` is mounted as an optional `env_file` (`required: false`) and `SSH_AUTH_SOCK` falls back to `/dev/null` when unset, so `docker compose config` succeeds on a fresh project with neither present |
 | `docker/Dockerfile` | `templates/docker/Dockerfile.tmpl` | `DOCKER_ENABLED=true`; the image is otherwise driven entirely by existing config keys, no new interview questions. `PACKAGE_MANAGER` selects one package-manager install branch (`uv`, `poetry` via pipx, `pip` via apt python3-pip+venv, or `npm`/`pnpm`/`yarn` via NodeSource + corepack; anything else drops in a "none" branch with a comment on hand-adding conda/Miniforge). `ADAPTERS_ENABLED` selects agent CLI installs (`claude` → NodeSource Node + `npm install -g @anthropic-ai/claude-code`; `antigravity` → its official install script). Each adapter's block also pre-creates its own config directory (`/home/agent/.claude`, `/home/agent/.gemini`) owned by `agent`, so the matching named volume doesn't come up root-owned; `~/.cache` is created unconditionally. `LATEX_DRAFTING_ENABLED` gates the TeX Live install (several GB, off by default). See `docker_pm_*`/`docker_agent_*`/`docker_latex`/`docker_node_runtime` in `sections_to_drop()` |
 | `docker/antigravity_settings.json` | `templates/docker/antigravity_settings.json.tmpl` | `DOCKER_ENABLED=true` **and** `ADAPTERS_ENABLED` includes `antigravity`. Copied into the image at `~/.gemini/antigravity-cli/settings.json` (a path hardcoded in the `agy` binary). Carries the CLI's own permission policy — flat `permissions.allow`/`.ask`/`.deny` arrays of `command(...)`, `read_file(...)`, `write_file(...)`, `read_url(...)`, `mcp(...)` rules — which is a **separate layer** from `command_guard.py` and covers things the hook can't see (reading `~/.ssh/**`, writing `.git/**`, fetching a URL). Because a named volume is only initialized on first creation, a rebuild alone won't push a changed copy into an existing `gemini-config` volume — but `entrypoint.sh` re-syncs this one file from the bind-mounted repo on every container start, so a plain restart (`docker compose -f docker/docker-compose.yml up -d`) is enough to pick up the change; `down -v` is not needed |
@@ -223,6 +232,21 @@ ignored and `${USER_UID}` falls back to `1000` — breaking bind-mount file
 ownership for any host user whose UID isn't 1000. The symlink is allowed to
 dangle: Compose treats a missing `.env` as "no overrides," so a project
 that has never created one still works.
+
+### Project-owned extensions (`.friday-project/`, never touched by friday)
+
+A project adds its own specialist roles here, tracked in the project's own
+repo. Each `.friday-project/roles/<role>.md` is linked by
+`init_harness.py` into `.friday/active/harness/roles/<role>.md` (a
+consumer → consumer symlink, re-created on every sync, stale links removed),
+and discovered at run time by `check_agent_spawn.py` (spawn-title check,
+`<role>-heavy` escalation variant) and `check_commit_msg.py` (`<Role>:`
+prefix, directive/tracker body). The role's adapters —
+`.claude/agents/<role>.md`, `.agents/agents/<role>{,-heavy}.md` — are
+ordinary project files: not in `MANIFEST.json`, never rendered, overwritten
+or added to `.git/info/exclude`. `init_harness.py` warns if an enabled
+adapter is missing or git-ignored. A core role name can't be reused. Worked
+example: `templates/examples/project_roles/hardware/`.
 
 ### Real project data (never touched by friday)
 

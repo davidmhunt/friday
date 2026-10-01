@@ -5,6 +5,127 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.18.0
+
+**Lead mode.** The harness becomes a lead-and-delegate team with one point
+of contact. Prototyped in place in a consumer project and upstreamed here
+after its first test drive. In that project the previous shape worked but was
+heavy on planning — four planning layers, an Architect interview in front of
+every sprint, ~1,600 lines of status history — and the operator ended up as
+the router between the Planner and the executing roles, while work done
+outside the harness with a single agent went faster.
+
+- **The Controller is the team lead and the user's single point of
+  contact.** It runs as the top-level session (`claude --agent controller`),
+  asks as many questions as it needs (the Claude adapter gains
+  `AskUserQuestion`, `Edit`, `Write`; the Antigravity one gains the
+  file-write tools), and relays every question a subagent can't answer.
+  "Controller never executes" is amended: it still never does specialist
+  work, but may write **coordination records** — its loops' `status.md`
+  rows, a directive's `Status:` line, a trivial one-step directive, tracker
+  issues, `plans/history.md` rulings.
+- **The Planner is a subagent** that turns a goal into directive files
+  (`plans/directives/<ID>.md`, `Status: proposed`) with Steps (one role
+  each), a `Verify:` line, tier tag and review level, and returns questions
+  for the user with a recommendation each.
+- **No directive runs before the user approves it.** Inside an approved
+  directive the Controller iterates freely (re-dispatch, review bounces,
+  unblocking research); goal/scope/`Verify:` changes are amendments that go
+  back for approval.
+- **"Questions go up."** A subagent that hits a user-only decision stops and
+  reports it; it never guesses or asks a sibling. Added to every adapter.
+- **Loops.** Several named workstreams can run at once, one owning
+  Controller session each (`status.md` Loops table); directive IDs are
+  `<loop>-<NN>`; single-user resources are claimed in a Claims table.
+  Concurrency cap 3 role subagents per Controller (2 if any is high tier),
+  up from 2.
+- **Planning is two layers:** `plans/goals.md` (objectives + standing
+  context, a reference not a gate) and the directive itself. **Retired:**
+  `plans/next_steps.md`, `plans/suggestions.md`, `plans/long_term.md`,
+  `coding/{tasks_working,tasks_finished,history}.md` — removed from
+  `MANIFEST.json` and listed under a new `retired_dests` key, which
+  `init_harness.py` reports (never deletes) on every sync. The directive
+  file's `## Log` replaces `tasks_finished.md` as the place a commit hash is
+  pasted next to its task.
+- **The Architect is optional**; specs are capped at 2 pages (requirements
+  table with verification + threshold per row) and written only when scope
+  must outlive the harness or be handed to a person.
+- **Review scales with risk.** `quick` (default: re-run `Verify:`, check the
+  scoped commits) or `full` (`[heavy]`/`[doc]`: independent method check,
+  rule 16 in full, a `review/` note). Close-out moves the row to
+  `status_history.md`, closes the tracker issue and moves the file to
+  `plans/directives/closed/` in one pass.
+- **Rule 13 is opt-in** and the issue opens at **approval** (Controller),
+  not at proposal. The `github-issues` section of `task_tracking.md` is now
+  self-contained (it used to say "same as the GitLab section above", which
+  is dropped from a GitHub project's render).
+- **Rule 16** now applies to `[doc]` directives and specs only; short
+  working notes are exempt.
+- **Hygiene (rule 8):** caps are `status.md` 150, `plans/goals.md` 120, and
+  each open directive file 200 (`check_md_hygiene.py` `DIRECTIVE_GLOB`);
+  closed directives and `TEMPLATE.md` are exempt. The retired per-entry
+  cap on `tasks_working.md` is gone.
+
+**Project-specific specialist roles.** A project can add its own specialist
+(e.g. a board-design role) without forking friday. It tracks
+`.friday-project/roles/<role>.md` in its own repo — file presence is the
+registration — plus its adapter files (`.claude/agents/<role>.md`,
+`.agents/agents/<role>{,-heavy}.md`). `init_harness.py` links the role doc
+into `.friday/active/harness/roles/` (new `sync_project_roles()`; removes
+stale links; refuses core-role names; warns on a missing or git-ignored
+adapter) and never renders, overwrites or git-excludes any of it.
+`check_agent_spawn.py` and `check_commit_msg.py` discover the same directory
+at run time (title check, `<role>-heavy` variant, `<Role>:` prefix with
+body check), so there is no role list to keep in sync. Core docs describe
+"project specialists" generically; `AGENTS.md.tmpl` gains a Project
+specialists row. A project-agnostic worked example (KiCad board role, both
+adapters, a facts README) ships in `templates/examples/project_roles/`.
+
+**Also released here:** `290d45a` (previously unversioned) — the
+branch-per-sprint commit policy (`command_guard.py` auto-allows `git commit`
+off `main`/`master`, fails closed on detached HEAD and on directory/repo
+hops; `rules/version_control.md` §Branching) and the agent `model:`
+frontmatter fix (comment on its own line). §Branching is reworded for lead
+mode: loops share one branch, roles never create/switch/merge branches,
+the user picks the branch. `test_command_guard.py` now pins the branch to
+`main` (two tests failed whenever the suite ran from a feature branch) and
+adds branch-exemption tests. The `lfs_policy` section gains a bullet on
+what LFS does not do (every committed version is kept; commit generated
+binaries at milestones).
+
+Tests: 60 (was 50), all passing.
+
+### Migrating an existing project
+
+Symlinked files (core role docs, generic rules, `TEMPLATE.md`,
+`spec_template.md`, Claude adapters, hooks, this guide) switch on the pull.
+Then:
+
+1. `python3 .friday/setup/init_harness.py --dry-run` and read the
+   `REFUSE`, `SKIP` and `RETIRED` lines.
+2. **Re-render the materialized docs that changed shape** (save hand-edits
+   first): `--force-materialize=` each of
+   `.friday/active/harness/harness.md`, `roles/{reviewer,researcher,author}.md`,
+   `rules/{task_tracking,version_control}.md`,
+   `templates/research_memo_template.md`, and — with Antigravity —
+   every `.agents/agents/*.md`. Then re-apply real project facts (e.g. a
+   filled-in LFS bullet in `version_control.md`).
+3. **Restructure live state by hand**, don't force-render it: `status.md`
+   to the Loops / Directives / Claims / jobs skeleton, `plans/goals.md` to
+   Objectives / Standing context / Specs. Carry anything open in
+   `next_steps.md`/`suggestions.md`/`coding/` into directives, archive the
+   retired files, delete them.
+4. **`AGENTS.md` is project-owned:** port the new Multi-Agent Workflow
+   section, the "Who records work", "Queue mirror" and "Project specialists"
+   Project-facts rows, the `.friday-project/` layout row, and the "Drive the
+   harness" index row by hand.
+5. **Local overrides** (a `REFUSE` line = a real file where a symlink
+   belongs): diff against the new template; if the only differences are
+   project facts, delete the file and re-run so the symlink comes back. A
+   project-specific *role* moves to `.friday-project/roles/<role>.md` (and
+   its adapters stay where they are but must be tracked — delete any
+   `.git/info/exclude` lines for them outside the managed block).
+
 ## v0.17.0
 
 Closes three ways a rule-16 budget could pass while the discipline it exists

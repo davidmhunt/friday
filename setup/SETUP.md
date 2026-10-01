@@ -143,6 +143,14 @@ hardware" state and nothing else is needed.
 → `VCS_REMOTE`, `TRACKER_KIND` (`none` | `gitlab-issues` | `github-issues`),
 and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 
+Tracker sync (rule 13) is opt-in and bookended: with a tracker configured,
+the Controller opens one issue per directive **when the user approves it**
+(rejected proposals leave no issues), and the Reviewer closes it at
+close-out. Roles commit their own work on a non-`main` branch, where the
+command guard auto-allows `git commit` (`rules/version_control.md`
+§Branching) — worth mentioning so the user creates a working branch before
+the first directive runs.
+
 ## 6. Agent tooling
 
 - Which coding-agent adapters does this project need — Claude Code
@@ -152,6 +160,17 @@ and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
 
 → `ADAPTERS_ENABLED` (comma-separated: `claude`, `antigravity`, or both),
 `HIGH_TIER_MODEL_KEYWORDS`.
+
+- Does the project have a domain the core roles shouldn't own — board
+  design in a CAD tool, a firmware toolchain, a licensed simulator — that
+  deserves its own **project-specific specialist**? "No" is the common
+  answer. If yes, this is not a config key: after `init_harness.py` has
+  run, scaffold the role from `.friday/templates/examples/project_roles/`
+  — `.friday-project/roles/<role>.md` (the role doc; its presence
+  registers the role), `.claude/agents/<role>.md` and/or
+  `.agents/agents/<role>{,-heavy}.md`, and a facts doc the role reads —
+  commit them to the project repo, add the role to `AGENTS.md`'s **Project
+  specialists** row, and re-run `init_harness.py` to link it in.
 
 ## 7. Docker (optional)
 
@@ -264,8 +283,10 @@ overview, repository layout, accelerator device table, optional rule
 sections) that only a human/agent can write, not something the script can
 infer from `harness.config.env`. Fill those in by hand, in the materialized
 files it lists. The checklist also reminds you to: run the markdown-hygiene
-hook, confirm `.friday/active/harness/status.md` reflects reality, and open a first
-directive from `.friday/active/harness/plans/directives/TEMPLATE.md`.
+hook, confirm `.friday/active/harness/status.md` reflects reality, have the
+user set the objectives in `.friday/active/harness/plans/goals.md`, and hand a
+first goal to a Controller session (`claude --agent controller`) — it plans
+with the Planner and runs nothing until the user approves each directive.
 
 Finally, record anything surprising you learned during this setup in
 `.friday/active/harness/log.md` — that file is the "why" behind your rules, and it starts

@@ -4,16 +4,16 @@ This is the operator manual for a `friday` multi-agent harness. It's the
 same file for every project using this harness — this repo owns it, and
 consumer projects symlink it in (`.friday/active/harness/USER_GUIDE.md` → `.friday/USER_GUIDE.md`),
 so it never drifts out of date and updates the moment friday syncs. It
-explains how the harness is organized, how to operate it through the
-**Planner → Controller → Reviewer** workflow, where to monitor progress, and
-how to provide inputs to the agents.
+explains how the harness is organized, how to work with it through the
+**Controller** (your single point of contact), where to monitor progress,
+and how to provide inputs to the agents.
 
 Project-specific facts (this project's name, working root, results doc,
-package manager, task tracker, repository layout) live in `AGENTS.md` at
-the consumer project's root — that's the one file every session loads, and
-the only place per-project answers are recorded. This guide never needs
-project-specific values; if you find yourself wanting to write one in here,
-it belongs in `AGENTS.md` instead.
+package manager, task tracker, project specialists, repository layout) live
+in `AGENTS.md` at the consumer project's root — that's the one file every
+session loads, and the only place per-project answers are recorded. This
+guide never needs project-specific values; if you find yourself wanting to
+write one in here, it belongs in `AGENTS.md` instead.
 
 **Setting up or reconfiguring the harness itself** (package manager
 changed, added a task tracker, want Docker or GPU support now) is a
@@ -26,191 +26,190 @@ first-time drop-in steps and how to pull harness updates into this project.
 
 ## 1. Harness Overview & Philosophy
 
-The harness is a structured multi-agent workflow framework designed for
-complex, long-running research and engineering projects. It enables
-multiple AI sessions (and different AI models) to collaborate across hours
-or weeks without losing state, drifting from requirements, or fabricating
-progress.
+The harness is a structured multi-agent workflow for complex, long-running
+research and engineering projects. It lets multiple AI sessions (and
+different AI models) collaborate across hours or weeks without losing
+state, drifting from what you asked for, or fabricating progress — while
+you deal with exactly one agent.
 
 ### Core Problems Solved
 
-1. **Context Amnesia & Drift**: Standard chat sessions forget past architectural decisions and re-derive context from scratch. The harness uses living directive files (`plans/directives/`), structured handoffs, and durable history logs to maintain continuity across sessions.
-2. **Fabricated Progress & Hallucinated Results**: Agents can prematurely declare a task "done" without executing tests. The harness enforces explicit `Verify:` commands, provenance sidecars, and an independent **Reviewer** gate that verifies outputs before recording work.
-3. **Unrecorded or Blended Work**: In multi-agent environments, code changes can become entangled. The harness enforces role-attributed git commits (`Role: <description>`) with commit hashes recorded directly in `tasks_finished.md` and `status_history.md`.
-4. **Token & Cost Efficiency**: Rather than loading the entire project history into every session, files follow strict line caps (Rule 8), and agents only load detail docs when specific triggers match.
+1. **Context Amnesia & Drift**: Standard chat sessions forget past decisions and re-derive context from scratch. The harness keeps one file per unit of work (`plans/directives/<ID>.md`: goal, steps, `Verify:` line, running log), a live dashboard (`status.md`), and durable history.
+2. **Fabricated Progress & Hallucinated Results**: Agents can prematurely declare a task "done" without executing tests. Every directive carries an explicit `Verify:` line, results carry provenance sidecars, and an independent **Reviewer** re-runs the check before anything is closed.
+3. **Unrecorded or Blended Work**: Each producing role commits its own work, scoped to the paths it touched, with a `Role: description` first line and `Directive: <ID>` in the body (Rule 12) — so every change is attributable and revertable on its own.
+4. **You as the router**: Earlier versions had the operator relay between a Planner and the executing roles. Now the **Controller** is the team lead: it plans with the Planner, brings you proposals to approve, dispatches the specialists, and only comes back to you for decisions.
+5. **Token & Cost Efficiency**: Hot-path files have line caps (Rule 8), and agents only load a rule's detail doc when its trigger matches their next action.
 
 ```mermaid
 flowchart TD
-    User([Human Operator]) -->|1. Kick off cycle| Planner[Planner]
-    Planner -->|Directives & Issues| Plans[plans/next_steps.md & status.md]
-    User -->|2. Execute open work| Controller[Controller]
-    Plans --> Controller
-    Controller -->|Dispatch subagents| Workers[Coder / Runner / Researcher / Author]
-    Workers -->|Results & Code| WorkState[Tasks working / Review queue]
-    WorkState --> Reviewer[Reviewer]
-    User -->|3. Verify & close| Reviewer
-    Reviewer -->|Verify & Git Commit| Repo[Git Repository & status_history.md]
-    Reviewer -->|Next cycle inputs| Suggestions[plans/suggestions.md]
-    Suggestions --> Planner
-```
-
-The mechanics behind that diagram — the full cast of roles, the numbered
-rules every role follows, and the guardrails that back them up
-mechanically — are covered in §3–§5, once you've seen the day-to-day
-workflow in §2.
-
----
-
-## 2. The Operator Workflow: Planner → Controller → Reviewer
-
-As a human operator, you do **not** need to micromanage individual implementation agents (Coder, Runner, Researcher, Author). Instead, you interact with the system via three high-level roles:
-
-1. **Planner**: Breaks high-level goals into concrete, verified work specifications (directives).
-2. **Controller**: Dispatches and monitors autonomous executor agents to do the work.
-3. **Reviewer**: Independently verifies outputs, records commits, and closes work.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Human Operator
-    participant P as Planner
-    participant C as Controller
-    participant W as Workers (Coder/Runner/Researcher)
-    participant R as Reviewer
-
-    Note over User,P: Phase 1: Planning
-    User->>P: "You are the planner agent. Plan the next cycle."
-    P->>P: Triage suggestions.md, break down tasks
-    P-->>User: Creates directives in plans/next_steps.md, updates status.md
-
-    Note over User,C: Phase 2: Autonomous Execution
-    User->>C: "You are the controller agent. Execute open directives."
-    C->>W: Dispatches role subagents (Coder, Researcher, etc.)
-    W-->>C: Completes work, marks tasks awaiting review
-    C-->>User: Reports execution status
-
-    Note over User,R: Phase 3: Verification & Closure
-    User->>R: "You are the reviewer agent. Review and close open directives."
-    R->>R: Runs Verify commands, citation checks, git commit, closes issues
-    R-->>User: Moves closed tasks to status_history.md, populates suggestions.md
+    User([You]) -->|goal, answers, approvals| Controller[Controller — team lead]
+    Controller -->|"scope this"| Planner[Planner]
+    Planner -->|proposed directives + questions| Controller
+    Controller -->|proposal| User
+    Controller -->|dispatch per Steps| Workers[Coder / Runner / Researcher / Author / Editor / project specialists]
+    Workers -->|commits + Log entries| Directive[plans/directives/ID.md]
+    Controller -->|Steps done| Reviewer[Reviewer]
+    Reviewer -->|close: status_history, tracker, closed/| Record[(Commits + history)]
+    Reviewer -->|or bounce with gaps| Controller
+    Controller -->|report| User
 ```
 
 ---
 
-### Step 1: The Planner Pass (Kick Off a Cycle)
+## 2. The Operator Workflow: Lead Mode
 
-When starting a new phase, addressing blockers, or planning the next milestone:
+You talk to one agent, the **Controller**. Everything else runs as its
+subagents.
 
-1. **Prompt the agent**:
-   ```
-   You are the planner agent. Triage suggestions.md and create directives for the next cycle.
-   ```
-2. **What the Planner does**:
-   - Reads `.friday/active/harness/plans/suggestions.md` to see what previous Reviewer passes or human operators flagged.
-   - Formulates concrete directives in `.friday/active/harness/plans/next_steps.md` and detailed specifications in `.friday/active/harness/plans/directives/<ID>.md`.
-   - Assigns each directive:
-     - A **tier tag**: `[light]` (standard model) or `[heavy]` (high-tier model for formal derivations or major architecture calls) — see §3 for what this actually controls.
-     - A **`Verify:` line**: An explicit shell command or concrete judgment criterion that will prove completion.
-     - A tracking issue in this project's task tracker, if one is configured (Rule 13 — see `AGENTS.md` for whether this project uses one).
-     - A registered row in `.friday/active/harness/status.md` (State: `queued` or `blocked`).
+### Start a session
 
----
+```bash
+claude --agent controller
+```
 
-### Step 2: The Controller Pass (Autonomous Execution)
+(or open a normal session and say "you are the controller"; under
+Antigravity, invoke the `controller` agent). The Controller must be the
+**top-level** session — it needs to ask you questions and spawn subagents,
+which a subagent can't. It reads `status.md` and tells you what's open,
+what's waiting on you, and what's blocked. Then give it a goal in plain
+words.
 
-Once directives are defined in `.friday/active/harness/plans/next_steps.md`:
+### What happens next
 
-1. **Prompt the agent**:
-   ```
-   You are the controller agent. Execute the open directives in .friday/active/harness/plans/next_steps.md.
-   ```
-2. **What the Controller does**:
-   - Inspects `.friday/active/harness/status.md` and `.friday/active/harness/plans/next_steps.md`.
-   - Dispatches specialized subagents (Coder, Runner, Researcher, Author) using formatted spawn titles: `role(model): task`.
-   - Enforces tier escalation (e.g., routing `[heavy]` tasks to high-tier models).
-   - Monitors background tasks and detached long-running jobs (Rule 15).
-   - Relays any real-time user steering via `User-Feedback:` tags.
-   - Advances directive states in `.friday/active/harness/status.md` from `queued` → `in progress` → `awaiting review`.
-3. **Why you don't need to run Coder/Runner directly**:
-   - The Controller enforces role boundaries and coordinates parallel work without executing mutations directly.
+1. **Questions.** The Controller asks what it needs to. Answer as briefly
+   as you like; it will ask again if something is still ambiguous.
+2. **Proposal.** It has the Planner write one or more directives and shows
+   you each one: goal, Steps (with the role doing each), how it will be
+   verified, what's out of scope, and the review level. The file is
+   `.friday/active/harness/plans/directives/<ID>.md` if you'd rather read
+   it — or answer open questions inline in it — directly.
+3. **You approve** ("approve core-01"), or ask for changes. **Nothing runs
+   before this.** If the project mirrors work in an issue tracker, the
+   issue is opened now (Rule 13).
+4. **Execution.** The Controller dispatches the specialists and handles
+   retries and review bounces on its own, inside the approved scope. It
+   comes back to you only for a decision only you can make, a scope change
+   (which is an amendment: back to the Planner, then to you), or a step
+   that keeps failing. Subagents never guess at your decisions — **questions
+   go up** to the Controller, which relays them to you.
+5. **Report.** When the Reviewer closes the directive, you get a summary
+   with the commit(s).
 
----
+### Useful things to say to the Controller
 
-### Step 3: The Reviewer Pass (Verification & Closure)
+| You want to… | Say |
+|---|---|
+| See where things stand | "status" |
+| Start a separate workstream | "new loop `eval`: …" |
+| Change a directive in flight | "amend core-01: …" (it goes back to the Planner, then to you) |
+| Stop something | "stop core-02" / "park the eval loop" |
+| Get a requirements spec (e.g. for a human teammate) | "have the Architect write a spec for …" |
+| Skip planning for something tiny | "just do it: …" (it still shows you a one-step directive to approve) |
+| Fold a closed milestone into the docs | "have the Author fold core-03 into the results doc" |
 
-When tasks reach `awaiting review`:
+### Running several loops
 
-1. **Prompt the agent**:
-   ```
-   You are the reviewer agent. Review open directives, verify outputs, and close completed work.
-   ```
-2. **What the Reviewer does**:
-   - **Independent verification**: Executes the exact command specified on each directive's `Verify:` line.
-   - **Mechanical validation** (paths under `.friday/active/harness/tools/` and the adapter's `hooks/` directory — see `.friday/active/harness/tools/README.md`-equivalent below for the full list):
-     - Verifies reference existence and DOIs: `python3 .friday/active/harness/tools/verify_references.py`
-     - Lints research memo formatting: `python3 .friday/active/harness/tools/lint_research_memo.py`
-     - Checks against unavailable sources: `python3 .friday/active/harness/tools/check_unavailable_sources.py`
-     - Checks markdown line caps: `python3 .claude/hooks/check_md_hygiene.py` (or `.agents/hooks/check_md_hygiene.py`, whichever adapter(s) this project uses)
-   - **Git commit & attribution** (Rule 12): Commits verified changes under a message attributed to the role (e.g., `Coder: implement data loader batching fix`).
-   - **Issue closure** (Rule 13): Closes the associated tracker issue, if this project uses one.
-   - **Status archival** (Rule 3): Removes the closed directive from `.friday/active/harness/status.md` and appends its permanent record to `status_history.md` (location depends on this project's tracker — see §6).
-   - **Feedback loop**: Writes any follow-up recommendations or new research needs into `.friday/active/harness/plans/suggestions.md` to feed the next Planner pass.
+A **loop** is a named workstream with its own goal and directives;
+directive IDs are `<loop>-<NN>`, numbered per loop. Open another terminal,
+start another Controller, and give it a different loop — each Controller
+only touches its own loop's rows in `status.md`. Loops share one git
+working tree and branch: agents commit only their own paths, and a
+single-user resource (a hardware board, a file a GUI tool holds open) gets
+claimed in `status.md`'s Claims table first. Every concurrent agent draws
+on the same usage budget, so two or three loops is a sensible ceiling;
+each Controller runs at most 3 role subagents at once (2 if any is high
+tier).
+
+### Planning is two layers
+
+`plans/goals.md` holds the 3–5 project objectives — a stable reference,
+not a gate; a directive names the objective it serves (`Serves: 2`) or says
+`Serves: —`. **The directive is the plan**: there is no epic list, sprint
+backlog, or suggestions inbox (projects upgraded from v0.17 or earlier:
+see §11). When a body of work needs a signed, durable scope — a task handed
+to a human teammate, a finalized project — ask for a spec: the
+**Architect** writes a ≤ 2-page requirements doc in `docs/specs/` (a
+requirements table with a verification method and threshold per row), and
+directives cite its requirement IDs (`Serves: <slug> R3`). Most work
+doesn't need one.
+
+### Review scales with risk
+
+The Planner sets each directive's review level: **`quick`** (default — the
+Reviewer re-runs the `Verify:` line and checks the commits) or **`full`**
+(`[heavy]` or `[doc]` directives — an independent check of the method, and
+for prose the page budget, an Editor pass and a cold-reader check, Rule
+16). Closing moves the directive's row from `status.md` to
+`status_history.md`, closes its tracker issue, and moves the file to
+`plans/directives/closed/`, all in one pass.
 
 ---
 
 ## 3. Roles & Model Tiers
 
-The three roles in §2 are the ones you drive directly. The full cast is
-seven, and the other four only ever run as subagents dispatched by a
-Controller (or, for Researcher, sometimes invoked by you directly — see
-§8). The authoritative table — including the exact model ID pinned to
-each tier — lives in `.friday/active/harness/harness.md` (rendered from
-`templates/harness/harness.md.tmpl`); don't copy those model IDs into project docs,
-`.friday/active/harness/harness.md` is the one place to update when a model changes.
+The authoritative table — including the exact model ID pinned to each tier
+— lives in `.friday/active/harness/harness.md` (rendered from
+`templates/harness/harness.md.tmpl`); don't copy those model IDs into
+project docs, `.friday/active/harness/harness.md` is the one place to
+update when a model changes.
 
-| Role | Owns | Namespace | Invoked by |
-|------|------|-----------|------------|
-| **Planner** | Breaking goals into tagged, verifiable directives | `.friday/active/harness/plans/` | The user, at the start of a cycle |
-| **Controller** | Dispatching and monitoring subagents; never mutates directly | reads all namespaces, writes none | The user, to run a cycle autonomously |
-| **Coder** | Implementing directives — source code, eval scripts, figures | `.friday/active/harness/coding/` | The Controller (or the user directly for a single task) |
-| **Runner** | Executing/monitoring jobs the Coder built — launches, sweeps, log polling | `.friday/active/harness/running/` | The Controller (or the user directly) |
-| **Reviewer** | Independent verification, git commit + attribution, closing directives | `.friday/active/harness/review/` and `status_history.md` (§6) | The user, once work reaches "awaiting review" |
-| **Researcher** | Literature/methodology memos; theory drafting if this project's LaTeX suite is enabled | `docs/research/` (and `docs/theory/` if enabled) | The Planner (via the Controller) or the user directly |
-| **Author** | Folding Reviewer-closed milestones into the project's persistent record (results doc, report, decks) | `docs/RESULTS.md` and, if enabled, `docs/report/` | The user, after a real milestone closes |
+| Role | Owns | Talks to you? |
+|------|------|---------------|
+| **Controller** | Team lead: clarifies the goal, gets it planned, gets your approval, dispatches, iterates, reports. Writes only coordination records (`status.md` rows for its loops, a directive's `Status:`, tracker issues). | **Yes — your single point of contact** |
+| **Planner** | Turns a goal into directive files (`Status: proposed`) with Steps, `Verify:`, tier and review level | Via the Controller |
+| **Architect** | Optional ≤ 2-page requirements specs in `docs/specs/` | Via the Controller, or directly if you open a session with it (`claude --agent architect`) |
+| **Coder** | Code: source, tests, notebooks, scripts, figures | No |
+| **Runner** | Launching and monitoring long jobs the Coder built | No |
+| **Researcher** | Literature/methodology memos in `docs/research/`; theory drafting if the LaTeX suite is enabled | No |
+| **Author** | Folding closed milestones into the results doc (and `docs/report/` if enabled) | No |
+| **Editor** | Subtractive concision pass on prose deliverables (Rule 16) — output is deletions only | No |
+| **Reviewer** | Re-running `Verify:`, checking commits and artifacts, closing or bouncing directives | No |
+| *Project specialists* | Whatever domain a project adds (e.g. board design) — see below | No |
 
 A few things worth calling out explicitly:
 
-- **The Controller never executes.** It only inspects state and dispatches
-  — every mutation in the loop is done by a Coder, Runner, Reviewer,
-  Researcher, or Author subagent it spawns.
-- **The Researcher sits outside the Coder → Runner → Reviewer loop.** It's
-  dispatched the same way (a spawn title, a tier), but it answers
-  literature/methodology questions rather than doing implementation work,
-  and its memos still pass through the Reviewer's citation/existence
-  checks before a Planner treats them as directive-gating evidence. A
-  quick single-fact lookup can skip that gate (`researcher-quick`).
-- **The Author never touches source code.** It only writes to the
-  project's docs/results/report surface, never to `coding/`, `plans/`,
-  `running/`, `review/`, `docs/theory/`, or data directories.
-- Drop the Researcher (and Author, if this project has no publication
-  surface) entirely from a project that doesn't need them — see
-  `.friday/active/harness/harness.md` for how.
+- **The Controller never does specialist work.** Even a one-line fix is a
+  Coder dispatch — the point is that every change has an owner and a
+  record.
+- **Drop roles a project doesn't need.** A project with no literature
+  component doesn't dispatch the Researcher; one that ships no prose
+  doesn't need the Editor.
+
+### Project-specific specialist roles
+
+When a project has a domain the core roles shouldn't own — board design in
+a CAD tool, a firmware toolchain, a licensed simulator — it adds its own
+specialist. The role is **project content**, tracked in the project's own
+repo, and the harness never overwrites or git-excludes it:
+
+| File (in the project repo) | What |
+|---|---|
+| `.friday-project/roles/<role>.md` | The role doc (role, tier, namespace, constraints, handoff). Its presence registers the role. |
+| `.claude/agents/<role>.md` | Claude Code adapter |
+| `.agents/agents/<role>.md`, `<role>-heavy.md` | Antigravity adapters |
+
+On every `init_harness.py` run the role doc is linked to
+`.friday/active/harness/roles/<role>.md`, beside the core roles; the
+spawn-title and commit-message hooks discover the same directory, so
+`<role>(model): task` spawns are checked and `<Role>:` commits accepted.
+List the role in `AGENTS.md`'s **Project specialists** row so the
+Controller and Planner know it exists. A worked, project-agnostic example
+(a KiCad board-design role with its adapters and a facts README) lives in
+`.friday/templates/examples/project_roles/`.
 
 ### Model tiers and the `[light]`/`[heavy]` tag
 
 Every role has a default tier (light/mid/high — see the table in
-`.friday/active/harness/harness.md` for the exact model IDs). A directive's `[heavy]` tag
-is what actually moves work off that default: it tells whichever role
-executes the directive to escalate to a high-tier model for that one
-directive.
+`.friday/active/harness/harness.md` for the exact model IDs). A directive's
+`[heavy]` tag is what moves work off that default: whichever role executes
+the directive escalates to a high-tier model for that one directive.
 
-The important discipline, straight from `.friday/active/harness/harness.md`: **`[heavy]`
-is set once, by the Planner, at directive creation — it is never re-judged
-per session.** It marks a directive as needing a formal derivation/proof,
-or a major architecture decision — not "this looks hard" in the moment.
-High tier is a deliberate, per-directive exception you spend on purpose,
-not a role default; nearly all Coder/Planner/Reviewer/Researcher work,
-including routine synthesis and memo-writing, stays at mid tier.
+**`[heavy]` is set once, by the Planner, in the directive — it is never
+re-judged per session.** It marks a directive as needing a formal
+derivation/proof, or a major architecture decision — not "this looks hard"
+in the moment. High tier is a deliberate, per-directive exception, not a
+role default. `[doc]` marks a directive whose deliverable is prose and
+brings Rule 16 into play.
 
 Two more mechanics worth knowing as an operator:
 
@@ -218,11 +217,10 @@ Two more mechanics worth knowing as an operator:
   spawn-title hook (`check_agent_spawn.py`, §5) checks a `[heavy]` spawn's
   model string against, to warn if an escalation was tagged but the actual
   model passed to the subagent doesn't look high-tier.
-- **Antigravity's `-heavy`/`-quick` agent variants** are a separate,
-  adapter-specific mechanism: naming an agent type with a `-heavy` or
-  `-quick` suffix in that adapter is its own way of requesting a
-  stronger/cheaper model for that one spawn, independent of the `[light]`/
-  `[heavy]` directive tag described above.
+- **Antigravity's `-heavy`/`-quick` agent variants** exist because that
+  adapter binds the model to the agent file: escalation means invoking
+  `coder-heavy` instead of `coder`. Claude Code instead overrides the model
+  per spawn.
 
 ---
 
@@ -244,19 +242,20 @@ open `harness.md` yourself:
 |---|--------|------------|
 | 1 | Shared-artifact namespacing — never mutate a data artifact an existing run consumes | `.friday/active/harness/rules/data_artifacts.md` |
 | 2 | Single source of truth for result numbers (this project's results doc) | — |
-| 3 | `.friday/active/harness/status.md` ownership — who updates it, and when a directive graduates to `status_history.md` | — |
+| 3 | `status.md` ownership — loops, directive rows, and close-out into `status_history.md` + `closed/` | — |
 | 4 | Checkpoint/model compatibility for forward-pass-altering changes | `.friday/active/harness/rules/checkpoint_compat.md` |
 | 5 | Eval provenance sidecars + a completion self-check before reporting any eval done | `.friday/active/harness/rules/data_artifacts.md` |
 | 6 | Pre-mutation snapshots of canonical data | `.friday/active/harness/rules/data_artifacts.md` |
 | 7 | Monitor heartbeat — a stale timestamp means "monitor dead, verify directly" | `.friday/active/harness/rules/monitoring.md` |
-| 8 | Markdown hygiene — line caps on hot-path files | `.friday/active/harness/rules/md_hygiene.md` |
+| 8 | Markdown hygiene — line caps on `status.md`, `goals.md`, open directives | `.friday/active/harness/rules/md_hygiene.md` |
 | 9 | Controlled reproduction required before recording a root-cause claim as fact | — |
 | 10 | Accelerator allocation | **Config-dependent** — see below |
 | 11 | Fail-loud numerical guards — a skipped-batch guard must also catch permanent collapse | `.friday/active/harness/rules/monitoring.md` |
-| 12 | Recording finished work as an attributed version-control commit | `.friday/active/harness/rules/version_control.md` |
-| 13 | External task-tracker sync (only if this project configures one) | `.friday/active/harness/rules/task_tracking.md` |
+| 12 | Recording finished work — each role commits its own scoped paths, attributed | `.friday/active/harness/rules/version_control.md` |
+| 13 | External tracker sync (opt-in) — issue opened at approval, closed at close-out | `.friday/active/harness/rules/task_tracking.md` |
 | 14 | *(project-specific — see below)* | — |
 | 15 | Detached background launches — never a bare `cmd &` in an interactive shell | `.friday/active/harness/rules/environment.md` |
+| 16 | Document budgets & concision for `[doc]` directives and specs | `.friday/active/harness/rules/document_budgets.md` |
 
 > [!WARNING]
 > **Rules 10 and 14 vary per project.** Both are gated on this project's
@@ -309,23 +308,27 @@ Two postures, and don't confuse them:
   stops you from committing over-cap files or a badly attributed message;
   the WARN is a nudge to fix it on the next pass, not a gate.
   `check_md_hygiene.py` also warns — rather than silently skipping, as it
-  once did — when a `FILE_CAPS`/`PER_ENTRY_FILE` path is configured but
+  once did — when a `FILE_CAPS` path is configured but
   doesn't exist on disk (`WARN | hygiene | configured path not found:
   <path>`), so a relocated or mistyped path shows up instead of quietly
   going unenforced.
-- **`check_commit_msg.py`** carries a second, `Reviewer:`-specific check on
-  top of the role-prefix check every commit gets: a `Reviewer:` commit's
-  body (the whole message, not just the first line — git's own trailing
-  `#`-comment block is stripped first) must name a directive (`Directive:
-  <id>` or an inline `directive <id>` mention) and a tracker reference
-  (`#123`, `!45`, `ABC-12`, or the literal `no tracker`). This exists
-  because since v0.13.0 the harness's working state lives in gitignored
-  `.friday/active/`, so the commit message is now the durable carrier of
-  *why* a close-out happened — see §6 and
-  `.friday/active/harness/rules/version_control.md`. Still warn-only, for
-  the same reason as everything else in this table: `commit-msg` is
-  symlinked straight into `.git/hooks/commit-msg`, and a blocking check
-  here would strand a Reviewer mid-migration with no escape hatch.
+- **`check_commit_msg.py`** carries a second check on top of the
+  role-prefix check every commit gets: a commit from any producing role
+  (Planner, Coder, Runner, Reviewer, Author, Researcher, Editor, and every
+  project specialist — `Harness:` and `Architect:` are exempt) must name a
+  directive (`Directive: <id>` or an inline `directive <id>` mention) and a
+  tracker reference (`#123`, `!45`, `ABC-12`, or the literal `no tracker`)
+  in its body (git's own trailing `#`-comment block is stripped first).
+  This exists because the harness's working state lives in gitignored
+  `.friday/active/`, so the commit message is the durable carrier of *why*
+  the work happened — see §6 and
+  `.friday/active/harness/rules/version_control.md`. Still warn-only:
+  `commit-msg` is symlinked straight into `.git/hooks/commit-msg`, and a
+  blocking check here would strand an agent mid-pass with no escape hatch.
+- **Project specialists are discovered, not configured.** Both
+  `check_agent_spawn.py` and `check_commit_msg.py` list
+  `.friday-project/roles/*.md` at run time and treat each role found there
+  like a core producing role (§3).
 
 **Running them by hand:**
 
@@ -470,7 +473,7 @@ inside a submodule working tree:**
   `.friday/active/` is gitignored *within the submodule*, so `-x` (which
   sweeps up ignored files, not just untracked ones) removes it along with
   any other harness-side scratch output — `status.md`, `log.md`, the
-  `plans/`/`coding/` working files, and (tracker-configured projects only)
+  `plans/` goals and directive files, and (tracker-configured projects only)
   `status_history.md`. There is no undo. This is a real risk specifically
   because it's easy to `cd .friday && git clean -xfd` meaning to tidy up a
   stray build artifact there and not realize `active/` is caught in the
@@ -494,14 +497,15 @@ inside a submodule working tree:**
 
 | What are you looking for? | Where it lives | Description |
 |---------------------------|----------------|-------------|
-| **Current Live Status** | `.friday/active/harness/status.md` | **The living dashboard.** Shows all currently OPEN directives, their current owner, state (`queued`, `in progress`, `awaiting review`, `blocked`), active background processes/PIDs, and recent milestones. |
+| **Current Live Status** | `.friday/active/harness/status.md` | **The living dashboard.** Open loops and their owning Controller sessions, OPEN directives (owner, state: `proposed`, `approved`, `in progress`, `awaiting review`, `blocked`), claims on single-user resources, active background jobs, recent milestones. |
 | **Past Completed Work** | `status_history.md` — `.friday/active/harness/status_history.md` with a tracker configured, `docs/status_history.md` without one | **Append-only permanent log.** Contains every closed directive, the closing date, tracker issue (if any), closing evidence, and git commit hash — see §6 for which path applies here and why. |
 | **Rule Provenance** | `.friday/active/harness/log.md` | **Why the rules are what they are** — the incident behind each rule and its amendment history. See §6. |
 | **Authoritative Results** | See `AGENTS.md` § Project facts → "Results doc" row | **Single source of truth for numbers** (Rule 2) — every project names its own canonical results doc; this harness doesn't assume a path. |
-| **Immediate Queue** | `.friday/active/harness/plans/next_steps.md` | The current batch of directives created by the Planner, with tier tags, dependencies, and standing riders. |
-| **Directive Detail Specs** | `.friday/active/harness/plans/directives/<ID>.md` | The comprehensive specification for an active directive (context, requirements, verification criteria). Gitignored; deleted upon close-out. |
-| **Long-Term Roadmap** | `.friday/active/harness/plans/goals.md`<br>`.friday/active/harness/plans/long_term.md` | High-level research vision, phased roadmap, and major future milestones. |
-| **Suggestions & Inbox** | `.friday/active/harness/plans/suggestions.md` | Shared inbox for open questions, blocked items, or Reviewer findings awaiting Planner action. |
+| **Open directives** | `.friday/active/harness/plans/directives/<ID>.md` | One file per unit of work: goal, Steps (one role each), `Verify:`, out of scope, open questions, and a running Log of what each role did (commit hashes, Verify output). |
+| **Closed directives** | `.friday/active/harness/plans/directives/closed/` | Where the Reviewer moves a directive file at close-out; the summary row goes to `status_history.md`. |
+| **Project objectives** | `.friday/active/harness/plans/goals.md` | The 3–5 objectives and standing context — a reference that directives cite (`Serves:`), not a gate. |
+| **Requirements specs** | `docs/specs/` | Optional, ≤ 2 pages each, written by the Architect; tracked in the project repo. |
+| **Decisions & rulings** | `.friday/active/harness/plans/history.md` | Append-only digest of planning decisions and rulings worth keeping. |
 | **Research Memos** | `docs/research/` | Deep-dive literature review and methodology memos produced by the Researcher, if this project uses that role. |
 | **This project's own layout** | `AGENTS.md` § Repository Layout | Source code, data, docs, notebooks — whatever this project's own top-level directories are. The harness intentionally doesn't assume a shape here. |
 
@@ -540,11 +544,8 @@ Projects that use the Researcher role maintain a strict, verified bibliography w
 
 ### C. Providing Guidance, Steering, & Suggestions
 
-- **Asynchronous ideas & directives**: Add notes, bug reports, or research ideas directly into:
-  ```
-  .friday/active/harness/plans/suggestions.md
-  ```
-  The Planner reads this file at the start of every planning pass.
+- **Ideas, bugs, new work**: tell the Controller. It turns them into a goal for the Planner (or a trivial one-step directive) and brings you the proposal to approve. There is no suggestions inbox to edit by hand.
+- **Answering open questions**: a directive's `## Open questions` section is meant to be answered — reply to the Controller, or write your answer inline in the directive file and tell the Controller to re-read it.
 - **Real-time steering during Controller execution**:
   When a Controller session is running, you can reply directly with feedback. The Controller will tag your instructions with `User-Feedback:` and relay them to subagents, ensuring binding steering.
 
@@ -552,15 +553,14 @@ Projects that use the Researcher role maintain a strict, verified bibliography w
 
 ## 9. Invoking Researcher and Author Directly
 
-§2's three-role workflow (Planner → Controller → Reviewer) covers routine
-cycles, and the Controller reaches for Researcher/Author as subagents when
-a directive calls for it. Two situations are common enough to invoke them
-yourself instead of waiting for a directive:
+The usual route to the Researcher and Author is through the Controller
+("have the Researcher look into …", "have the Author fold core-03 in"). Two
+situations are common enough to invoke them yourself instead:
 
 **Researcher, directly** — when you have a standalone question that isn't
 yet worth a full directive: "does the literature support this modeling
 choice", "find prior work on X before we commit to an approach". Prompt
-it the same way as the three core roles:
+it directly:
 
 ```
 You are the researcher agent. Please research <topic> and produce a formal memo in docs/research/.
@@ -573,9 +573,7 @@ will actually depend on.
 
 **Author, directly** — after a Reviewer pass closes a real milestone (a
 new version, a finalized result, a systemic bug fix, a real ablation) and
-you want that reflected in the project's persistent record right away,
-rather than waiting for it to surface via `suggestions.md` and a future
-Planner cycle:
+you want that reflected in the project's persistent record right away:
 
 ```
 You are the author agent. Please fold the <milestone> the reviewer just closed into docs/RESULTS.md.
@@ -595,9 +593,10 @@ role working-state namespaces.
 
 | Goal | Prompt |
 |------|--------|
-| **Start Planning Cycle** | `You are the planner agent. Please triage .friday/active/harness/plans/suggestions.md and plan directives for next steps.` |
-| **Run Open Tasks** | `You are the controller agent. Please execute the open directives in .friday/active/harness/plans/next_steps.md.` |
-| **Review & Close Tasks** | `You are the reviewer agent. Please review open directives, verify outputs against their Verify: lines, commit finished work, and close the queue.` |
+| **Start a working session** | `claude --agent controller` (or: `You are the controller.`) — then state your goal |
+| **Approve a proposal** | `approve core-01` (or `amend core-01: …`) |
+| **See where things stand** | `status` |
+| **Write a requirements spec interactively** | `claude --agent architect` — then describe the work to be specified |
 | **Deep Research Memo** | `You are the researcher agent. Please research <topic> and produce a formal memo in docs/research/.` |
 | **Fold in a closed milestone** | `You are the author agent. Please fold the <milestone> into docs/RESULTS.md.` |
 
@@ -613,7 +612,7 @@ lists prompts every friday project can use as-is.
 Run these from the repo root:
 
 ```bash
-# Check markdown line caps across status and plans (Rule 8)
+# Check markdown line caps on status.md, goals.md and open directives (Rule 8)
 python3 .claude/hooks/check_md_hygiene.py   # or .agents/hooks/check_md_hygiene.py
 
 # Verify that all citations in references.bib have valid DOIs or local PDFs
@@ -656,6 +655,36 @@ so other projects can pull it, and the plain-git-submodule sequence behind
 the wrapper — see friday's own `README.md`, which is the installer doc;
 this guide is the day-to-day operator doc, and deliberately doesn't
 duplicate that material.
+
+**Upgrading to v0.18.0 (lead mode).** The symlinked role docs, rules,
+adapters and hooks switch to lead mode on the pull itself. The materialized
+files that changed shape do not — re-render them (after saving any
+hand-edits you want to carry over):
+
+```bash
+python3 .friday/setup/init_harness.py --dry-run   # lists SKIP / REFUSE / RETIRED lines
+python3 .friday/setup/init_harness.py \
+  --force-materialize=.friday/active/harness/harness.md \
+  --force-materialize=.friday/active/harness/roles/reviewer.md \
+  --force-materialize=.friday/active/harness/roles/researcher.md \
+  --force-materialize=.friday/active/harness/roles/author.md \
+  --force-materialize=.friday/active/harness/rules/task_tracking.md \
+  --force-materialize=.friday/active/harness/rules/version_control.md \
+  --force-materialize=.friday/active/harness/templates/research_memo_template.md
+```
+
+(add the `.agents/agents/*.md` paths if you use Antigravity). `status.md`
+and `plans/goals.md` hold live state: restructure them by hand to the new
+skeleton (Loops / Directives / Claims tables; Objectives / Standing context
+/ Specs) rather than force-rendering over them. `AGENTS.md` is project-owned
+— port the new Multi-Agent Workflow section, Project facts rows and index
+row by hand. Files listed under `=== Retired files ===` (`plans/next_steps.md`,
+`suggestions.md`, `long_term.md`, `coding/`) are no longer read by any
+role: carry anything still open into directives, archive, delete. A
+`REFUSE` line means a real file sits where a symlink belongs — usually a
+local override; diff it against the new template, keep what is genuinely
+project-specific (a project specialist goes to `.friday-project/roles/`,
+§3), then delete the file and re-run. Full notes: `CHANGELOG.md`, v0.18.0.
 
 **Migrating a project set up before v0.13.0.** Before that release, the
 harness generated an entire `harness/` tree at the consumer repo root,
