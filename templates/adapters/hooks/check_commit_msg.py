@@ -32,7 +32,8 @@ philosophy as check_md_hygiene.py's pre-commit hook.
 
 Exit code: 1 if flagged, 0 otherwise (the wrapper ignores this).
 
-CONFIGURE: ROLE_PREFIX_RE if your role names differ. DIRECTIVE_RE and
+CONFIGURE: CORE_ROLE_PREFIXES if your core role names differ; project
+specialists are picked up from `.friday-project/roles/` automatically. DIRECTIVE_RE and
 TRACKER_RE are deliberately permissive (see their comments) and deliberately
 do NOT read harness.config.env — this hook is the one with zero config
 dependency, so it always works the same way regardless of whether a project
@@ -43,11 +44,58 @@ project.
 
 import re
 import sys
+from pathlib import Path
 
-ROLE_PREFIX_RE = re.compile(
-    r"^(Controller|Planner|Coder|Runner|Reviewer|Author|Researcher"
-    r"|Editor|Architect|Harness): .+"
+CORE_ROLE_PREFIXES = (
+    "Controller", "Planner", "Coder", "Runner", "Reviewer", "Author",
+    "Researcher", "Editor", "Architect", "Harness",
 )
+
+# Project-specific specialist roles (v0.18.0): registered by file presence —
+# `.friday-project/roles/<role>.md` in the consumer repo adds `<Role>:` as a
+# valid prefix that also needs a directive/tracker body. This is a directory
+# listing, not a config read, so the "zero config dependency" note above
+# still holds.
+PROJECT_ROLES_DIR = Path(".friday-project") / "roles"
+_ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _find_consumer_root() -> Path | None:
+    """Upward search from cwd (git runs hooks from the work-tree root), then
+    from this file's unresolved directory — never `.resolve()`, since this
+    file is reached through a symlink into `.friday/`."""
+    for start in (Path.cwd(), Path(__file__).parent):
+        for candidate in (start, *start.parents):
+            if (candidate / "harness.config.env").exists() or (
+                (candidate / ".gitmodules").exists() and (candidate / ".friday").is_dir()
+            ):
+                return candidate
+    return None
+
+
+def discover_project_roles(root: Path | None) -> tuple[str, ...]:
+    """Capitalized project-role prefixes found under `.friday-project/roles/`."""
+    if root is None or not (root / PROJECT_ROLES_DIR).is_dir():
+        return ()
+    core = {r.lower() for r in CORE_ROLE_PREFIXES}
+    names = []
+    for path in sorted((root / PROJECT_ROLES_DIR).glob("*.md")):
+        name = path.stem.lower()
+        if name == "readme" or name in core or not _ROLE_NAME_RE.match(name):
+            continue
+        names.append(name.capitalize())
+    return tuple(names)
+
+
+PROJECT_ROLE_PREFIXES = discover_project_roles(_find_consumer_root())
+
+
+def build_role_prefix_re(extra: tuple[str, ...] = ()) -> re.Pattern:
+    roles = "|".join(re.escape(r) for r in (*CORE_ROLE_PREFIXES, *extra))
+    return re.compile(rf"^({roles}): .+")
+
+
+ROLE_PREFIX_RE = build_role_prefix_re(PROJECT_ROLE_PREFIXES)
 
 # Roles whose commits record directive work and therefore need a body with a
 # directive + tracker reference. `Harness:` is excluded: a submodule-pointer
@@ -64,7 +112,7 @@ BODY_REQUIRED_ROLES = (
     "Author",
     "Researcher",
     "Editor",
-)
+) + PROJECT_ROLE_PREFIXES
 
 # Never flagged: merge commits and fixup!/squash! autosquash commits.
 EXEMPT_PREFIXES = ("Merge ", "fixup!", "squash!")

@@ -45,6 +45,12 @@ TEMPLATES_DIR = SUBMODULE_DIR / "templates"
 # root as of v0.13.0 — dest_root: "active" manifest entries resolve here.
 ACTIVE_DIR = SUBMODULE_DIR / "active"
 CONFIG_PATH = REPO_ROOT / "harness.config.env"
+# Project-owned harness extensions (v0.18.0): tracked in the CONSUMER repo,
+# never generated, never git-excluded. Each `roles/<role>.md` registers a
+# project-specific specialist — see sync_project_roles().
+PROJECT_EXT_DIR = REPO_ROOT / ".friday-project"
+PROJECT_ROLES_DIR = PROJECT_EXT_DIR / "roles"
+ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 MANIFEST_PATH = SUBMODULE_DIR / "MANIFEST.json"
 
 PLACEHOLDER_RE = re.compile(r"\[SET AT SETUP:\s*([A-Z0-9_]+)(?:[^\]]*)\]")
@@ -496,6 +502,100 @@ def sync_symlinks(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
             print(f"  symlink {dest} -> {rel_target}")
             if not dry_run:
                 dest.symlink_to(rel_target)
+
+
+def core_role_names(manifest: dict) -> set[str]:
+    """Role names the harness itself ships, read off the manifest's
+    `harness/roles/<name>.md` dests (symlinked and materialized alike)."""
+    names = set()
+    for entry in manifest["symlinks"] + manifest["materialize"]:
+        dest = PurePosixPath(entry["dest"])
+        if entry.get("dest_root") == "active" and dest.parent == PurePosixPath("harness/roles"):
+            names.add(dest.stem)
+    return names
+
+
+def _git_ignored(path: Path) -> bool:
+    """True if git would ignore `path` in the consumer repo (.gitignore or
+    .git/info/exclude). False when git is unavailable or this isn't a repo."""
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "-q", "--no-index", str(path.relative_to(REPO_ROOT))],
+            cwd=REPO_ROOT, capture_output=True,
+        )
+    except (OSError, ValueError):
+        return False
+    return result.returncode == 0
+
+
+def sync_project_roles(manifest: dict, cfg: dict[str, str], dry_run: bool) -> None:
+    """Link each project-owned role doc into the generated harness tree.
+
+    A consumer project adds a specialist the core harness doesn't ship (e.g.
+    a board-design role) by tracking `.friday-project/roles/<role>.md` in its
+    own repo, plus its own adapter files (`.claude/agents/<role>.md`,
+    `.agents/agents/<role>{,-heavy}.md`). File presence is the registration:
+    this links `.friday/active/harness/roles/<role>.md` to it, and the hooks
+    (check_agent_spawn.py, check_commit_msg.py) discover the same directory
+    at run time. None of these files is in MANIFEST.json, so nothing here
+    ever overwrites them or lists them in .git/info/exclude — they are
+    project content. Examples: .friday/templates/examples/project_roles/.
+    """
+    roles_dest_dir = ACTIVE_DIR / "harness" / "roles"
+    # Drop links this function made earlier whose project file is gone.
+    if roles_dest_dir.is_dir():
+        for link in sorted(roles_dest_dir.glob("*.md")):
+            if link.is_symlink() and ".friday-project" in os.readlink(link) and not link.exists():
+                print(f"  remove stale project-role link {link}")
+                if not dry_run:
+                    link.unlink()
+    if not PROJECT_ROLES_DIR.is_dir():
+        print("  (none — add .friday-project/roles/<role>.md to register one)")
+        return
+    core = core_role_names(manifest)
+    enabled_adapters = set(cfg.get("ADAPTERS_ENABLED", "claude,antigravity").split(","))
+    for src in sorted(PROJECT_ROLES_DIR.glob("*.md")):
+        name = src.stem
+        if name.lower() == "readme":
+            continue
+        if not ROLE_NAME_RE.match(name):
+            print(f"  WARN: skipping {src.relative_to(REPO_ROOT)} — role names must match [a-z][a-z0-9_]*")
+            continue
+        if name in core:
+            print(f"  WARN: skipping {src.relative_to(REPO_ROOT)} — '{name}' is a core role; project roles add, never redefine")
+            continue
+        dest = roles_dest_dir / f"{name}.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        rel_target = os.path.relpath(src.resolve(), dest.parent)
+        if dest.is_symlink():
+            if os.readlink(dest) != rel_target:
+                print(f"  relink {dest} -> {rel_target}")
+                if not dry_run:
+                    dest.unlink()
+                    dest.symlink_to(rel_target)
+        elif dest.exists():
+            print(
+                f"  REFUSE (real file exists, not overwriting): {dest} — if it is the "
+                f"same role, keep the copy in {src.relative_to(REPO_ROOT)} and delete this one"
+            )
+        else:
+            print(f"  symlink {dest} -> {rel_target}")
+            if not dry_run:
+                dest.symlink_to(rel_target)
+        adapter_files = []
+        if "claude" in enabled_adapters:
+            adapter_files.append(REPO_ROOT / ".claude" / "agents" / f"{name}.md")
+        if "antigravity" in enabled_adapters:
+            adapter_files += [
+                REPO_ROOT / ".agents" / "agents" / f"{name}.md",
+                REPO_ROOT / ".agents" / "agents" / f"{name}-heavy.md",
+            ]
+        for adapter in adapter_files:
+            rel = adapter.relative_to(REPO_ROOT)
+            if not adapter.exists():
+                print(f"  WARN: project role '{name}' has no {rel} (copy one from .friday/templates/examples/project_roles/)")
+            elif _git_ignored(adapter):
+                print(f"  WARN: {rel} is git-ignored — it is project content; remove its .gitignore/.git/info/exclude line and commit it")
 
 
 def report_retired_dests(manifest: dict) -> None:
@@ -1458,6 +1558,9 @@ def main() -> int:
 
     print("\n=== Symlinks ===")
     sync_symlinks(manifest, cfg, args.dry_run)
+
+    print("\n=== Project roles (.friday-project/roles/) ===")
+    sync_project_roles(manifest, cfg, args.dry_run)
 
     print("\n=== Materialized files ===")
     materialize_files(manifest, cfg, args.dry_run, force=set(args.force_materialize))

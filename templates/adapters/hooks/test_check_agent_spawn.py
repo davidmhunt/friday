@@ -170,3 +170,39 @@ def test_antigravity_hooks_json_structure():
                         assert "hooks" in group, f"Matcher group in {hook_name} missing 'hooks'"
                         assert isinstance(group["hooks"], list)
 
+
+
+def _spawn_in_repo(tmp_path, type_name, title, prompt="do it"):
+    """Run the hook as a subprocess with cwd = a consumer repo that registers
+    a project role via `.friday-project/roles/widget.md` — discovery happens
+    at import, so it must be a fresh interpreter."""
+    import json
+    import subprocess
+    repo = tmp_path / "consumer"
+    (repo / ".friday-project" / "roles").mkdir(parents=True)
+    (repo / "harness.config.env").write_text("PROJECT_NAME=Test\n")
+    (repo / ".friday-project" / "roles" / "widget.md").write_text("# Widget\n")
+    (repo / ".friday-project" / "roles" / "coder.md").write_text("# collides\n")
+    payload = {"toolCall": {"name": "Agent", "args": {
+        "subagent_type": type_name, "description": title, "prompt": prompt}}}
+    out = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "check_agent_spawn.py")],
+        cwd=repo, input=json.dumps(payload), capture_output=True, text=True,
+    )
+    return json.loads(out.stdout)
+
+
+def test_project_role_is_registered_and_title_checked(tmp_path):
+    assert _spawn_in_repo(tmp_path, "widget", "bad title")["decision"] == "deny"
+
+
+def test_project_role_valid_title_allowed(tmp_path):
+    res = _spawn_in_repo(tmp_path, "widget", "widget(mid): build the thing")
+    assert res["decision"] == "allow"
+    assert "reason" not in res
+
+
+def test_project_role_heavy_without_escalation_warns(tmp_path):
+    res = _spawn_in_repo(tmp_path, "widget", "widget(mid): x", prompt="[heavy] x")
+    assert res["decision"] == "allow"
+    assert "widget-heavy" in res.get("reason", "")

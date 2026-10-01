@@ -166,6 +166,30 @@ def test_directive_and_tracker_only_in_git_comment_block_does_not_count(tmp_path
     assert "tracker reference" in result.stdout
 
 
+
+def _add_project_role(repo: Path, name: str) -> None:
+    """Register a project-specific specialist the way a consumer does: a
+    tracked `.friday-project/roles/<name>.md` plus the repo-root marker."""
+    (repo / "harness.config.env").write_text("PROJECT_NAME=Test\n")
+    roles = repo / ".friday-project" / "roles"
+    roles.mkdir(parents=True, exist_ok=True)
+    (roles / f"{name}.md").write_text(f"# {name}\n")
+
+
+def test_project_role_prefix_accepted_and_body_required(tmp_path):
+    repo = _build_repo(tmp_path)
+    _add_project_role(repo, "hardware")
+    ok = _run(repo, "Hardware: route the power rail\n\nDirective: hw-01\nTracker: #12\n")
+    assert "WARN" not in ok.stdout, ok.stdout
+    missing = _run(repo, "Hardware: route the power rail\n")
+    assert "Hardware commit missing directive reference" in missing.stdout
+
+
+def test_unregistered_role_prefix_is_flagged(tmp_path):
+    repo = _build_repo(tmp_path)
+    result = _run(repo, "Hardware: route the power rail\n\nDirective: hw-01\nTracker: #12\n")
+    assert "does not match 'Role: description'" in result.stdout
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
 

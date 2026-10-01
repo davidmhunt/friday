@@ -67,6 +67,64 @@ TIER_TABLE = (
     "Architect=mid (inherit) (phase-level spec -> architect-heavy/pro)"
 )
 
+# Project-specific specialist roles (v0.18.0): a project registers an extra
+# role by tracking `.friday-project/roles/<role>.md` in its own repo — file
+# presence IS the registration, there is no config key to keep in sync.
+# Each one is treated like a mid-tier core role with a `<role>-heavy`
+# escalation variant (Antigravity) / high-tier model override (Claude).
+# A name that collides with a core role or variant is ignored: projects add
+# roles, they never redefine core ones.
+PROJECT_ROLES_DIR = Path(".friday-project") / "roles"
+_ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _find_consumer_root() -> Path | None:
+    """Consumer repo root by upward search from cwd, then from this file's
+    UNRESOLVED directory (it is reached through a symlink; see
+    check_md_hygiene.py's docstring for why `.resolve()` is wrong here)."""
+    for start in (Path.cwd(), Path(__file__).parent):
+        for candidate in (start, *start.parents):
+            if (candidate / "harness.config.env").exists() or (
+                (candidate / ".gitmodules").exists() and (candidate / ".friday").is_dir()
+            ):
+                return candidate
+    return None
+
+
+def discover_project_roles(root: Path | None) -> list[str]:
+    """Sorted project-role names found under `root/.friday-project/roles/`."""
+    if root is None:
+        return []
+    roles_dir = root / PROJECT_ROLES_DIR
+    if not roles_dir.is_dir():
+        return []
+    names = []
+    for path in sorted(roles_dir.glob("*.md")):
+        name = path.stem.lower()
+        if name == "readme" or not _ROLE_NAME_RE.match(name):
+            continue
+        if name in HARNESS_ROLES or name in VARIANT_TO_BASE:
+            continue
+        names.append(name)
+    return names
+
+
+def register_project_roles(names: list[str]) -> None:
+    """Add project roles to the role tables (idempotent)."""
+    global ALL_HARNESS_ROLE_TYPES, TIER_TABLE
+    for name in names:
+        if name in HARNESS_ROLES:
+            continue
+        HARNESS_ROLES.add(name)
+        VARIANT_TO_BASE[f"{name}-heavy"] = name
+        HEAVY_VARIANTS[name] = f"{name}-heavy"
+        TIER_TABLE += f" | {name.capitalize()}=mid (inherit) ([heavy] task -> {name}-heavy/pro)"
+    ALL_HARNESS_ROLE_TYPES = HARNESS_ROLES | set(VARIANT_TO_BASE.keys())
+
+
+register_project_roles(discover_project_roles(_find_consumer_root()))
+
+
 def _load_high_tier_keywords(default: tuple[str, ...] = ("opus",)) -> tuple[str, ...]:
     """Read HIGH_TIER_MODEL_KEYWORDS from harness.config.env, searching
     upward from cwd (same convention as .friday/active/harness/tools/_config.py). Kept as a

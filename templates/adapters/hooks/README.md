@@ -47,6 +47,12 @@ Both wrappers always exit 0 — a violation prints, it never blocks a commit.
   `plans/directives/*.md`) must match the caps in
   `.friday/active/harness/rules/md_hygiene.md`.
 - `check_commit_msg.py`: `CORE_ROLE_PREFIXES` if you renamed any core roles.
+- **Project-specific specialists need no configuration here.** Both
+  `check_agent_spawn.py` and `check_commit_msg.py` list
+  `.friday-project/roles/*.md` in the consumer repo at run time: each role
+  found there gets the `role(model): task` title check, a `<role>-heavy`
+  escalation variant, and a `<Role>:` commit prefix that requires a
+  directive/tracker body. Core role names are never redefined.
 
 Each runs standalone, so you can verify behavior without a live session
 (paths below assume the `.claude/` adapter; substitute `.agents/` if
