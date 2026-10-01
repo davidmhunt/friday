@@ -4,6 +4,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 import command_guard
 from command_guard import build_dynamic_patterns, evaluate_command_line
@@ -26,6 +27,45 @@ PINNED_CONFIG = {
     "TEST_CMD": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest",
     "LATEX_DRAFTING_ENABLED": "true",
 }
+
+
+# The sprint-branch exemption (290d45a) reads the checked-out branch of the
+# hook's cwd — i.e. of whatever checkout runs this suite. Every host-mode
+# assertion below was written for `main`, so pin that by default; running
+# the suite from a feature branch otherwise flips `git commit` to allow.
+_branch_patch = mock.patch.object(command_guard, "current_branch", return_value="main")
+
+
+def setUpModule():
+    _branch_patch.start()
+
+
+def tearDownModule():
+    _branch_patch.stop()
+
+
+class TestBranchExemption(unittest.TestCase):
+    """`git commit` is auto-allowed only off main/master; everything else that
+    moves work between branches or machines stays force_ask everywhere."""
+
+    def _decide(self, cmd, branch):
+        with mock.patch.object(command_guard, "current_branch", return_value=branch):
+            with _PatchedPatterns(PINNED_CONFIG):
+                return evaluate_command_line(cmd, in_container=False)["decision"]
+
+    def test_commit_allowed_on_feature_branch(self):
+        self.assertEqual(self._decide("git commit -m x", "feat/thing"), "allow")
+
+    def test_commit_force_ask_on_main_master_and_detached(self):
+        for branch in ("main", "master", None):
+            self.assertEqual(self._decide("git commit -m x", branch), "force_ask", branch)
+
+    def test_push_merge_force_ask_even_on_feature_branch(self):
+        for cmd in ("git push", "git merge main", "git switch main"):
+            self.assertEqual(self._decide(cmd, "feat/thing"), "force_ask", cmd)
+
+    def test_directory_hop_withholds_exemption(self):
+        self.assertEqual(self._decide("cd ../other && git commit -m x", "feat/thing"), "force_ask")
 
 
 class TestCommandGuard(unittest.TestCase):
