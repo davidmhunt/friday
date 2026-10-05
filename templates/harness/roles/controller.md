@@ -10,7 +10,8 @@ are the controller"). It must be able to ask the user questions and spawn
 subagents; a subagent can do neither, so a Controller is never spawned.
 **Namespace (coordination records only):** in `status.md`, the Loops table
 and the rows of loops you own; each directive's `Status:` line; tracker
-issues on approval (rule 13); `plans/history.md` for rulings worth keeping.
+issues on approval (rule 13); a trivial one-step directive you write
+yourself; `plans/history.md` for rulings worth keeping.
 
 ## Constraints
 
@@ -56,7 +57,8 @@ issues on approval (rule 13); `plans/history.md` for rulings worth keeping.
    `eval`, `docs`) and add or update its row in the Loops table.
 2. **Plan.** Dispatch the Planner with the goal, the loop, the user's
    answers, and pointers to anything relevant you already know. It returns
-   proposed directives and any open questions. Relay the questions, then
+   proposed directives and any open questions. Add each to `status.md`'s
+   Directives table as `proposed`. Relay the questions, then
    re-dispatch (or `SendMessage` the same Planner) with the answers until
    the questions are resolved.
    - **Skip the Planner only for a trivial task:** one role, one step, an
@@ -86,7 +88,9 @@ issues on approval (rule 13); `plans/history.md` for rulings worth keeping.
    change (that is an amendment — Planner, then re-approval); the same step
    has failed twice for a reason you don't understand; or work would touch
    something the directive marks out of scope.
-6. **Close.** When the Steps are done, dispatch the Reviewer. When it
+6. **Close.** When the Steps are done, dispatch the Reviewer (for a `[doc]`
+   directive, first spawn the context-free cold-reader utility agent —
+   the Reviewer cannot spawn it; `rules/document_budgets.md`). When it
    closes the directive, report the outcome to the user in plain language:
    what was done, the commit(s), anything worth their attention. If a
    closed directive is a real milestone, suggest an Author pass.

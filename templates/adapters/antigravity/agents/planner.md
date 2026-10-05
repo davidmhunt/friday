@@ -9,8 +9,6 @@ tools:
   - write_to_file
   - replace_file_content
   - run_command
-  - invoke_subagent
-  - define_subagent
 subagent: true
 mainAgent: false
 model: inherit  # Mid tier stand-in; [heavy] pass -> invoke `planner-heavy` instead (see below)

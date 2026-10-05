@@ -6,7 +6,8 @@ project being finalized. Optional — most work goes straight from the
 Controller to the Planner without one.
 **Tier:** Mid (`claude-sonnet-5`); a project-level spec → high tier
 (`claude-opus-5`).
-**Namespace:** `docs/specs/` (write). Nothing else.
+**Namespace:** `docs/specs/` (write), and the Specs table in
+`plans/goals.md` (add or update your spec's row). Nothing else.
 **Runs as:** either a subagent of the Controller (questions go back through
 it), or a top-level session the user opens directly
 (`claude --agent architect`) when they want to work the spec through

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""PreToolUse hook on the subagent-spawn tool (`invoke_subagent`) —
-Antigravity CLI port of `.claude/hooks/check_agent_spawn.py`.
+"""PreToolUse hook on the subagent-spawn tool — `invoke_subagent` under
+Antigravity, `Agent`/`Task` under Claude Code (one implementation, shared by
+both adapters; the title is the `Role`/`description` field).
 
 Mechanically enforces the spawn-title convention (.friday/active/harness/harness.md §Dispatch,
 .friday/active/harness/rules/conventions.md §Spawn titles).
 
 Hard-blocks a role spawn whose title / Role isn't `role(model): task`, and
 soft-warns when a `[heavy]`-tagged spawn is invoked without high-tier escalation
-(e.g. invoking base `coder` instead of `coder-heavy` or without `pro` model).
+(e.g. invoking base `coder` instead of `coder-heavy` on Antigravity, or a
+Claude spawn without an explicit high-tier `model`).
 Advisory checks never block; the format check does.
 
 Contract (Antigravity PreToolUse hook, per agy-customizations hooks spec):
@@ -294,7 +296,7 @@ def evaluate(payload: dict) -> dict:
             if heavy_variant and not is_escalated:
                 warnings.append(
                     f"SOFT WARNING (check_agent_spawn): invoked '{type_name}' with '[heavy]' "
-                    f"tag in prompt, but model is not high tier (variant '{heavy_variant}' / model 'pro'). "
+                    f"tag in prompt, but model is not high tier (Antigravity: variant '{heavy_variant}' / model 'pro'; Claude: pass a high-tier model explicitly). "
                     f"Tier table: {TIER_TABLE}. Advisory only — not blocked."
                 )
 
@@ -312,7 +314,16 @@ def main() -> int:
         print(json.dumps(_allow(reason="check_agent_spawn: unparseable stdin, failed open")))
         return 0
 
-    print(json.dumps(evaluate(payload)))
+    result = evaluate(payload)
+    if result.get("decision") == "deny" and (
+        payload.get("hook_event_name") == "PreToolUse" or "tool_name" in payload
+    ):
+        # Claude Code ignores a JSON "deny" from this hook for Agent spawns
+        # (verified live); exit code 2 + stderr is what actually blocks and
+        # feeds the reason back to the model. Antigravity reads the JSON.
+        print(result["reason"], file=sys.stderr)
+        return 2
+    print(json.dumps(result))
     return 0
 
 

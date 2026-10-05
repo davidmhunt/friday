@@ -5,6 +5,36 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.18.1
+
+**Docs audit and spawn-hook fix.** No layout or manifest changes; re-running
+`init_harness.py` just refreshes generated docs and adapters.
+
+- **`check_agent_spawn.py` now actually blocks on Claude Code.** Verified live:
+  Claude Code ignores a JSON `{"decision": "deny"}` from this hook, so
+  malformed role-spawn titles were never blocked. On a Claude payload a
+  violation now exits 2 with the reason on stderr; Antigravity keeps the JSON
+  deny. Three new tests cover both paths (63 hook tests total).
+- **`USER_GUIDE.md` split.** It is now a ~230-line operator guide; the deep
+  material moved to `.friday/reference/` (`docker.md`, `hooks.md`,
+  `inputs.md`, `updating.md`, `state_files.md`, `rules.md`,
+  `troubleshooting.md`), read in place in the submodule. Old `USER_GUIDE.md`
+  `§N` citations in earlier entries below refer to the pre-split numbering.
+- **Rule fixes.** The cold-read check (rule 16) is spawned by the Controller,
+  not the Reviewer, which has no spawn tool. Role namespaces (Researcher,
+  Author, Editor, Architect) now match the write permissions their rules
+  assume. Leftover `[DONE]`/`NOT NOMINAL` wording replaced with v0.18 terms.
+- **Antigravity adapters.** `planner`/`planner-heavy` lose their spawn tools
+  (only the Controller spawns); heavy/quick/judgment variants now state that
+  steering tags and "questions go up" apply as in the base adapter.
+- **Setup and docs accuracy.** README/SETUP symlink and materialize tables
+  match `MANIFEST.json`; the false claim that the `.gitignore` fragment
+  ignores directive files is gone; Docker template paths and doc references
+  fixed; `--help` documents `--reconfigure`, `--dry-run`,
+  `--force-materialize`; `harness_sync.sh` bump commits start with
+  `Harness:` so they pass the commit-msg check; `conventions.md` points at
+  `HIGH_TIER_MODEL_KEYWORDS` in `harness.config.env`.
+
 ## v0.18.0
 
 **Lead mode.** The harness becomes a lead-and-delegate team with one point

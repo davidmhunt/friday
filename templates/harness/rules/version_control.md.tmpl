@@ -18,7 +18,7 @@ Whatever system you use, three things must be true:
 2. **The record is attributable to the role that did the work.** Two agents'
    changes must never sit mingled in one unrecorded blob — an
    un-attributable working state turns a one-line revert into archaeology.
-3. **A task is not `[DONE]` until its record exists and its reference is
+3. **A task is not done until its record exists and its reference is
    pasted next to the task** in the directive file's `## Log`.
 
 ## Who records, and when
@@ -26,33 +26,27 @@ Whatever system you use, three things must be true:
 **Each role commits its own work, scoped to the paths it touched.** The
 Reviewer does not commit on another role's behalf.
 
-This is a change from the older policy ("the Reviewer commits everything at
-close-out; no other role commits"), and the reason is invariant 2 above.
-That policy was coherent while roles ran one at a time: a role edited, left
-the working tree dirty, and the Reviewer committed it with the right `Role:`
-prefix. Under **concurrent dispatch** it inverts into its own failure mode —
-two roles editing one working tree leave exactly the mingled, unrecorded
-blob invariant 2 forbids, and no later commit can separate them. A role
-committing its own paths as it finishes is what keeps attribution
-recoverable.
+Committing as you finish is what keeps attribution recoverable under
+**concurrent dispatch**: if roles left a shared working tree dirty for the
+Reviewer to commit later, two roles' edits would sit in exactly the
+mingled, unrecorded blob invariant 2 forbids, and no later commit could
+separate them. Committer and `Role:` prefix therefore always agree.
 
-Committer and `Role:` prefix therefore always agree, which also removes the
-old footgun of the Reviewer having to correctly sign as somebody else.
-
-**Committing is not the review gate, and never was.** The Reviewer still
-owns `[DONE]`, the tracker close, and the status-row move, and may bounce a
+**Committing is not the review gate.** The Reviewer still owns directive
+close-out, the tracker close, and the status-row move, and may bounce a
 pass back or `git revert` a specific attributable commit — a cleaner remedy
 than untangling a shared dirty tree. What keeps unreviewed work from
-reaching anyone else is not the commit but the **push**: `origin` is pushed
-only as a separate, explicitly confirmed action (see "Remote" below), so
-review still stands between work and publication.
+reaching anyone else is the **push**: `origin` is pushed only as a separate,
+explicitly confirmed action (see "Remote" below), so review still stands
+between work and publication.
 
 ## What gets committed
 
-Since v0.13.0, harness working state (`.friday/active/harness/status.md`,
-`plans/`, directive files, etc.) lives in `.friday/active/` — a
-directory that belongs to neither the project repo nor `.friday` itself,
-tracked by nothing. A close-out commit in the project repo can therefore
+Harness working state (`.friday/active/harness/status.md`, `plans/`,
+directive files, etc.) lives in `.friday/active/` — a directory that
+belongs to neither the project repo nor `.friday` itself, tracked by
+nothing (the one exception: with no tracker configured, `status_history.md`
+lives in the project repo — see "Durability note"). A close-out commit in the project repo can therefore
 only ever contain **project-repo content**: source, tests, and `docs/`.
 Harness state is never staged — it is not in this repo, and there is
 nothing to `git add` there even by mistake as long as you scope your
@@ -87,17 +81,16 @@ table: Planner, Coder, Runner, Reviewer, Author, Researcher, Editor,
 Architect, plus any project-specific specialist such as `Hardware`;
 Controller does not itself produce recordable work), colon, space, then a
 normal imperative summary.
-Attribute to the role that actually did the work — normally your own, since
-each role now commits for itself. `Reviewer:` is correct only when the
+Attribute to the role that actually did the work — normally your own. `Reviewer:` is correct only when the
 Reviewer's own edit (a close-out note, a revert) is what's being recorded.
 
 Examples:
 - `Coder: implement incremental state update in the core pipeline`
 - `Researcher: draft formal model memo for the trust-scoring approach`
-- `Reviewer: close directive 3, verify eval provenance`
+- `Reviewer: close core-03, verify eval provenance`
 
 **Every role commit carries a mandatory body**, because the commit message
-is now the durable record of *why* — `status_history.md` isn't tracked by
+is the durable record of *why* — `status_history.md` isn't tracked by
 either repo (see the durability note below). The body must include:
 - a directive reference: `Directive: <id>` (or an inline `directive <id>`
   mention), and
@@ -107,16 +100,16 @@ either repo (see the durability note below). The body must include:
 Worked examples:
 
 ```
-Reviewer: close directive D-12, verify eval provenance
+Reviewer: close core-12, verify eval provenance
 
-Directive: D-12
+Directive: core-12
 Tracker: #123
 ```
 
 ```
 Reviewer: bounce review-only pass back with no project-repo diff, no code changes
 
-Directive: D-14
+Directive: core-14
 no tracker
 ```
 
@@ -174,8 +167,7 @@ merges and `fixup!`/`squash!` commits. It runs two checks:
    predates its directives), the body (whole message,
    minus git's own trailing `#`-comment block) is checked for a directive
    reference and a tracker reference per "Attribution format" above. It
-   covers all roles rather than only `Reviewer:` because each role now
-   commits its own work. Missing either prints a WARN; it still never
+   covers all those roles because each commits its own work. Missing either prints a WARN; it still never
    blocks — `commit-msg` is symlinked straight into `.git/hooks/commit-msg`,
    and a blocking check here would strand an agent mid-pass with no escape
    hatch.

@@ -23,11 +23,12 @@ template can't pre-fill it, only hold its place.]
 ├── docker/                      # Docker build inputs (Dockerfile, compose files, entrypoint)
 ├── .friday/                     # Portable harness submodule
 │   ├── templates/                 # Harness template sources (tracked, shared across projects)
+│   ├── reference/                 # Deep-reference docs (hooks, rules, Docker, updating, troubleshooting)
 │   └── active/harness/            # This project's generated harness state (gitignored inside the submodule)
-│       ├── USER_GUIDE.md            # Comprehensive operator manual (start here!)
+│       ├── USER_GUIDE.md            # Short operator guide (start here; deep reference in .friday/reference/)
 │       ├── harness.md                # Core loop rules and invariant definitions
 │       ├── status.md                 # Living dashboard of active directives & background jobs
-│       ├── status_history.md         # Append-only permanent ledger of completed directives
+│       ├── status_history.md         # Append-only ledger of completed directives (docs/status_history.md when no tracker is configured)
 │       ├── plans/                    # goals.md + directives/<ID>.md (one file per unit of work)
 │       ├── roles/                    # Role definition contracts (Planner, Controller, Reviewer, etc.)
 │       ├── rules/                    # On-demand rule specification details
@@ -115,7 +116,7 @@ and caches across restarts. The image follows this project's own
 re-running `init_harness.py` to reconfigure, run `build` again to pick up a
 changed `docker/Dockerfile`. The container starts a plain shell; herdr is
 installed unconditionally — run `herdr` by hand from that shell when you
-want it. See `.friday/active/harness/USER_GUIDE.md` §12 for the full
+want it. See `.friday/reference/docker.md` for the full
 workflow, including reconfiguring mounts.
 <!-- SECTION:docker_quickstart:end -->
 <!-- SECTION:latex_on:start -->

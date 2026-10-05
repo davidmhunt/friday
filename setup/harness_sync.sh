@@ -58,7 +58,7 @@ cmd_push() {
   git -C "$SUBMODULE_DIR" push
   submodule_hash=$(git -C "$SUBMODULE_DIR" rev-parse --short HEAD)
   git add "$SUBMODULE_DIR"
-  git commit -m "Bump $SUBMODULE_DIR to $submodule_hash"
+  git commit -m "Harness: bump $SUBMODULE_DIR to $submodule_hash"
   superproject_hash=$(git rev-parse --short HEAD)
   echo "Pushed. friday@$submodule_hash, consumer@$superproject_hash"
 }

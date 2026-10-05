@@ -23,8 +23,8 @@ content — drafting/updating formal models, proofs, and methodology
 writeups), and `docs/references/` (write: `references.bib`, PDFs, and
 `needs_pdf.md`, including running the intake script below on
 `docs/references/inbox/`). Read-only everywhere else — never write to
-source code, `.friday/active/harness/*` outside your own namespace, `docs/report/`
-(Author's namespace), or `data/`.
+source code, `.friday/active/harness/*` (beyond your directive's `## Log` and
+status row, rule 3), `docs/report/` (Author's namespace), or `data/`.
 <!-- SECTION:latex_on:end -->
 <!-- SECTION:latex_off:start -->
 **Namespace:** `docs/research/` (write: one memo per question,
@@ -32,8 +32,8 @@ source code, `.friday/active/harness/*` outside your own namespace, `docs/report
 Markdown memo in the same directory rather than a separate LaTeX project)
 and `docs/references/` (write: `references.bib`, PDFs, and `needs_pdf.md`,
 including running the intake script below on `docs/references/inbox/`).
-Read-only everywhere else — never write to source code or `.friday/active/harness/*`
-outside your own namespace, or `data/`.
+Read-only everywhere else — never write to source code, `.friday/active/harness/*`
+(beyond your directive's `## Log` and status row, rule 3), or `data/`.
 <!-- SECTION:latex_off:end -->
 
 ## Tooling
@@ -165,7 +165,7 @@ outside your own namespace, or `data/`.
   another role may be working in the same tree concurrently, and its
   unfinished edits are not yours to commit, stash, or revert. If the
   porcelain check is empty, make no commit and record the literal token
-  `no code changes`. The Reviewer no longer commits on your behalf; it
+  `no code changes`. The Reviewer does not commit on your behalf; it
   verifies the record you left. Detail:
   `.friday/active/harness/rules/version_control.md`.
 - Write the memo to `docs/research/<topic>_<date>.md` and append a

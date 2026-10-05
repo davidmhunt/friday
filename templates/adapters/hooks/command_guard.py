@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Antigravity PreToolUse hook for command permission guarding.
+"""Antigravity PreToolUse hook (on `run_command`) for command permission guarding.
+(Claude Code uses its own permission system; this hook is not wired there.)
 
 Evaluates CommandLine against project policies:
-- "allow": Safe, read-only, tests, docs compilation, or package-manager sync.
-- "force_ask": Modifying commands (git commit/push, dependency add/remove, systemd-run, rm, unclassified).
-- "deny": Strictly forbidden destructive commands (sudo, rm -rf /, git push --force).
+- "allow": Safe, read-only, tests, docs compilation, or package-manager sync;
+  also a plain `git commit` on a non-`main`/`master` branch (branch-per-sprint
+  workflow; fails closed to force_ask if the branch can't be determined or the
+  line changes directory/repo first).
+- "force_ask": Modifying commands (git commit on main, push/merge/checkout/...,
+  dependency add/remove, systemd-run/setsid, rm, mv, kill, unclassified).
+- "deny": Strictly forbidden destructive commands (sudo/su, rm -rf /, git push
+  --force or +refspec, git remote add, curl|sh, ...).
+
+Container mode (ANTIGRAVITY_CONTAINER=1 or CONTAINER_AUTO_ALLOW=1): only the
+deny list applies; everything else is allowed.
 
 The generic patterns below (deny list, git read-only inspection, basic file
 inspection/navigation, and the modifying-command force-ask list) are

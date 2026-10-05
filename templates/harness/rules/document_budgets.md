@@ -140,29 +140,31 @@ exist, so only someone opening the source can see it.*
 
 ## Cold-reader check (utility spawn — no role registration)
 
-The Reviewer dispatches a **plain utility subagent** (deliberately *not* a
-harness role, so it inherits no project context) with the document and
-nothing else, asking for: what it understood, where it bogged down, and
-which paragraphs it would cut.
+The Controller dispatches, before the Reviewer's verdict, a **plain utility
+subagent** (deliberately *not* a harness role, so it inherits no project
+context) with the document and nothing else, asking for: what it understood,
+where it bogged down, and which paragraphs it would cut. (The Reviewer has no
+spawn capability, and could not do this check itself after having just
+verified the document.)
 
 It must be spawned with **no prior conversation context** — that is the
-entire point, and it is why the Reviewer cannot perform this check itself
-after having just verified the document. Its report goes to the user
-alongside the directive verdict; it is **advisory input, never an
+entire point. Its report is pasted into the directive's `## Log`, goes to the
+user alongside the directive verdict, and is **advisory input, never an
 automatic edit** to the document.
 
 ## Reviewer — closing a directive
 
-Add to the existing `[DONE]` checks, for any directive with a prose
-deliverable:
+Add to the `full` review checks (`roles/reviewer.md`), for any directive
+with a prose deliverable:
 
 1. **Budget check (mechanical, blocking).** `pdfinfo <doc>.pdf | grep Pages`
    for LaTeX, or a line count for Markdown. Over the stated budget →
-   **NOT NOMINAL**, with the standard remedy named (move material to an
+   bounce, with the standard remedy named (move material to an
    appendix or a supplemental, or cut).
 2. **Editor pass ran**, and its `cut X lines / Y pages` report is cited in
    the close-out record.
-3. **Cold-reader check ran**, and its report is attached to the verdict.
+3. **Cold-reader check ran**, and its report is attached to the verdict
+   (the Controller spawned it).
 4. **Assumption table ≤ 8 rows**; every core concept has a figure.
 5. **Every post-draft edit is diffed, not reported.** For each commit that
    touched the document after its first draft — the Editor's pass *and* any
@@ -170,7 +172,7 @@ deliverable:
    subtractive and that no quoted material changed. A role's own report that
    a pass was subtractive is not evidence; the diff is.
 6. **Any edit after a verdict re-opens that verdict in full.** When a
-   document is edited after you have verified it, your prior NOMINAL no
+   document is edited after you have verified it, your prior verdict no
    longer applies to any part of it. Re-gate the whole artifact, not only
    the findings you raised — the edit had the run of the document, so the
    re-check must too. Verifying only your own findings is how a defect

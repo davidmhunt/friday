@@ -164,7 +164,7 @@ ENV PATH="/home/agent/.local/bin:${PATH}"
 # so the in-container path matches the project it holds. Derived from the same
 # config key that pins the compose project name and image tag. Note that agent
 # CLIs key their conversation history on cwd, so changing this starts a fresh
-# history bucket — see USER_GUIDE.md §12.5.
+# history bucket — see .friday/reference/docker.md (section 10).
 WORKDIR /[SET AT SETUP: PROJECT_NAME_LOWER]
 
 USER agent

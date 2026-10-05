@@ -1493,10 +1493,26 @@ def closing_checklist(cfg: dict[str, str]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--reconfigure", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--force-materialize", action="append", default=[])
+    parser = argparse.ArgumentParser(
+        description=(
+            "Set up or re-sync the friday harness in this project. Run from the "
+            "consumer repo root, with the harness submodule at .friday/. First run "
+            "asks the interview and writes harness.config.env; later runs re-sync "
+            "symlinks and project roles without overwriting hand-edited files."
+        ),
+    )
+    parser.add_argument(
+        "--reconfigure", action="store_true",
+        help="Re-run the interview (existing answers become the defaults), then re-sync.",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print what would change without writing or linking anything.",
+    )
+    parser.add_argument(
+        "--force-materialize", action="append", default=[], metavar="PATH",
+        help="Overwrite this one already-materialized file with a fresh render (repeatable). Hand edits to it are lost.",
+    )
     parser.add_argument(
         "--untrack-harness", action="store_true",
         help="git rm --cached every already-tracked file that HARNESS_TRACKING now says to exclude, then exit. Never commits.",

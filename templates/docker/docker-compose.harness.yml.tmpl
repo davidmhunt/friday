@@ -10,7 +10,7 @@
 # file and its `dev` image — see that file's header.
 #
 # This file is tier "tooling" (gitignored, materialized fresh from
-# .friday/docker/docker-compose.harness.yml.tmpl on every sync) — it is
+# .friday/templates/docker/docker-compose.harness.yml.tmpl on every sync) — it is
 # harness-only, never meant to be hand-edited or committed by a project that
 # doesn't have the submodule.
 #
@@ -41,7 +41,7 @@ services:
       # Switches .agents/hooks/command_guard.py into container mode: its
       # deny list still applies, but the force-ask prompts are skipped so an
       # agent can run unattended. Only meaningful where that hook is wired,
-      # which is the Antigravity adapter. See USER_GUIDE.md §5.
+      # which is the Antigravity adapter. See .friday/reference/hooks.md.
       - ANTIGRAVITY_CONTAINER=1
       - CONTAINER_AUTO_ALLOW=1
       # <!-- SECTION:docker_agent_antigravity_compose:end -->

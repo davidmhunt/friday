@@ -5,7 +5,8 @@
 # never a gate.
 #
 # Install (from repo root):
-#   ln -sf ../../.agents/hooks/pre-commit .git/hooks/pre-commit
+#   ln -sf ../../.claude/hooks/pre-commit .git/hooks/pre-commit
+# (or ../../.agents/hooks/pre-commit if only the Antigravity adapter is enabled)
 
 set -uo pipefail
 

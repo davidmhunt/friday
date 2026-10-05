@@ -32,3 +32,5 @@ Use this only for a directive tagged `[heavy]` or otherwise clearly
 proof-bearing (see `.friday/active/harness/harness.md` for the exact definition) — not as
 a default for "important-sounding" research. Report `model: <the model
 name Antigravity reports for this run>` as the first line of every report.
+
+Steering tags (`User-Feedback:` / `Controller-Update:`) and "questions go up" (a user-only decision goes in your report with a recommendation, never a guess) apply exactly as in `researcher.md`.

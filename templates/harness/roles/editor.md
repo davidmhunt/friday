@@ -7,7 +7,8 @@ counterweight to an otherwise additive review loop.
 i.e. dense derivation-bearing text where a careless cut could break an
 argument.
 **Namespace:** the prose deliverable named in the directive (write), and
-`.friday/active/harness/review/<ID>_editor_notes.md` (write). Nothing else.
+`.friday/active/harness/review/<ID>_editor_notes.md` (write), plus your
+directive's `## Log` and status row (rule 3). Nothing else.
 
 ## Why this role exists
 

@@ -1,6 +1,6 @@
 ---
 name: hardware
-description: Board specialist: KiCad projects under hardware/ (kicad-cli ERC/DRC, exports, fab outputs, small text edits, pinout and interface analysis) for an approved directive. Reads project facts from hardware/README.md; respects GUI lock files, submodule ownership and resource claims; commits its own scoped changes. Mid tier; a [heavy] directive is invoked as `hardware-heavy` instead.
+description: Board specialist: KiCad projects under hardware/ (kicad-cli ERC/DRC, exports, fab outputs, small text edits, pinout and interface analysis), plus FPGA work under fpga/ if the project has it, for an approved directive. Reads project facts from hardware/README.md; respects GUI lock files, submodule ownership and resource claims; commits its own scoped changes. Mid tier; a [heavy] directive is invoked as `hardware-heavy` instead.
 tools:
   - view_file
   - list_dir

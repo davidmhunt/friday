@@ -46,8 +46,9 @@ a subagent's tier.
 as a `PreToolUse` hook in `.claude/settings.json`) hard-blocks role spawns
 whose title doesn't match `role(model): task` and soft-warns on a
 `[heavy]`-tagged spawn whose model tag isn't a recognizable high tier. Set
-`HIGH_TIER_KEYWORDS` in that file to your own high-tier model names — until
-you do, the tier half of the check announces that it can't run. Same
+`HIGH_TIER_MODEL_KEYWORDS` in `harness.config.env` to your own high-tier model
+names (the hook reads it automatically) — until you do, the tier half of the
+check announces that it can't run. Same
 posture as rules 8/12: a backstop that closes the gap between "documented
 convention" and "actually followed," not a substitute for the self-report. On a platform with no pre-spawn hook the
 convention still holds on the honor system — say so plainly rather than

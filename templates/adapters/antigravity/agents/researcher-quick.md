@@ -29,3 +29,5 @@ invocation, follow `researcher.md`'s reading order exactly:
 Report `model: <the model name Antigravity reports for this run>` as the
 first line of every report, so the dispatcher can confirm this landed on
 the intended (lighter) tier.
+
+Steering tags (`User-Feedback:` / `Controller-Update:`) and "questions go up" (a user-only decision goes in your report with a recommendation, never a guess) apply exactly as in `researcher.md`.

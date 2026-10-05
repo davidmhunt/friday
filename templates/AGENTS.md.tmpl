@@ -8,10 +8,10 @@ your task needs, per this index:**
 > This repo has two kinds of content. `docs/`, source, tests and this file
 > are project content, tracked in the project's own repo — they must keep
 > making sense after the harness is removed. `.friday/` is the harness
-> itself: `.friday/templates/` is the portable submodule (tracked, shared
-> across every project that uses it), and `.friday/active/` is this
-> project's generated, local-only harness working state (gitignored inside
-> the submodule — see below). Don't confuse harness working state with
+> itself: `.friday/` is the portable git submodule (shared across every
+> project that uses it), and `.friday/active/` inside it is this project's
+> generated, local-only harness working state (gitignored within the
+> submodule — see below). Don't confuse harness working state with
 > project content: a directive spec or a status dashboard is disposable
 > scaffolding, not something the project's history depends on.
 
@@ -48,7 +48,7 @@ your task needs, per this index:**
 | Who records work | Each producing role commits its own work, scoped to the paths it touched, on a non-`main` branch where `git commit` is auto-allowed (rule 12); the Reviewer verifies the record at close-out, and only the user approves a merge to `main` |
 | Queue mirror (rule 13, opt-in) | [SET AT SETUP: TRACKER_KIND] — one issue per directive; the Controller opens it when the user approves the directive, the Reviewer closes it ("none" = not tracked externally) |
 | Project specialists | [SET AT SETUP: none, or each project-specific role (e.g. `hardware` — board design under `hardware/`) with a pointer to its facts doc; role files in `.friday-project/roles/`] |
-| Docker dev container | `[SET AT SETUP: DOCKER_ENABLED]` — when enabled, the image installs `[SET AT SETUP: PACKAGE_MANAGER]` plus the `[SET AT SETUP: ADAPTERS_ENABLED]` CLI(s); see `.friday/active/harness/USER_GUIDE.md` §12 to set up or reconfigure |
+| Docker dev container | `[SET AT SETUP: DOCKER_ENABLED]` — when enabled, the image installs `[SET AT SETUP: PACKAGE_MANAGER]` plus the `[SET AT SETUP: ADAPTERS_ENABLED]` CLI(s); see `.friday/reference/docker.md` to set up or reconfigure |
 
 ## Project Overview
 
@@ -132,8 +132,10 @@ are read only when a rule's trigger matches your next action.
 
 ## Command Execution & Approval Policy
 
-Command execution is programmatically guarded by `.agents/hooks.json` via
-`.agents/hooks/command_guard.py` before `run_command` executes:
+Under the Antigravity adapter, command execution is programmatically guarded
+by `.agents/hooks.json` via `.agents/hooks/command_guard.py` before
+`run_command` executes (Claude Code sessions are not covered by this hook;
+they use Claude Code's own permission settings):
 
 - **Auto-allowed (`allow`)**: `[SET AT SETUP: PACKAGE_MANAGER_SYNC_CMD]`,
   `[SET AT SETUP: PACKAGE_MANAGER_RUN_CMD]`, `[SET AT SETUP: TEST_CMD]`,
@@ -158,7 +160,7 @@ Command execution is programmatically guarded by `.agents/hooks.json` via
   `eval "$(curl …)"`).
 
 **Inside the Docker dev container this policy is reduced to its deny list.**
-`docker-compose.yml` sets `ANTIGRAVITY_CONTAINER=1`, which switches the guard into
+`docker/docker-compose.harness.yml` sets `ANTIGRAVITY_CONTAINER=1`, which switches the guard into
 container mode: deny still applies, but force-ask and the allow list are skipped and
 anything unrecognized runs without confirmation. Do not read a successful command in
 the container as evidence that it would have been permitted on the host.

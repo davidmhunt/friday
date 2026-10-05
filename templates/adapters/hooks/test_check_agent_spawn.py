@@ -206,3 +206,35 @@ def test_project_role_heavy_without_escalation_warns(tmp_path):
     res = _spawn_in_repo(tmp_path, "widget", "widget(mid): x", prompt="[heavy] x")
     assert res["decision"] == "allow"
     assert "widget-heavy" in res.get("reason", "")
+
+
+def _run_raw(payload):
+    import json
+    import subprocess
+    return subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "check_agent_spawn.py")],
+        input=json.dumps(payload), capture_output=True, text=True,
+    )
+
+
+def test_claude_payload_bad_title_blocks_with_exit_2():
+    """Claude Code ignores a JSON deny; only exit 2 + stderr blocks the spawn."""
+    out = _run_raw({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "coder",
+                                   "description": "bad title", "prompt": "x"}})
+    assert out.returncode == 2
+    assert "role(model): task" in out.stderr
+
+
+def test_claude_payload_good_title_allows():
+    out = _run_raw({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "coder",
+                                   "description": "coder(mid): build it", "prompt": "x"}})
+    assert out.returncode == 0
+
+
+def test_antigravity_payload_bad_title_denies_via_json():
+    out = _run_raw({"toolCall": {"name": "invoke_subagent", "args": {
+        "subagent_type": "coder", "description": "bad title", "prompt": "x"}}})
+    assert out.returncode == 0
+    assert '"decision": "deny"' in out.stdout

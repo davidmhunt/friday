@@ -10,6 +10,10 @@ these questions solo and hand-write `harness.config.env`, or run
 `python3 .friday/setup/init_harness.py` directly for its own bare
 `input()`-prompt interview — but the agent-led path is preferred.
 
+Prerequisite: the repo is a git repository with friday added as the
+`.friday` submodule (see friday's `README.md` §Getting started) — the script
+refuses to run otherwise.
+
 **This interview is also how you reconfigure later.** Nothing here is
 one-shot: re-open this file any time a project fact changes (switched
 package managers, added a task tracker, want Docker now). If
@@ -31,8 +35,8 @@ python3 .friday/setup/init_harness.py
 Because `harness.config.env` already exists at that point, the script
 skips its own interactive interview entirely and just does the mechanical
 work: creates the symlink tree, materializes templated docs (substituting
-every `[SET AT SETUP: ...]` token), wires the git hooks, and — if
-`DOCKER_ENABLED=true` — writes `docker/docker-compose.yml`'s volumes and offers to
+the `[SET AT SETUP: <KEY>]` tokens that come from config keys), wires the git hooks, and — if
+`DOCKER_ENABLED=true` — renders the `docker/` files and offers to
 build the image. That part is intentionally boring and deterministic; the
 judgment belongs in the interview, not the script.
 
@@ -93,13 +97,14 @@ interview.** `init_harness.py` appends `setup/gitignore.fragment` and
 rewrites or reorders a file that already exists, so hand-authored entries
 are untouched. The fragments cover the invariants the harness depends on:
 secrets (`.env`, `harness.config.env`) never get committed, and
-`.friday/active/harness/plans/directives/*.md` stays gitignored (with `!TEMPLATE.md` kept
-tracked) so the rule-13 contract holds — the tracker + `status_history.md`
-are the durable record, not the directive files themselves. When
-`LATEX_DRAFTING_ENABLED=true` it also adds the LaTeX build-artifact and
-LFS-tracked-PDF lines; the reference-PDF block is added when the
-bibliography workflow is in use. You only need to add the project's own
-entries on top of what's already there.
+Python/uv cruft is ignored. Harness state needs no entry: `.friday/active/`
+is gitignored inside the submodule (the tracker, commits and
+`status_history.md` are the durable record, not the directive files), and
+the harness-owned files in the project are listed in the local
+`.git/info/exclude`. When `LATEX_DRAFTING_ENABLED=true` it adds the LaTeX
+build-artifact lines and LFS tracking of generated PDFs (`.gitattributes`);
+the reference-PDF block is added when the bibliography workflow is in use
+(§9). You only need to add the project's own entries on top.
 
 ## 3. Running code
 
@@ -142,6 +147,12 @@ hardware" state and nothing else is needed.
 
 → `VCS_REMOTE`, `TRACKER_KIND` (`none` | `gitlab-issues` | `github-issues`),
 and if not `none`: `TRACKER_HOST`, `VCS_REMOTE_PROJECT_PATH`.
+
+`TRACKER_KIND` also decides where the closed-directive ledger lives:
+`none` puts `status_history.md` in the project repo (`docs/`, tracked — it
+is then the only durable record); with a tracker it stays in the gitignored
+`.friday/active/harness/` (derived automatically as `STATUS_HISTORY_PATH`;
+don't ask).
 
 Tracker sync (rule 13) is opt-in and bookended: with a tracker configured,
 the Controller opens one issue per directive **when the user approves it**
@@ -219,7 +230,7 @@ in the override.
 > container mode, where its deny list still applies but force-ask prompts do
 > not — an agent runs unattended. Because `docker/docker-compose.yml` also
 > bind-mounts the repo and forwards the host `ssh-agent`, that's a real
-> posture change, not just a convenience. See USER_GUIDE.md §5; it can be
+> posture change, not just a convenience. See `.friday/reference/hooks.md`; it can be
 > turned off by deleting the two `environment:` entries from
 > `docker/docker-compose.harness.yml`.
 
@@ -238,6 +249,9 @@ in the override.
 
 Only relevant if this project uses `.friday/active/harness/tools/*.py` (literature-review
 workflow against `docs/references/references.bib`) — skip entirely if not.
+There is no on/off key: the workflow is treated as enabled when either
+`BIBLIO_*` value below is non-empty, so to opt out, write both empty
+(`BIBLIO_CONTACT_EMAIL=`, `BIBLIO_USER_AGENT_TOKEN=`).
 
 - What contact email should the bibliography tools' outbound HTTP
   `User-Agent` header carry (Crossref/Unpaywall etc. expect a real
@@ -271,11 +285,13 @@ python3 .friday/setup/init_harness.py
 ```
 
 The script materializes the symlink tree and every templated doc, including
-`.friday/active/harness/status.md`, `.friday/active/harness/status_history.md`, and `.friday/active/harness/log.md` —
-the three core state files the rest of the harness assumes exist from day
-one — each seeded empty (`_(none)_` / `(none yet)`) and ready to use. It
-also creates `.friday/active/harness/running/logs/` and applies the `.gitignore` /
-`.gitattributes` fragments described above.
+`.friday/active/harness/status.md`, `status_history.md` (or
+`docs/status_history.md`, §5) and `log.md` — the core state files the rest
+of the harness assumes exist from day one — each seeded empty and ready to
+use. It also creates `.friday/active/harness/running/logs/`, applies the
+`.gitignore` / `.gitattributes` fragments described above, and installs the
+git hooks. Use `--dry-run` to preview. Re-running is safe: files you have
+edited are reported as `SKIP`, never overwritten.
 
 Read its closing checklist. It will call out any `[SET AT SETUP: ...]`
 markers still unfilled — those are free-text prose sections (project

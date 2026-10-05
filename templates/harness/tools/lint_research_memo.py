@@ -2,8 +2,8 @@
 """Structural + Sources-format check for docs/research/*.md memos.
 
 Run by the Reviewer alongside verify_references.py whenever the Researcher
-produced or edited a memo this cycle (.friday/active/harness/roles/reviewer.md "Pass
-protocol" step 5). Checks each memo against the shape defined in
+produced or edited a memo this cycle (.friday/active/harness/roles/reviewer.md
+"Research memos"). Checks each memo against the shape defined in
 .friday/active/harness/templates/research_memo_template.md:
 
   - The seven required `## ` section headers are present, in order:

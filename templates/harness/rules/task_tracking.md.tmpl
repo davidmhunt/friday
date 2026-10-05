@@ -63,8 +63,8 @@ This is a step of approving the directive, not an optional follow-up.
 ## Reviewer — closing a directive
 
 A directive is not fully closed until its GitLab issue reflects that. Tick
-checklist items as milestones land; in the SAME pass you mark a directive
-`[DONE]`, tick the remainder and close the issue:
+checklist items as milestones land; in the SAME pass you set the directive
+`Status: closed`, tick the remainder and close the issue:
 
 ```bash
 curl -sS --request PUT \
@@ -73,10 +73,9 @@ curl -sS --request PUT \
   "https://[SET AT SETUP: TRACKER_HOST]/api/v4/projects/<...>/issues/<IID>"
 ```
 
-**Multi-phase caveat:** close the issue only when the phase it actually
-tracks is done. A directive whose early phase is `[DONE]` while the issue
-tracks a later phase stays open — that's the done-but-open false positive;
-dismiss it by judgment rather than force-closing.
+**One directive, one issue.** If a directive is split or superseded, close
+its issue with a comment naming the replacement directive(s), whose own
+issues open when they are approved.
 
 ## Missing-credentials clause
 
@@ -88,9 +87,9 @@ GitLab mirror. There is no silent-skip path for this rule.
 ## Mechanical check (optional)
 
 A script cross-referencing `.friday/active/harness/plans/directives/*.md` plus the
-`[DONE]` markers against live GitLab issue state, WARNing on (i) a
-directive with no issue and (ii) a done directive whose issue is still
-open. The Controller runs it at session start and the Reviewer at
+`closed` directives against live GitLab issue state, WARNing on (i) an
+approved directive with no issue and (ii) a closed directive whose issue is
+still open. The Controller runs it at session start and the Reviewer at
 close-out. Its done-but-open output is a candidate list, not a verdict. A
 WARN surviving two consecutive passes is reported to the Controller, which
 raises it with the user.

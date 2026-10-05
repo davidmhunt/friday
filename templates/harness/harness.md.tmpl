@@ -103,8 +103,8 @@ requirement IDs (`Serves: hw_1 R3`).
 
 **Review scales with risk.** The Planner sets each directive's review level:
 `quick` (default — re-run the `Verify:` line, confirm the commit) or `full`
-(`[heavy]` or `[doc]` work — the full `[DONE]` checklist, plus rule 16 for
-prose). See `roles/reviewer.md`.
+(`[heavy]` or `[doc]` work — an independent method check, rule 16 for
+prose, and a note in `review/`). See `roles/reviewer.md`.
 
 **Retired files (v0.18.0).** `plans/long_term.md`, `plans/next_steps.md`,
 `plans/suggestions.md` and `coding/` are no longer part of the harness. If
@@ -164,7 +164,8 @@ to run. Detail: `roles/controller.md`.
 - **Controller never does specialist work** — no source, project-file,
   doc or experiment changes; those are dispatched. Its only writes are
   coordination records: `status.md` rows for its own loops, a directive's
-  `Status:` line, and tracker issues. Detail: `roles/controller.md`.
+  `Status:` line, a trivial one-step directive it writes itself, tracker
+  issues, and `plans/history.md` rulings. Detail: `roles/controller.md`.
 - **Questions go up, not sideways.** A subagent that hits a decision only
   the user can make stops and puts the question in its report (or
   `SendMessage`s the Controller). It never guesses, and never asks another
@@ -183,7 +184,7 @@ to run. Detail: `roles/controller.md`.
 
 Adapt the specifics in each rule's linked detail doc to your project (data
 store, environment, hardware, how work is recorded, where the queue lives)
-via SETUP.md; keep the invariant.
+via `.friday/setup/SETUP.md`; keep the invariant.
 
 1. **Shared-artifact namespacing.** Never mutate a data artifact an existing
    eval/training run consumes (priors, eval outputs, model checkpoints,
@@ -278,14 +279,14 @@ via SETUP.md; keep the invariant.
 
 12. **Recording finished work.** Finished work leaves a durable record as a
     version-control commit, attributed to the role that did it, and a task
-    is not `[DONE]` until that record's reference is pasted next to it.
+    is not done until that record's reference is pasted next to it.
     Never leave two agents' changes mingled in one unrecorded blob.
     **Trigger:** recording completed work, or judging whether work is
     done → `.friday/active/harness/rules/version_control.md`.
 
 13. **External queue sync (opt-in).** Applies only when the project opts in
-    by setting a tracker in `rules/task_tracking.md` (`TRACKER_KIND` !=
-    `none`; this project: `[SET AT SETUP: TRACKER_KIND]`). Then every directive gets
+    by configuring a tracker (`TRACKER_KIND` != `none`; this project:
+    `[SET AT SETUP: TRACKER_KIND]`; detail in `rules/task_tracking.md`). Then every directive gets
     one issue: the Controller opens it **when the user approves the
     directive** (not at proposal, so rejected proposals leave no issues),
     and the Reviewer closes it at close-out, same pass in both cases.
@@ -324,7 +325,7 @@ via SETUP.md; keep the invariant.
     is a defect with the same force as a broken citation**, not a stylistic
     note. No prose deliverable closes without an Editor subtractive pass
     (reported as `cut X lines / Y pages, math unchanged`) and a cold-reader
-    check by a context-free utility spawn. Assumption tables cap at 8 rows;
+    check by a context-free utility spawn (dispatched by the Controller). Assumption tables cap at 8 rows;
     every core concept gets a figure. Exists because, in the project this
     rule originated in, a technically flawless long-form document shipped
     that its own reader could not learn from — every gate measured
