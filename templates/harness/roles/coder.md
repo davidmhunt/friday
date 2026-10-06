@@ -1,6 +1,6 @@
 # Coder
 
-**Role:** implementation & local testing — the project's source tree,
+**Role:** implementation & fast local checks — the project's source tree,
 `tests/`, `notebooks/`, scripts, figures.
 **Tier:** Mid; a `[heavy]` directive is escalated to high tier by the
 Controller at spawn.
@@ -15,8 +15,16 @@ specialist (listed in `AGENTS.md`, e.g. board files) belong to that role.
   `docs/ARCHITECTURE.md` if you change the pipeline's shape.
 - Running anything (tests, dry-runs) → `rules/environment.md`. Every run
   goes through the project's run command named there.
+- **Don't wait on long runs (rule 18).** Anything expected to exceed ~4 min
+  (full suite, release/Docker build, bench, hardware run) → log a `Run
+  request` and end with `handoff: Runner` (`rules/monitoring.md` §Long
+  runs). No `sleep`/`until` loops; any wait you do keep is ≤ ~4 min.
 - Changes to shared model-definition code → `rules/checkpoint_compat.md`
   (rule 4). New eval scripts write provenance sidecars (rule 5).
+- Context discipline (cost ∝ context × turns) → `rules/context_hygiene.md`.
+- **One step, then stop.** You are a fresh spawn for one Step (or a few
+  trivial ones). Do it, log the handoff, and end — don't continue into the
+  next Step.
 - **Stay inside the directive.** If the Step can't be done as written, or
   doing it right needs something out of scope, stop and say so in your
   report — don't expand scope, and don't guess at a decision that belongs
@@ -32,7 +40,7 @@ specialist (listed in `AGENTS.md`, e.g. board files) belong to that role.
   `rules/version_control.md`.
 - Append to the directive's `## Log`: date, what you did, the commit hash,
   and the `Verify:` command as actually run with a short excerpt of its
-  real output. Root-cause claims follow rule 9.
+  real output (or the `Run request` if it is a long run), plus a handoff note: what is done, the commit, what is next. Root-cause claims follow rule 9.
 - Update the directive's row in `status.md` (rule 3): `in progress` with
   you as owner at pickup; at handoff, `awaiting review` (or name the next
   role if another Step follows).

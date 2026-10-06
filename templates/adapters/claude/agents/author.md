@@ -2,7 +2,7 @@
 name: author
 description: Documentation and publication owner. Use when the Reviewer has closed a real milestone (new version, finalized result, systemic bug fix, real ablation) to fold it into docs/RESULTS.md, or — if the LaTeX/Beamer drafting suite is enabled — to build the docs/report/ LaTeX report and Beamer decks from Researcher-drafted theory and Reviewer-verified results. Never writes to source code, plans/, running/, review/, docs/theory/, or data directories.
 # Mid tier — see .friday/active/harness/harness.md tier table
-model: claude-sonnet-5
+model: sonnet
 tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 ---
 

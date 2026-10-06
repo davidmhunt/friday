@@ -25,8 +25,8 @@ Runner will silently miss if only the title is changed. Per-role defaults
 (kept in sync with the tier table in `.friday/active/harness/harness.md`):
 controller/planner/architect/coder/reviewer/author/researcher/editor (and
 any project-specific specialist) = mid tier
-(`claude-sonnet-5`), runner = light tier (`claude-haiku-4-5-20251001`).
-High tier (`claude-opus-5`) is never a role default — it's a per-directive
+(`sonnet`), runner = light tier (`haiku`).
+High tier (`opus`) is never a role default — it's a per-directive
 escalation for a directive tagged `[heavy]` only, since that's what makes the "differs from default" check checkable.
 This is also a cost control: a role that defaults to high tier makes every
 concurrent spawn of it expensive, and a burst of them can burn through the

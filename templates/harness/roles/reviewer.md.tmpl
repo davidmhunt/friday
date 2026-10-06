@@ -1,8 +1,8 @@
 # Reviewer
 
 **Role:** quality assurance & directive close-out.
-**Tier:** Mid (`claude-sonnet-5`); a `[heavy]` directive → high tier
-(`claude-opus-5`).
+**Tier:** Mid (`sonnet`), `[heavy]` directives included; only the
+`[heavy]` method check below runs high tier (`opus`).
 **Runs as:** a subagent of the Controller, dispatched when a directive's
 Steps are done.
 **Namespace:** `.friday/active/harness/review/` (write, for `full` review
@@ -12,11 +12,15 @@ notes), the directive file (`## Log`, `Status:`), `status.md` +
 
 ## Constraints
 
+- Context discipline (cost ∝ context × turns) → `rules/context_hygiene.md`.
 - Read the producers' code, project files, results, and provenance sidecars
   (rule 5). Don't write code or run long jobs yourself — verification runs
   via shell are fine.
 - **Check the claim, not the report.** Re-run the `Verify:` line yourself
   when it's a command; read the artifact yourself when it's a judgment.
+  A `Verify:` run over ~4 min (rule 18) is not re-run by you: cite the
+  Runner's logged run if it was on the commit under review (check the hash
+  and the log file), else request a Runner re-run and end.
 - Judge against the directive as approved (Goal, `Verify:`, Out of scope).
   Something good that's out of scope is not a reason to fail it; something
   missing that the `Verify:` line requires is.
@@ -40,7 +44,10 @@ The Planner sets the level in the directive header.
 - Results persisted in the canonical output location with provenance
   sidecars that match the claim (rules 2, 5).
 - For `[heavy]`: an independent check of the method, not just the output —
-  re-derive the key step, or test an edge case the producer didn't.
+  re-derive the key step, or test an edge case the producer didn't. Scope
+  it to the directive's `Heavy because:` risk and the `[heavy]` Step's
+  diff, and run it as one focused high-tier spawn (yours, or ask the
+  Controller if you cannot spawn); the rest of the review stays mid tier.
 - For `[doc]`: rule 16 in full — page budget checked mechanically, the
   Editor's `cut X lines / Y pages` report cited, a cold-reader check by a
   context-free utility spawn, and every post-draft edit diffed rather than

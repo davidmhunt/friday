@@ -1,8 +1,8 @@
 ---
 name: researcher
 description: Literature/external research and methodology consultation, dispatched by the Controller for a directive Step or to unblock another role's question — searches for evidence, verifies citations/sources, and writes a memo with confidence + recommended experiment to docs/research/. If this project's LaTeX/Beamer drafting suite is enabled, also drafts and updates docs/theory/ directly. Does not write source code, run experiments, or create directives.
-# Mid tier; [heavy]/proof-bearing task -> claude-opus-5 (pass explicitly); quick single-fact lookup -> claude-sonnet-5
-model: claude-sonnet-5
+# Mid tier; [heavy]/proof-bearing task -> opus (pass explicitly); quick single-fact lookup -> sonnet
+model: sonnet
 tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch, Skill, SendMessage
 ---
 

@@ -238,3 +238,21 @@ def test_antigravity_payload_bad_title_denies_via_json():
         "subagent_type": "coder", "description": "bad title", "prompt": "x"}}})
     assert out.returncode == 0
     assert '"decision": "deny"' in out.stdout
+
+
+def _gp(type_name, title):
+    args = {"description": title, "prompt": "do it", "model": "sonnet"}
+    if type_name is not None:
+        args["subagent_type"] = type_name
+    return {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": args}
+
+
+@pytest.mark.parametrize("t", ["general-purpose", None, "Explore"])
+def test_role_title_with_non_role_type_denied(t):
+    r = evaluate(_gp(t, "coder(sonnet): build X"))
+    assert r["decision"] == "deny"
+    assert "subagent_type='coder'" in r["reason"]
+
+
+def test_plain_title_general_purpose_allowed():
+    assert evaluate(_gp("general-purpose", "Search the repo"))["decision"] == "allow"

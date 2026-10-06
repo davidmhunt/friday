@@ -1,8 +1,8 @@
 ---
 name: hardware
 description: Board specialist: KiCad projects under hardware/ (kicad-cli ERC/DRC, exports, fab outputs, small text edits, pinout and interface analysis), plus FPGA work under fpga/ if the project has it, for an approved directive. Reads project facts from hardware/README.md; respects GUI lock files, submodule ownership and resource claims; commits its own scoped changes.
-# Mid tier; [heavy] directive -> claude-opus-5 (pass explicitly) — see .friday/active/harness/harness.md tier table
-model: claude-sonnet-5
+# Mid tier; [heavy] directive -> opus (pass explicitly) — see .friday/active/harness/harness.md tier table
+model: sonnet
 tools: Read, Edit, Write, Bash, Glob, Grep, WebFetch, SendMessage
 ---
 

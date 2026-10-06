@@ -57,8 +57,12 @@ You talk to one agent, the Controller. Everything else runs as its subagents.
 ### Start a session
 
 ```bash
+cd <project root>   # must be the project root, not a parent directory
 claude --agent controller
 ```
+
+Launching from elsewhere hides the harness agent types and hooks; the
+Controller stops and asks you to restart if it detects this.
 
 Or open a normal session and say "you are the controller"; under
 Antigravity, invoke the `controller` agent. It must be the **top-level**

@@ -5,6 +5,38 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.19.0
+
+**Token efficiency.** An overnight two-loop run spent ~94% of its tokens
+re-reading context (cache reads + writes), not producing output. Fixes target
+the causes. Re-render `harness.md`, `roles/reviewer.md`, `roles/researcher.md`,
+`roles/author.md` with `--force-materialize`; port the new AGENTS.md trigger
+row by hand.
+
+- **Rule 17, context hygiene** (`rules/context_hygiene.md`, new): grep then
+  read ranges, filter build/test output, `git diff --stat` before per-file
+  diffs, never Read images/transcripts/tool-result dumps. The Controller
+  dispatches one fresh worker per directive Step, with the handoff in the
+  directive Log, instead of one worker per directive. It also restarts or
+  `/compact`s between directives.
+- **Rule 18, long runs go to a Runner** (`rules/monitoring.md` §Long runs):
+  builds, full suites, benches and hardware runs expected to take more than
+  ~4 min are logged as a `Run request` and handed to a light-tier Runner. A
+  big-context worker no longer waits past the ~5-min prompt-cache lifetime.
+  The Planner writes runs as Runner Steps, and the Reviewer cites the
+  Runner's logged run instead of re-running it.
+- **`[heavy]` is scarce.** It needs a `Heavy because:` line, prefers tagging
+  one Step, and has a soft budget of about 1 in 4 directives per goal, which
+  the Controller flags at approval. Reviews of heavy work stay mid tier, with
+  one focused high-tier check on the named risk.
+- **Role spawns.** The Controller's session start now checks that the role
+  agent types are loaded. A Controller launched outside the project root
+  silently got only `general-purpose`, with no role models, tool allowlists
+  or spawn hook. `check_agent_spawn.py` now denies a role-titled spawn whose
+  `subagent_type` is not that role (4 new tests, 67 total).
+- **Claude model aliases.** Agent frontmatter and the tier table use
+  `sonnet` / `opus` / `haiku` instead of pinned IDs.
+
 ## v0.18.1
 
 **Docs audit and spawn-hook fix.** No layout or manifest changes; re-running

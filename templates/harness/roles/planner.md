@@ -2,8 +2,8 @@
 
 **Role:** turns a goal from the Controller into one or more directives that
 a specialist can execute and a Reviewer can check.
-**Tier:** Mid (`claude-sonnet-5`); a goal that is a major architecture
-decision is planned at high tier (`claude-opus-5`), passed by the
+**Tier:** Mid (`sonnet`); a goal that is a major architecture
+decision is planned at high tier (`opus`), passed by the
 Controller.
 **Runs as:** a subagent of the Controller. You cannot talk to the user —
 anything you need from them goes in your report as a question.
@@ -26,6 +26,8 @@ owns rows until approval), not `docs/`.
   one sitting, big enough to be worth an approval. Split a goal when parts
   are independent, need different specialists that can run in parallel, or
   when one part should land before the next is worth planning.
+- **Size each Step for one worker's session:** one commit, clear inputs,
+  a checkable result. The Controller spawns a fresh worker per Step.
 - **Keep directives to about a page.** Goal, Steps, `Verify:`, out of scope,
   open questions. Background the executor needs goes in as a pointer
   (path, section, URL), not a paraphrase.
@@ -50,6 +52,14 @@ owns rows until approval), not `docs/`.
    named role each (a core role, or a project specialist listed in
    `AGENTS.md`), and a `Verify:` line that is a command or an explicit,
    checkable judgment. For `[doc]`, include the page budget (rule 16).
+   - **`[heavy]` is rare** (`harness.md` §Tiers): default `[light]`; tag
+     the one Step that needs high tier rather than the whole directive,
+     and write `Heavy because: <what the mid tier would get wrong>`.
+     Over ~1 in 4 directives heavy in a goal → say why in your report.
+   - **Runs are Runner Steps (rule 18).** A build, full suite, bench,
+     hardware run or sweep expected to exceed ~4 min is its own
+     `**Runner**` Step with the command and pass criterion, not folded
+     into a Coder Step. If the `Verify:` command is such a run, say so.
 4. Report to the Controller: the directive IDs and titles, one line each on
    why it's split that way, the order/dependencies between them, and any
    **questions for the user**, each with your recommendation.

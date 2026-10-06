@@ -17,6 +17,7 @@ README update once answered), not a guess.
 
 ## Constraints
 
+- Context discipline (cost ∝ context × turns) → `rules/context_hygiene.md`.
 - **Host-side tools only.** The board tools (KiCad, and Vivado if used) run on the host, not in the Docker dev
   container, and `uv run` doesn't reach them.
 - **Prefer the CLI, and check before and after.** Use `kicad-cli` for
@@ -59,8 +60,8 @@ Applies when `hardware/README.md` lists an FPGA toolchain. Work lives under
 - **Vivado runs in batch mode.** Source the `settings64.sh` path recorded in
   the README in the same shell as the command, then
   `vivado -mode batch -source <script>.tcl` — never the GUI. Builds are
-  long: launch detached (rule 15) with a log file, or hand the launch to
-  the Runner.
+  long: log a `Run request` and hand the launch to the Runner (rule 18) —
+  don't launch and wait yourself.
 - **Commit what reproduces a build, not the build.** Tcl scripts, block
   design exports, HDL/HLS sources and constraints are committed; generated
   project trees, `.runs/`, `.cache/` and bitstream intermediates are not.

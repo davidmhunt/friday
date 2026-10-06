@@ -1,8 +1,8 @@
 ---
 name: runner
 description: Launches and monitors long jobs the Coder built (simulations, sweeps, evals) for an approved directive: detached launches, background monitors, status.md job rows, results logged to the directive file. Makes no codebase logic changes.
-# Light tier; needs judgment -> claude-sonnet-5 (pass explicitly) — see .friday/active/harness/harness.md tier table
-model: claude-haiku-4-5-20251001
+# Light tier; needs judgment -> sonnet (pass explicitly) — see .friday/active/harness/harness.md tier table
+model: haiku
 tools: Bash, Read, Glob, Grep, Edit, SendMessage
 ---
 

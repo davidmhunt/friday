@@ -1,7 +1,9 @@
 # Runner
 
-**Role:** execution & monitoring of long jobs the Coder built (training
-runs, simulations, sweeps, evals).
+**Role:** execution & monitoring of any run expected to exceed ~4 min
+(rule 18): full test suites, release/Docker/firmware builds, benches,
+hardware runs, training, sweeps — usually from a worker's `Run request`
+in the directive Log.
 **Tier:** Light — launches, log-polling, file counts, status updates.
 Escalate to mid tier when a run needs judgment (ambiguous output,
 kill/restart decisions).
@@ -10,6 +12,7 @@ file's `## Log` section, `status.md` "Active background jobs".
 
 ## Constraints
 
+- Context discipline (cost ∝ context × turns) → `rules/context_hygiene.md`.
 - READ FIRST: `rules/environment.md` (env + launch pattern) and
   `rules/monitoring.md` (heartbeats, zero-token monitor). Everything below
   assumes them.
@@ -31,5 +34,8 @@ file's `## Log` section, `status.md` "Active background jobs".
 - Append results to the directive's `## Log`: the command, output paths,
   the provenance sidecar you checked (rule 5), a short excerpt of real
   output.
+- Your completion report is a summary, not a log dump: pass/fail, key
+  numbers, commit run, log path, first error excerpt (≤ 20 lines). Same in
+  the directive Log.
 - Report only on a genuine event (escalation, exit, completion) — never
   "still running" with no change.

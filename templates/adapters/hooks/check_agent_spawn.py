@@ -267,8 +267,26 @@ def evaluate(payload: dict) -> dict:
         prompt = spec["prompt"]
         model = spec["model"]
 
-        # Utility spawns (e.g. search, bash helpers, etc.) are exempt
+        # Wrong-type guard: a `role(model): task` title for a harness role
+        # spawned as general-purpose/missing/any non-role type means the role's
+        # agent file (tool allowlist, model, harness preamble) is being
+        # bypassed. Deny (exit 2) rather than ask: the title is an unambiguous
+        # statement of intent and utility spawns never use a role-shaped title.
+        # NOTE: this cannot catch a session launched outside the project root --
+        # the hook (and the agent types) are not loaded there; the Controller's
+        # "Session start check" covers that case.
         if type_name not in ALL_HARNESS_ROLE_TYPES:
+            m = re.match(r"^([a-z][a-z0-9_-]*)\([^)]+\):\s+\S", role_title)
+            if m and m.group(1) in ALL_HARNESS_ROLE_TYPES:
+                return _deny(
+                    f"Spawn title {role_title!r} names harness role {m.group(1)!r} but "
+                    f"subagent_type is {type_name or '(missing)'!r}. Spawn with "
+                    f"subagent_type={m.group(1)!r} so the role's agent file applies "
+                    "(tools, model, harness preamble). If that type is not available, "
+                    "the session was launched outside the project root: stop and ask "
+                    "the user to restart with `cd <project root> && claude --agent controller`."
+                )
+            # Utility spawns (e.g. search, bash helpers, etc.) are exempt
             continue
 
         base_role = get_base_role(type_name)

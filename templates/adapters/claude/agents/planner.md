@@ -1,8 +1,8 @@
 ---
 name: planner
 description: Scopes a goal handed over by the Controller into one or more directive files (plans/directives/<ID>.md, Status: proposed) with Steps, a Verify line, tier and review level; returns them plus any questions for the user. Reads code and docs to scope well but never edits them, and never approves its own directives.
-# Mid tier; a goal that is a major architecture decision -> claude-opus-5 (pass explicitly) — see .friday/active/harness/harness.md tier table
-model: claude-sonnet-5
+# Mid tier; a goal that is a major architecture decision -> opus (pass explicitly) — see .friday/active/harness/harness.md tier table
+model: sonnet
 tools: Read, Grep, Glob, Edit, Write, Bash, SendMessage
 ---
 

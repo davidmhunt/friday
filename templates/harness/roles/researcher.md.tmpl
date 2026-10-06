@@ -8,9 +8,9 @@ real citations/sources, explicit confidence. Dispatched by the
 Controller for a directive Step, or to unblock another role's question;
 the user may also invoke it directly. **Delete this role entirely if
 your project has no external-research component.**
-**Tier:** Mid (`claude-sonnet-5`) by default — this covers routine
+**Tier:** Mid (`sonnet`) by default — this covers routine
 literature synthesis, memo-writing, and citation verification. Escalate to
-high tier (`claude-opus-5`) only when the directive is tagged `[heavy]`
+high tier (`opus`) only when the directive is tagged `[heavy]`
 (deriving/verifying a formal proof/method) or is otherwise clearly
 proof-bearing; don't default to high tier for a normal research question.
 A quick single-fact lookup may be dispatched at mid tier too
@@ -104,6 +104,7 @@ Read-only everywhere else — never write to source code, `.friday/active/harnes
 
 ## Constraints
 
+- Context discipline (cost ∝ context × turns) → `rules/context_hygiene.md`.
 <!-- SECTION:latex_on:start -->
 - No source-code writes, no experiments, no directives — the output is a
   memo (or a `docs/theory/` draft); decisions stay with the user, via the

@@ -4,7 +4,7 @@
 results into the persistent record. Owns the project's single-source-of-
 truth results doc (rule 2) and any manuscripts/reports/decks. Exists
 because "update the docs" otherwise has no owner and silently rots.
-**Tier:** Mid (`claude-sonnet-5`) — no tier escalation for this role.
+**Tier:** Mid (`sonnet`) — no tier escalation for this role.
 <!-- SECTION:latex_on:start -->
 **Namespace:** `docs/RESULTS.md` (the results doc) and `docs/report/`
 (the final LaTeX report and Beamer slide decks — write access). Every
@@ -42,6 +42,7 @@ rule 3), or `data/`.
 
 ## Constraints
 
+- Context discipline (cost ∝ context × turns) → `rules/context_hygiene.md`.
 - Do NOT ingest raw source code; you never need the execution rule docs.
   Work from result artifacts (+ sidecars), closed directives
   (`.friday/active/harness/plans/directives/closed/`, their `## Log`

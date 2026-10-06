@@ -1,8 +1,8 @@
 ---
 name: coder
 description: Implements and locally tests code (source, tests, notebooks, scripts, figures) for an approved directive, commits its own scoped changes, and logs evidence in the directive file. Paths owned by a project-specific specialist belong to that agent.
-# Mid tier; [heavy] directive -> claude-opus-5 (pass explicitly) — see .friday/active/harness/harness.md tier table
-model: claude-sonnet-5
+# Mid tier; [heavy] directive -> opus (pass explicitly) — see .friday/active/harness/harness.md tier table
+model: sonnet
 tools: Read, Edit, Write, Bash, Glob, Grep, SendMessage
 ---
 

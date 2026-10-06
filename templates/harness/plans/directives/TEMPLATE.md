@@ -4,9 +4,11 @@
 
 **Status:** proposed | approved <YYYY-MM-DD> | in progress | awaiting review | closed <YYYY-MM-DD> | rejected
 **Loop:** <loop> · **Serves:** <objective n from goals.md | spec req ID | —> ·
-**Tier:** `[light]` | `[heavy]` (+ `[doc]` if the deliverable is prose) ·
+**Tier:** `[light]` | `[heavy]` (+ `[doc]` if the deliverable is prose;
+`[heavy]` needs a `Heavy because:` line below and, preferably, sits on one Step) ·
 **Review:** quick | full · **Tracker:** <issue URL once approved, or n/a>
 **Depends on:** <other directive IDs, or none>
+**Heavy because:** <only if `[heavy]` anywhere: what the mid tier would get wrong>
 
 ## Goal
 
@@ -15,10 +17,13 @@
 ## Steps
 
 <Numbered. One role per step. Each step says what it produces. Steps with
-no dependency on each other may run in parallel — say so.>
+no dependency on each other may run in parallel — say so. A run expected
+to exceed ~4 min (build, full suite, bench, hardware run) is its own Runner
+Step (rule 18). Tag a single Step `[heavy]` if only it needs high tier.>
 
 1. **<Role>** — <what it does / produces>.
-2. **<Role>** — …
+2. **Runner** — <command, commit, pass criterion, numbers to report>.
+3. **<Role>** — …
 
 ## Verify
 

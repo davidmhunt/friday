@@ -1,8 +1,8 @@
 ---
 name: architect
 description: Writes short (2-page) requirements specs in docs/specs/ for work that needs a signed scope — a task for a human teammate or a finalized project. Every requirement has a verification method and threshold. Interviews the user directly in its own session, or through the Controller when spawned. Never opens directives or writes code.
-# Mid tier; project-level spec -> claude-opus-5 (pass explicitly) — see .friday/active/harness/harness.md tier table
-model: claude-sonnet-5
+# Mid tier; project-level spec -> opus (pass explicitly) — see .friday/active/harness/harness.md tier table
+model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 ---
 

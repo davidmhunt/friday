@@ -1,7 +1,39 @@
-# Monitoring & Numerical Guards (harness rules 7 + 11 — full detail)
+# Monitoring & Numerical Guards (harness rules 7, 11, 18 — full detail)
 
 Read before launching, checking on, or trusting any long-running job or
 monitor.
+
+## Long runs go to a Runner (rule 18 — full text)
+
+**Why.** The prompt cache expires after ~5 min idle. An agent that sits
+through a 20-min build re-writes its whole context (often 300k+ tokens) on
+the next turn — every wait costs a full context rewrite. A Runner's context
+is small and light tier, so it waits cheaply.
+
+**Threshold.** A command expected to take **> ~4 min** — full or
+integration test suites, release/clean builds, Docker image or firmware
+builds, benchmarks, hardware/bench runs, training, eval sweeps — is a long
+run. A worker (Coder, specialist, Reviewer) does not launch-and-wait on it.
+Short checks (one test file, an incremental build, a lint, a dry-run) stay
+with the worker. Unsure? Time a short slice or assume long.
+
+**Handoff.**
+1. **Worker:** commits, then appends a `Run request` to the directive Log —
+   exact command, commit hash, expected duration, pass criterion, numbers
+   or lines to extract — and ends its turn reporting `handoff: Runner`. It
+   does not wait, poll, or `sleep`.
+2. **Controller:** spawns a Runner (light tier) on the request.
+3. **Runner:** launches detached (rule 15), arms a zero-token monitor (below)
+   as a background task, and reports on completion: pass/fail, key numbers,
+   log path, first error excerpt (≤ 20 lines) — into the directive Log.
+4. **Controller:** on pass, dispatch the next Step or the Reviewer (which
+   may cite the Runner's logged run for that commit instead of re-running
+   it); on fail, spawn a **fresh** worker pointed at the Log entry and the
+   log path — not a resume of the old big-context one.
+
+**If a worker must wait anyway** (no Runner can take it, or the result is
+due within a few minutes), each blocking wait is ≤ ~4 min per turn, so the
+cache stays warm; past that, hand off.
 
 ## Rule 7 — Monitor heartbeat (full text)
 
@@ -53,10 +85,11 @@ This costs zero agent tokens for the entire monitoring lifetime.
 
 A live agent loop / blocking wait is still right for what the script can't
 do: a fast-changing event in the next few minutes where a coarse polling
-floor is too coarse, or anything needing real interpretation. What still
+floor is too coarse, or anything needing real interpretation — held by a
+Runner, never by a big-context worker (rule 18 above). What still
 needs an actual Runner: launching a run with the right flags and confirming
-it started healthy, deciding what to do about an escalation, and
-running/summarizing multi-item eval sweeps.
+it started healthy, summarizing the result, deciding what to do about an
+escalation, and running/summarizing multi-item eval sweeps.
 
 ## Hard MUSTs when monitoring
 

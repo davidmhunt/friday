@@ -32,6 +32,8 @@ open `harness.md` yourself:
 | 14 | *(project-specific — see below)* | — |
 | 15 | Detached background launches — never a bare `cmd &` in an interactive shell | `.friday/active/harness/rules/environment.md` |
 | 16 | Document budgets & concision for `[doc]` directives and specs | `.friday/active/harness/rules/document_budgets.md` |
+| 17 | Context hygiene — grep then read ranges, filter build/test output, one worker per Step | `.friday/active/harness/rules/context_hygiene.md` |
+| 18 | Long runs (> ~4 min) go to a Runner; no big-context agent waits on a job | `.friday/active/harness/rules/monitoring.md` |
 
 > [!WARNING]
 > **Rules 10 and 14 vary per project.** Both are gated on this project's

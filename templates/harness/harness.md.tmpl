@@ -28,7 +28,7 @@ read the doc. Every rule should exist because of a real incident (see
 | **Planner** | Scopes a goal into one or more directives. Called by the Controller. | Via the Controller |
 | **Architect** | Writes a short requirements spec (≤ 2 pages) when work needs a signed scope, e.g. for a human teammate or a finalized project. | Via the Controller, or directly if the user opens a session with it |
 | **Coder** | Code: source, `tests/`, `notebooks/`, scripts. | No |
-| **Runner** | Launches and monitors long jobs the Coder built. | No |
+| **Runner** | Launches, monitors and summarizes any run over ~4 min — builds, test suites, benches, hardware runs, training (rule 18). | No |
 | **Researcher** | Literature, datasheets, methodology memos; drafts `docs/theory/` if the LaTeX suite is on. | No |
 | **Author** | Folds closed milestones into the results doc (and `docs/report/` if the LaTeX suite is on). | No |
 | **Editor** | Subtractive pass on prose deliverables (rule 16). | No |
@@ -116,26 +116,31 @@ and report the stale reference.
 
 Tiers are relative — high/mid/light means "the strongest model you're
 willing to spend here" down to "the cheapest one that can do this." High =
-`claude-opus-5`, Mid = `claude-sonnet-5`, Light = `claude-haiku-4-5-20251001`.
+`opus`, Mid = `sonnet`, Light = `haiku`.
 
 | Role | Tier | Model | Escalation |
 |------|------|-------|-----------|
-| Controller | Mid | `claude-sonnet-5` | user may run it high tier for a large multi-loop session |
-| Planner | Mid | `claude-sonnet-5` | goal is a major architecture decision → high tier |
-| Architect | Mid | `claude-sonnet-5` | project-level spec → high tier |
-| Coder | Mid | `claude-sonnet-5` | directive tagged `[heavy]` → high tier |
-| Project specialists | Mid | `claude-sonnet-5` | directive tagged `[heavy]` → high tier |
-| Runner | Light | `claude-haiku-4-5-20251001` | needs judgment → mid tier |
-| Reviewer | Mid | `claude-sonnet-5` | directive tagged `[heavy]` → high tier |
-| Researcher | Mid | `claude-sonnet-5` | `[heavy]` (proof-bearing) → high tier |
-| Author | Mid | `claude-sonnet-5` | — |
-| Editor | Mid | `claude-sonnet-5` | document tagged `[heavy]` → high tier |
+| Controller | Mid | `sonnet` | user may run it high tier for a large multi-loop session |
+| Planner | Mid | `sonnet` | goal is a major architecture decision → high tier |
+| Architect | Mid | `sonnet` | project-level spec → high tier |
+| Coder | Mid | `sonnet` | step/directive tagged `[heavy]` → high tier |
+| Project specialists | Mid | `sonnet` | step/directive tagged `[heavy]` → high tier |
+| Runner | Light | `haiku` | needs judgment → mid tier |
+| Reviewer | Mid | `sonnet` | stays mid for `[heavy]`; only the method check of the named risk runs high tier |
+| Researcher | Mid | `sonnet` | `[heavy]` (proof-bearing) → high tier |
+| Author | Mid | `sonnet` | — |
+| Editor | Mid | `sonnet` | document tagged `[heavy]` → high tier |
 
 `[light]`/`[heavy]` is set by the Planner in the directive, never re-judged
 per session. `[heavy]` means deriving or verifying a formal method, or a
-major architecture decision (core pipeline or system architecture). `[doc]` marks a directive whose deliverable is prose (rule
-16). High tier is the deliberate exception, spent per directive, not per
-role.
+major architecture decision (core pipeline or system architecture) —
+not "large", "important" or "touches many files". It must carry a
+one-line `Heavy because:` naming what the mid tier would get wrong; no
+line, no tag. Prefer tagging the one Step that needs it (`[heavy]` on that
+Step) over the whole directive. Soft budget: ≤ ~1 in 4 directives of a goal
+`[heavy]`; over that, the Controller says so to the user at approval.
+`[doc]` marks a directive whose deliverable is prose (rule 16). High tier
+is the deliberate exception, spent per step, not per role.
 
 ## Concurrency (Controller)
 
@@ -333,6 +338,19 @@ via `.friday/setup/SETUP.md`; keep the invariant.
     additive. **Trigger:** working, planning or reviewing a
     `[doc]` directive, or writing a spec →
     `.friday/active/harness/rules/document_budgets.md`.
+17. **Context hygiene.** Cost scales with context × turns: grep then read
+    ranges, filter command output, never Read images/transcripts, one Step
+    per worker session. **Trigger:** session start for any role that reads
+    files or runs commands → `.friday/active/harness/rules/context_hygiene.md`.
+18. **Long runs go to a Runner.** A command expected to take > ~4 min
+    (full test suites, release or Docker/firmware builds, benches, hardware
+    runs, training, sweeps) is never launch-and-waited by a big-context
+    worker: an idle wait past the ~5-min prompt-cache lifetime re-writes its
+    whole context. The worker logs a `Run request` and ends; a light-tier
+    Runner launches, monitors and summarizes; a fresh worker acts on a
+    failure. Any unavoidable wait stays ≤ ~4 min per turn. **Trigger:** any
+    build, test suite, bench or run you expect to exceed ~4 min →
+    `.friday/active/harness/rules/monitoring.md` §Long runs.
 
 ## Execution
 
