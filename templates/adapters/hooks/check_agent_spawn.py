@@ -59,10 +59,10 @@ HEAVY_VARIANTS = {
 ALL_HARNESS_ROLE_TYPES = HARNESS_ROLES | set(VARIANT_TO_BASE.keys())
 
 TIER_TABLE = (
-    "Controller=mid (inherit) | Planner=mid (inherit) ([heavy] task -> planner-heavy/pro) | "
+    "Controller=mid (inherit) | Planner=high (opus) (small/routine goal -> sonnet) | "
     "Coder=mid (inherit) ([heavy] task -> coder-heavy/pro) | "
     "Runner=light (flash) (judgment -> runner-judgment/inherit) | "
-    "Reviewer=mid (inherit) ([heavy] task -> reviewer-heavy/pro) | Author=mid (inherit) | "
+    "Reviewer=high (opus) (trivial quick review -> sonnet) | Author=mid (inherit) | "
     "Researcher=mid (inherit) ([heavy]/proof-bearing task -> researcher-heavy/pro; "
     "quick lookup -> researcher-quick/inherit) | "
     "Editor=mid (inherit) ([heavy] doc -> editor-heavy/pro) | "

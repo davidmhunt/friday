@@ -1,8 +1,8 @@
 ---
 name: reviewer
 description: Closes out a directive: re-runs its Verify line at the directive's review level (quick or full), checks the producers' commits and artifacts, verifies research memos, then closes the directive (status_history, tracker issue, move to closed/) or bounces it with specific gaps. Does not write code or run long jobs.
-# Mid tier; [heavy] directive -> opus (pass explicitly) — see .friday/active/harness/harness.md tier table
-model: sonnet
+# High tier by default (opus) for review quality; a trivial `quick` review may pass sonnet explicitly — see .friday/active/harness/harness.md tier table
+model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, WebFetch, SendMessage
 ---
 

@@ -160,7 +160,12 @@ discover the same directory. List the role in `AGENTS.md`'s **Project
 specialists** row. A worked example (a KiCad board role) is in
 `.friday/templates/examples/project_roles/`.
 
-**Tiers.** Every role has a default tier (light/mid/high). A directive's
+**Tiers.** Every role has a default tier (light/mid/high). Planner and
+Reviewer default to high tier (`opus`) because plan and review quality gate
+everything downstream; the Controller may pass `sonnet` explicitly for a small
+or routine goal or a trivial `quick` review. Since a high-tier role counts
+toward the concurrency cap (2 subagents at once), expect Planner/Reviewer
+spawns to take a slot. A directive's
 `[heavy]` tag, set once by the Planner (formal derivation/proof or a major
 architecture decision, never "this looks hard"), moves whichever role
 executes it to a high-tier model for that directive. `[doc]` marks a prose

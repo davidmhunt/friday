@@ -5,6 +5,24 @@
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
      atomic step. -->
 
+## v0.20.0
+
+**Planner and Reviewer default to high tier (`opus`).** Plan and review
+quality gate every directive, so the two roles now run on the strongest model
+by default instead of escalating only for `[heavy]`. Re-render `harness.md`
+and `roles/reviewer.md` with `--force-materialize` (`roles/planner.md` and the
+`.claude/agents/` adapters are symlinks and update on submodule bump).
+
+- `adapters/claude/agents/{planner,reviewer}.md`: `model: opus`.
+- Tier table (`harness.md`) and role docs: Planner/Reviewer = High / `opus`;
+  escalation column becomes a downgrade path (small/routine goal, trivial
+  `quick` review → `sonnet`, passed explicitly). The Reviewer's `[heavy]`
+  method check no longer needs a separate high-tier spawn.
+- `check_agent_spawn.py` advisory tier table updated to match.
+- `USER_GUIDE.md` Tiers paragraph documents the new defaults and their effect
+  on the concurrency cap (high-tier spawns count toward the "2 at once" limit).
+- Antigravity adapters unchanged (`planner-heavy` / `reviewer-heavy` remain).
+
 ## v0.19.0
 
 **Token efficiency.** An overnight two-loop run spent ~94% of its tokens

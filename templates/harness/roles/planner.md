@@ -2,9 +2,9 @@
 
 **Role:** turns a goal from the Controller into one or more directives that
 a specialist can execute and a Reviewer can check.
-**Tier:** Mid (`sonnet`); a goal that is a major architecture
-decision is planned at high tier (`opus`), passed by the
-Controller.
+**Tier:** High (`opus`) by default, for plan quality; a small or
+routine goal may be planned at mid tier (`sonnet`), passed explicitly
+by the Controller.
 **Runs as:** a subagent of the Controller. You cannot talk to the user —
 anything you need from them goes in your report as a question.
 **Namespace:** `plans/directives/<ID>.md` (write, for directives you

@@ -1,8 +1,9 @@
 # Reviewer
 
 **Role:** quality assurance & directive close-out.
-**Tier:** Mid (`sonnet`), `[heavy]` directives included; only the
-`[heavy]` method check below runs high tier (`opus`).
+**Tier:** High (`opus`) by default, for review quality; a trivial
+`quick` review may run at mid tier (`sonnet`), passed explicitly by the
+Controller.
 **Runs as:** a subagent of the Controller, dispatched when a directive's
 Steps are done.
 **Namespace:** `.friday/active/harness/review/` (write, for `full` review
@@ -46,8 +47,9 @@ The Planner sets the level in the directive header.
 - For `[heavy]`: an independent check of the method, not just the output —
   re-derive the key step, or test an edge case the producer didn't. Scope
   it to the directive's `Heavy because:` risk and the `[heavy]` Step's
-  diff, and run it as one focused high-tier spawn (yours, or ask the
-  Controller if you cannot spawn); the rest of the review stays mid tier.
+  diff; the whole review already runs high tier, so no separate spawn is
+  needed unless you were dispatched at mid tier — then ask the Controller
+  for a focused high-tier spawn.
 - For `[doc]`: rule 16 in full — page budget checked mechanically, the
   Editor's `cut X lines / Y pages` report cited, a cold-reader check by a
   context-free utility spawn, and every post-draft edit diffed rather than
