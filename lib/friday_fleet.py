@@ -369,3 +369,19 @@ def launch_line(node, goal: str, worktree: str, master_host: str, directives: li
         "--name", q(f"{goal}.{node.name}"), "--plugin-dir", q(node.plugin_dir),
         "--append-system-prompt", q(report_text(goal, report_to)),
         q(run_text(goal, directives))])
+
+
+def dispatches_path() -> Path:
+    """`dispatches.jsonl` on the master, under XDG_STATE_HOME (default ~/.local/state)."""
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "friday" / "dispatches.jsonl"
+
+
+def record_dispatch(rec: dict) -> Path:
+    """Append one JSON line describing a dispatch. Master-side only; touches no goal or directive file."""
+    import json
+    p = dispatches_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a") as f:
+        f.write(json.dumps(rec, sort_keys=True) + "\n")
+    return p

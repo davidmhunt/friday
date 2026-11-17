@@ -346,3 +346,50 @@ def test_dry_run_prints_launch_and_no_report_to(env):
     env.nodes.write_text(env.nodes.read_text().replace('report_to = "boss"\n', ""))
     rc, out, err = dispatch(env, "--dry-run")
     assert rc == 20 and "report_to" in err
+
+
+# ---- step 4: the dispatch record on the master ----
+FAKE_SSH_RUN = """#!/bin/sh
+for a; do host=$a; shift; [ "$1" = bash ] && break; done
+cat > "$FAKE_DIR/stdin-$host-$$"
+cat "$FAKE_DIR/stdin-$host-$$" >> "$FAKE_DIR/all-$host"
+echo FRIDAY_REACH ok
+echo "FRIDAY_LOAD 0"
+echo "FRIDAY_WORKTREE /abs/work/proj.friday/g1"
+grep -q 'refuse()' "$FAKE_DIR/stdin-$host-$$" && exit "$(cat "$FAKE_DIR/exit-$host" 2>/dev/null || echo 0)"
+exit 0
+"""
+
+
+def test_dispatch_records_jsonl_on_master_only(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_RUN)
+    state = env.tmp / "state"
+    env.env["XDG_STATE_HOME"] = str(state)
+    before = subprocess.run(["git", "status", "--porcelain"], cwd=env.repo, capture_output=True, text=True).stdout
+    rc, out, err = dispatch(env, "--node", "alfred", "--report-to", "me")
+    assert rc == 0, out + err
+    lines = (state / "friday" / "dispatches.jsonl").read_text().splitlines()
+    assert len(lines) == 1
+    rec = json.loads(lines[0])
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=env.plugin, capture_output=True, text=True).stdout.strip()
+    assert {k: rec[k] for k in rec if k != "time"} == {
+        "goal": "g1", "directives": ["g1-01", "g1-02"], "repo": "proj", "node": "alfred",
+        "tmux_session": "friday-g1", "worktree": "/abs/work/proj.friday/g1", "branch": "friday/g1",
+        "source_ref": "origin/main", "plugin_commit": commit, "report_to": "me"}
+    assert rec["time"]
+    sent = (env.fake / "all-me@alfred").read_text()
+    assert "tmux new -d -s friday-g1 -c /abs/work/proj.friday/g1" in sent
+    # a second dispatch appends; the master's tree is unchanged
+    assert dispatch(env, "--node", "alfred", "--report-to", "me")[0] == 0
+    assert len((state / "friday" / "dispatches.jsonl").read_text().splitlines()) == 2
+    assert subprocess.run(["git", "status", "--porcelain"], cwd=env.repo, capture_output=True, text=True).stdout == before
+
+
+def test_refused_or_dry_run_records_nothing(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_RUN)
+    state = env.tmp / "state"
+    env.env["XDG_STATE_HOME"] = str(state)
+    assert dispatch(env, "--node", "alfred", "--report-to", "me", "--dry-run")[0] == 0
+    (env.fake / "exit-me@alfred").write_text("31")
+    assert dispatch(env, "--node", "alfred", "--report-to", "me")[0] == 31
+    assert not (state / "friday" / "dispatches.jsonl").exists()

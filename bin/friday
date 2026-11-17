@@ -697,8 +697,29 @@ def cmd_dispatch(a) -> int:
         print(f"launch: {launch}")
         print("dry run: nothing changed on any node")
         return 0
-    print("friday: dispatch preconditions pass; the remote prepare and launch are not built yet", file=sys.stderr)
-    return 70
+    origin_url = _git_out(["remote", "get-url", "origin"], root)[1]
+    argv, stdin = ff.ssh_cmd(n, ff.prepare_script(n, a.goal, root.name, origin_url, plan["base"],
+                                                  plan["plugin_commit"]))
+    r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+    if r.returncode != 0:
+        print("\n".join(l for l in r.stdout.splitlines() if l.startswith("FRIDAY_REFUSE")) or r.stderr.strip(),
+              file=sys.stderr)
+        print(f"friday: dispatch refused on {n.name} (exit {r.returncode})", file=sys.stderr)
+        return r.returncode
+    wt_abs = next((l.split(" ", 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_WORKTREE ")), wt)
+    argv, stdin = ff.ssh_cmd(n, ff.launch_line(
+        n, a.goal, wt_abs, socket.gethostname(), plan["directives"], report_to) + "\n")
+    r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"friday: launch failed on {n.name}: {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    path = ff.record_dispatch({
+        "goal": a.goal, "directives": plan["directives"], "repo": root.name, "node": n.name,
+        "tmux_session": f"friday-{a.goal}", "worktree": wt_abs, "branch": f"friday/{a.goal}",
+        "source_ref": plan["source_ref"], "plugin_commit": plan["plugin_commit"],
+        "report_to": report_to, "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+    print(f"dispatched {a.goal} to {n.name}: tmux session friday-{a.goal}; recorded in {path}")
+    return 0
 
 
 def cmd_check(a) -> int:
