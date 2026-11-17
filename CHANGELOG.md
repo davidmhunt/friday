@@ -26,6 +26,10 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
   docs/dashboard.md.
 - Fleet: a dispatched session that lands its goal runs `friday session-end --goal <g>` and its tmux
   session closes ten seconds later; a blocked session stays open; docs/fleet.md.
+- Fleet: `friday nodes --clean <node> [--dry-run]` removes finished goals' worktrees, branches, trust
+  entries and idle sessions on a node and keeps unmerged, dirty or busy ones with a reason;
+  `friday dispatch` runs it first (a failure does not block); stray clones are reported, remove them
+  by hand; docs/fleet.md.
 - Docs: commit rules; recommendation to make squash-merge the default on GitHub
   (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
 

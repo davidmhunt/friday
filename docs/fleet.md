@@ -204,6 +204,35 @@ The node itself can also refuse (the dispatch command exits with the node's code
 | plugin | 35 | cannot check out the plugin commit at `plugin_dir` |
 | git | 36 | clone, fetch or worktree add failed |
 
+## Cleaning up finished goals
+
+Worktrees, branches and trust entries pile up on a node. Clean them with:
+
+```
+friday nodes --clean <node> [--dry-run]
+```
+
+`--dry-run` prints the plan and changes nothing. `friday dispatch` runs the same clean for the target
+node first, without a prompt, and prints what it removed. If the clean fails, dispatch says so and
+carries on.
+
+The clean looks at each worktree `<repos>/<repo>.friday/<goal>` on the node. The master decides:
+
+- **Finished**: a merged PR exists for `friday/<goal>` (`gh pr list --state merged --head
+  friday/<goal>`; squash merges are found this way, not by ancestry), or `friday/<goal>` is gone from
+  origin and the goal file in the worktree says `Status: done`. Without `gh` on the master only the
+  branch-gone rule is used, and the clean says so.
+- **Kept, with a one-line reason**: unfinished goals, dirty worktrees (tracked or untracked changes,
+  ignoring `runs/`), and goals whose `friday-<goal>` tmux session is not at an idle prompt.
+
+For each finished goal the node removes the tmux session (only if idle), the worktree (never forced),
+the local branch `friday/<goal>`, and the goal's entry under `projects` in `~/.claude.json` (other keys
+stay).
+
+Not cleaned: remote branches (turn on GitHub's "delete branch on merge"), clones, and the master's own
+checkout. A clone whose folder name differs from its origin repo name is a stray clone: the clean
+reports it and never deletes it, so remove stray clones by hand.
+
 ## The master and reports
 
 The worker reports with one message to the master's session, so the master must run with Remote Control
