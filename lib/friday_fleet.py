@@ -6,6 +6,7 @@ Registry file (TOML), first existing of: $FRIDAY_NODES, <plugin root>/nodes.toml
 """
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -428,3 +429,182 @@ def record_dispatch(rec: dict) -> Path:
     with p.open("a") as f:
         f.write(json.dumps(rec, sort_keys=True) + "\n")
     return p
+
+
+def inventory_script(node) -> str:
+    """The one remote script that inventories goal worktrees and stray clones under `node.repos`.
+
+    Read-only. Prints one line per `<repos>/<repo>.friday/<goal>` worktree:
+    `FRIDAY_WT repo=<r> goal=<g> branch=<b> head=<sha> tracked=<0|1> untracked=<0|1> session=<0|1>
+    idle=<0|1|-> goalstatus=<word|-> path=<abs path>` (paths come last, they may hold spaces) and one
+    `FRIDAY_STRAY folder=<name> origin=<repo name> path=<abs path>` per clone whose folder name
+    differs from its origin repo name. `tracked`/`untracked` ignore `runs/`. `idle` is `-` without a
+    session, else 1 when the pane's last lines show the input prompt and no busy or waiting text.
+    """
+    return f"""set -u
+REPOS={remote_path(node.repos)}
+[ -d "$REPOS" ] || {{ echo "FRIDAY_INV_EMPTY no $REPOS"; exit 0; }}
+REPOS=$(cd "$REPOS" && pwd -P)
+idle() {{
+  tail=$(tmux capture-pane -p -t "=friday-$1:" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 10) || return 1
+  [ -n "$tail" ] || return 1
+  printf '%s\\n' "$tail" | grep -qiE 'esc to interrupt|do you want to|do you trust|enter to confirm|press enter to continue|allow (this|once|always)' && return 1
+  printf '%s\\n' "$tail" | grep -qE '^[[:space:]│|]*[❯>]([[:space:]]|$)'
+}}
+for wt in "$REPOS"/*.friday/*/; do
+  wt=${{wt%/}}
+  [ -e "$wt/.git" ] || continue
+  goal=$(basename "$wt")
+  repo=$(basename "$(dirname "$wt")"); repo=${{repo%.friday}}
+  branch=$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null || echo "(detached)")
+  head=$(git -C "$wt" rev-parse --short HEAD 2>/dev/null || echo "?")
+  st=$(git -C "$wt" status --porcelain -- . ':(exclude)runs' 2>/dev/null)
+  tracked=0; untracked=0
+  printf '%s\\n' "$st" | grep -q '^[^?[:space:]]\\|^ [^?[:space:]]' && tracked=1
+  printf '%s\\n' "$st" | grep -q '^??' && untracked=1
+  session=0; idl=-
+  if tmux has-session -t "=friday-$goal" 2>/dev/null; then
+    session=1
+    if idle "$goal"; then idl=1; else idl=0; fi
+  fi
+  gs=$(sed -n 's/^Status:[[:space:]]*//p' "$wt/docs/goals/$goal.md" 2>/dev/null | head -n 1)
+  echo "FRIDAY_WT repo=$repo goal=$goal branch=$branch head=$head tracked=$tracked untracked=$untracked session=$session idle=$idl goalstatus=${{gs:--}} path=$wt"
+done
+for d in "$REPOS"/*/; do
+  d=${{d%/}}
+  case "$d" in *.friday) continue;; esac
+  [ -e "$d/.git" ] || continue
+  url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
+  name=$(basename "${{url%/}}"); name=${{name%.git}}; name=${{name##*:}}
+  [ "$name" = "$(basename "$d")" ] || echo "FRIDAY_STRAY folder=$(basename "$d") origin=$name path=$d"
+done
+"""
+
+
+def parse_inventory(text: str) -> dict:
+    """Parse `inventory_script` output into {"worktrees": [dict], "stray": [dict]}."""
+    import re
+    out = {"worktrees": [], "stray": []}
+    for line in text.splitlines():
+        for tag, key, fields in (
+                ("FRIDAY_WT ", "worktrees", ("repo", "goal", "branch", "head", "tracked", "untracked",
+                                             "session", "idle", "goalstatus", "path")),
+                ("FRIDAY_STRAY ", "stray", ("folder", "origin", "path"))):
+            if not line.startswith(tag):
+                continue
+            rest = line[len(tag):]
+            rec = {}
+            for f in fields[:-1]:
+                m = re.match(rf"{f}=(\S*)\s*", rest)
+                if not m:
+                    break
+                rec[f] = m.group(1)
+                rest = rest[m.end():]
+            else:
+                if rest.startswith("path="):
+                    rec["path"] = rest[5:]
+                    for b in ("tracked", "untracked", "session"):
+                        if b in rec:
+                            rec[b] = rec[b] == "1"
+                    if "idle" in rec:
+                        rec["idle"] = None if rec["idle"] == "-" else rec["idle"] == "1"
+                    out[key].append(rec)
+    return out
+
+
+def _slug(origin_url: str) -> str:
+    """`owner/repo` from a git remote URL (ssh, scp-style or https), else ''."""
+    u = (origin_url or "").strip().rstrip("/")
+    if u.endswith(".git"):
+        u = u[:-4]
+    u = u.replace(":", "/") if "://" not in u else u.split("://", 1)[1].split("/", 1)[-1]
+    parts = [p for p in u.split("/") if p]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else ""
+
+
+def pr_merged(origin_url: str, goal: str, run=None):
+    """True/False: does `gh pr list --state merged --head friday/<goal>` find a PR (squash merges
+    break ancestry, so never `git branch --merged`). None when gh is missing or fails."""
+    import subprocess
+    run = run or subprocess.run
+    slug = _slug(origin_url)
+    cmd = ["gh", "pr", "list", "--state", "merged", "--head", f"friday/{goal}", "--json", "number"]
+    if slug:
+        cmd[3:3] = ["-R", slug]
+    try:
+        r = run(cmd, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return bool(json.loads(r.stdout or "[]"))
+    except ValueError:
+        return None
+
+
+def branch_on_origin(origin_url: str, goal: str, run=None):
+    """True/False: does `friday/<goal>` exist on origin (`git ls-remote --heads`)? None on failure."""
+    import subprocess
+    run = run or subprocess.run
+    try:
+        r = run(["git", "ls-remote", "--heads", origin_url, f"friday/{goal}"],
+                capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return bool(r.stdout.strip())
+
+
+def decide_clean(inv: dict, origin_urls: dict, run=None, have_gh=None) -> dict:
+    """Decide on the master which inventoried worktrees to remove.
+
+    `origin_urls` maps repo name -> origin URL (the master's). Finished = a merged PR for
+    `friday/<goal>`, or (no gh, or no merged PR found) the branch is gone from origin and the goal
+    file says `done`. Anything unfinished, dirty, or with a session that is not idle is kept with a
+    one-line reason. Returns {"remove": [wt], "keep": [(wt, reason)], "notes": [str]}; each wt gets
+    "why" on removal. Without gh only the branch-gone rule applies and a note says so.
+    """
+    import shutil
+    if have_gh is None:
+        have_gh = shutil.which("gh") is not None
+    out = {"remove": [], "keep": [], "notes": []}
+    if not have_gh:
+        out["notes"].append("gh not available: using the branch-gone rule only "
+                            "(branch gone from origin and goal file says done)")
+    for wt in inv.get("worktrees", []):
+        goal = wt["goal"]
+        url = origin_urls.get(wt["repo"], "")
+        if not url:
+            out["keep"].append((wt, f"no origin known for repo {wt['repo']}"))
+            continue
+        merged = pr_merged(url, goal, run) if have_gh else None
+        if have_gh and merged is None:
+            out["notes"].append(f"gh failed for {wt['repo']}/{goal}: using the branch-gone rule")
+        why = None
+        if merged:
+            why = "PR merged"
+        else:
+            on = branch_on_origin(url, goal, run)
+            if on is None:
+                out["keep"].append((wt, "cannot tell whether friday/%s is on origin" % goal))
+                continue
+            if on:
+                out["keep"].append((wt, "unfinished: no merged PR, branch still on origin"
+                                    if have_gh and merged is False else
+                                    "unfinished: branch still on origin"))
+                continue
+            if wt.get("goalstatus") != "done":
+                out["keep"].append((wt, "branch gone from origin but goal file is not done "
+                                        f"(status {wt.get('goalstatus', '-')})"))
+                continue
+            why = "branch gone from origin, goal done"
+        if wt.get("tracked") or wt.get("untracked"):
+            out["keep"].append((wt, "dirty: uncommitted "
+                                + ("tracked changes" if wt.get("tracked") else "untracked files")))
+        elif wt.get("session") and not wt.get("idle"):
+            out["keep"].append((wt, f"session friday-{goal} is not idle"))
+        else:
+            out["remove"].append({**wt, "why": why})
+    return out
