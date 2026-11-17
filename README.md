@@ -40,7 +40,7 @@ active in this worktree, and hardware leases. See [docs/workflow.md](docs/workfl
 | `agents/` | `implementer` (Sonnet; Opus for `[heavy]` steps), `verifier` (Opus, read-only), `runner` (Haiku, long and remote runs) |
 | `hooks/` | Deny list, `./run` enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop |
 | `skills/` | `directive` (format), `hardware`, `long-jobs`, `data-artifacts` |
-| `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `land`, `release`, `check`, `parse`, `nodes` |
+| `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `land`, `release`, `check`, `parse`, `nodes`, `dispatch` |
 
 ## The goal model
 
@@ -80,10 +80,15 @@ A project adds three things (CPSL_TI_Radar is the worked example):
 Optionally a `./run` wrapper and dev container ([docs/runtime.md](docs/runtime.md)) and project
 skills under `.claude/skills/`.
 
+## Fleet
+
+A goal whose directives' `Node:` lines this machine doesn't satisfy runs on another machine with
+`friday dispatch --goal <goal>` (over Tailscale SSH, in a tmux session on the node). Registry,
+node setup and refusals: [docs/fleet.md](docs/fleet.md).
+
 ## Status
 
-v1 is in alpha. Next: fleet dispatch across machines over Tailscale, and a status page
-([design spec](docs/workflow.md#roadmap)). Migrating a v0.20 project:
+v1 is in alpha. Next: a status page ([design spec](docs/workflow.md#roadmap)). Migrating a v0.20 project:
 [docs/migrating-from-v0.md](docs/migrating-from-v0.md).
 
 ## Tests

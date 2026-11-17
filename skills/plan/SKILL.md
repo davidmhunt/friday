@@ -36,7 +36,9 @@ user approves the plan.
 4. **Ask for approval.** Show the goal and each directive's goal, steps, Verify and out-of-scope
    list in a few lines, and ask the user to approve, amend or drop each. On approval set the goal
    and its directives to `Status: approved`, re-run `friday check --goal <goal>`, and commit them
-   (message ends `Directive: <id>`; the plan commit may list several).
+   (message ends `Directive: <id>`; the plan commit may list several). If this machine does not
+   satisfy the directives' `Node:` lines, offer to run the goal elsewhere with
+   `friday dispatch --goal <goal>` (see docs/fleet.md) instead of `/friday:execute` here.
 5. **Hand off.** Tell the user how it runs: `/friday:execute <id>` for each directive, in order
    (a workflow that implements, verifies and reviews on the goal branch; the goal lands as one PR
    with `friday land --goal <goal>`). Start the first if the user said to go ahead.

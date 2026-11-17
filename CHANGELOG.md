@@ -15,6 +15,9 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
   writes the record in one commit. `/friday:execute` steps commit only tracked-file changes
   (measure-only steps write `runs/<id>/notes.md`), pass Verify and review results to one
   `friday finish`, and label progress `step n/total`, `fix n/max`.
+- Fleet: `friday nodes [--check]` and `friday dispatch --goal <g>` run a goal on another machine
+  over Tailscale SSH; `/friday:plan` offers it when this machine doesn't satisfy `Node:`;
+  docs/fleet.md.
 - Docs: commit rules; recommendation to make squash-merge the default on GitHub
   (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
 
