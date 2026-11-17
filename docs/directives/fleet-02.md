@@ -1,6 +1,9 @@
 # fleet-02: `friday dispatch <id>` starts a directive on another node and reports back
 Status: approved
+Goal: fleet
 Node: any
+Deliverable: code
+Land: goal
 Verify: uv run --with pytest pytest -q tests/test_dispatch.py && uv run --with pytest pytest -q && claude plugin validate .
 Hardware: none
 
