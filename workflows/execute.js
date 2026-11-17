@@ -170,7 +170,7 @@ for (const s of d.steps) {
   const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}/${d.steps.length}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
   if (s.heavy) opts.model = 'opus'
   const r = await agent(
-    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch friday/${id}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check, then commit (last line \`Directive: ${id}\`).`,
+    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check, then commit (last line \`Directive: ${id}\`).`,
     opts,
   )
   if (!r) return await block(`step ${s.n} agent did not return`)
