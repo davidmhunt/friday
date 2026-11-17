@@ -246,3 +246,41 @@ def test_clean_dry_run_changes_nothing(tmp_path):
     assert a.exists() and cfg.read_text() == before and (tmp_path / "friday-a.pane").exists()
     assert "kill-session" not in log.read_text()
     assert "friday/a" in subprocess.run(["git", "branch"], cwd=c, capture_output=True, text=True).stdout
+
+
+def test_run_clean_end_to_end_keeps_unmerged_reports_stray_deletes_nothing_else(tmp_path, monkeypatch):
+    """Full flow through run_clean with a fake ssh (local bash under a temp HOME) and fake gh."""
+    repos = tmp_path / "repos"
+    c = _mkclone(repos, "proj", "git@github.com:me/proj.git")
+    stray = _mkclone(repos, "odd", "git@github.com:me/other.git")
+    merged, open_, dirty = _wt(c, "merged"), _wt(c, "open"), _wt(c, "dirty")
+    (dirty / "x.txt").write_text("x")
+    cfg = _trust(tmp_path, merged, open_, dirty)
+    home = tmp_path / "home"
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    (fakebin / "gh").write_text("#!/bin/sh\nexit 0\n")  # only so shutil.which finds it; run is faked
+    (fakebin / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fakebin}{os.pathsep}{os.environ['PATH']}")
+    gh = _Run(merged=["merged", "dirty"], on_origin=["open"])
+
+    def run(cmd, **kw):
+        if cmd[0] in ("gh", "git"):
+            return gh(cmd, **kw)
+        return subprocess.run(["bash", "-s"], input=kw["input"], capture_output=True, text=True,
+                              env=dict(os.environ, HOME=str(home)))
+
+    _inventory(tmp_path, repos)  # installs the fake tmux under the temp HOME
+    # run_clean hands decide_clean no runner, so route its gh / ls-remote lookups to the fake.
+    monkeypatch.setattr(ff, "pr_merged", lambda url, goal, run=None, _o=ff.pr_merged: _o(url, goal, gh))
+    monkeypatch.setattr(ff, "branch_on_origin",
+                        lambda url, goal, run=None, _o=ff.branch_on_origin: _o(url, goal, gh))
+    res = ff.run_clean(_node(repos), URLS, run=run)
+    assert res["error"] is None, res
+    assert res["cleaned"] == ["proj/merged"], res
+    assert any(k.startswith("proj/open:") for k in res["kept"])
+    assert any(k.startswith("proj/dirty:") for k in res["kept"])
+    assert [s["folder"] for s in res["strays"]] == ["odd"]
+    assert not merged.exists() and open_.exists() and dirty.exists() and stray.exists() and c.exists()
+    import json
+    assert str(merged.resolve()) not in json.loads(cfg.read_text())["projects"]
