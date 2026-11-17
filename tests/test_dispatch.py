@@ -519,3 +519,15 @@ def test_dispatch_proceeds_when_clean_fails(env):
     assert rc == 0, out + err
     assert "clean alfred: failed (inventory boom); dispatching anyway" in out
     assert "dispatched g1 to alfred" in out
+
+
+def test_nodes_clean_cli_runs_clean_and_dry_run(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_CLEAN)
+    for extra in ([], ["--dry-run"]):
+        r = subprocess.run([sys.executable, str(FRIDAY), "nodes", "--clean", "alfred", *extra],
+                           cwd=env.repo, env=env.env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "clean alfred: stray clone odd" in r.stdout
+    r = subprocess.run([sys.executable, str(FRIDAY), "nodes", "--clean", "nope"],
+                       cwd=env.repo, env=env.env, capture_output=True, text=True)
+    assert r.returncode == 1 and "no node named" in r.stdout

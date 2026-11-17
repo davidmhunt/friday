@@ -21,6 +21,7 @@
   friday nodes --setup <node> [--yes]
                                     set the node's first-run prompt skips in ~/.claude/settings.json and
                                     install the friday-push.timer systemd user timer (30 s status push)
+  friday nodes --clean <node> [--dry-run]   remove finished goals' worktrees on a node
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
   friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
@@ -728,6 +729,23 @@ def cmd_nodes_setup(a, reg) -> int:
     return 1
 
 
+def cmd_nodes_clean(a, reg) -> int:
+    n = reg.nodes.get(a.clean)
+    if n is None:
+        print(f"friday: no node named {a.clean!r}; known: {', '.join(reg.nodes)}")
+        return 1
+    if n.role not in ("master", "worker"):
+        print(f"friday: {n.name} is a target node; --clean applies to master and worker nodes")
+        return 1
+    root = _root()
+    origin_url = _git_out(["remote", "get-url", "origin"], root)[1].strip()
+    repo_name = origin_url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
+    clean = ff.run_clean(n, {repo_name: origin_url}, dry_run=a.dry_run)
+    for line in print_clean_lines(n, clean):
+        print(line)
+    return 1 if clean["error"] else 0
+
+
 def cmd_nodes(a) -> int:
     path = ff.find_nodes_file()
     if path is None:
@@ -742,6 +760,11 @@ def cmd_nodes(a) -> int:
         return 1
     if a.setup:
         return cmd_nodes_setup(a, reg)
+    if a.clean:
+        return cmd_nodes_clean(a, reg)
+    if a.dry_run:
+        print("friday: --dry-run applies to --clean")
+        return 2
     ok = True
     for n in reg.nodes.values():
         if not a.check:
@@ -872,7 +895,8 @@ def print_clean_lines(n, clean: dict) -> list[str]:
     """Report lines for a clean run before a dispatch; a failure is reported, never fatal."""
     if clean["error"]:
         return [f"clean {n.name}: failed ({clean['error']}); dispatching anyway"]
-    out = [f"clean {n.name}: removed {i}" for i in clean["cleaned"]]
+    out = [f"clean {n.name}: would remove {i}" for i in clean.get("would", [])]
+    out += [f"clean {n.name}: removed {i}" for i in clean["cleaned"]]
     out += [f"clean {n.name}: kept {k}" for k in clean["kept"]]
     out += [f"clean {n.name}: note: {x}" for x in clean["notes"]]
     out += [f"clean {n.name}: stray clone {s['folder']} (origin {s['origin']}) at {s['path']}; remove by hand"
@@ -1042,7 +1066,8 @@ def main() -> int:
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
-    s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true"); s.set_defaults(f=cmd_nodes)
+    s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true")
+    s.add_argument("--clean", metavar="NODE"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
     s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
     s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
