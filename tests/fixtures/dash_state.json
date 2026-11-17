@@ -1,0 +1,19 @@
+{
+  "nodes": {
+    "laptop": {"role": "master", "status": "ok", "age_s": 5, "report": {
+      "time": 1000,
+      "health": {"load": [0.5, 0.4, 0.3], "mem": {"used": 4294967296, "total": 17179869184}, "disk": {"used": 10737418240, "total": 107374182400}},
+      "gpus": [], "leases": [], "runs": [],
+      "sessions": [{"name": "s1", "goal": "g1", "directive": "p-01", "phase": "execute", "step": "2", "created": 940,
+                    "waiting": true, "waiting_line": "Proceed? (y/n)", "snippet": ["line one", "<b>not html</b>"]}],
+      "repos": [
+        {"path": "/home/me/r/alpha", "origin": "git@github.com:me/alpha.git", "goals": [
+          {"id": "g1", "title": "First goal", "status": "open", "directives": [
+            {"id": "p-01", "title": "One", "status": "running@laptop", "deliverable": "d1"}]}]},
+        {"path": "/home/me/r/beta", "origin": "git@github.com:me/beta.git", "goals": []}]}},
+    "alfred": {"role": "worker", "status": "stale", "age_s": 7200, "report": {
+      "time": 900, "health": {}, "gpus": [{"name": "A100", "util": 10, "mem": {"used": 1024, "total": 40960}, "processes": []}],
+      "leases": [], "runs": [], "sessions": [], "repos": []}}
+  },
+  "prs": [{"repo": "me/alpha", "number": 7, "title": "Add thing", "url": "https://github.com/me/alpha/pull/7"}]
+}

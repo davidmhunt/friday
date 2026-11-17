@@ -28,7 +28,11 @@ def _run(tmp_path, *args, settings=None, stdin=subprocess.DEVNULL):
     ssh = tmp_path / "fakessh"
     ssh.write_text(FAKE)
     ssh.chmod(0o755)
-    env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "n.toml"), FRIDAY_SSH=str(ssh), HOME=str(home))
+    ctl = tmp_path / "fakectl"
+    ctl.write_text('#!/bin/bash\necho "$@" >> "$0.argv"\n')
+    ctl.chmod(0o755)
+    env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "n.toml"), FRIDAY_SSH=str(ssh), HOME=str(home),
+               FRIDAY_SYSTEMCTL=str(ctl))
     r = subprocess.run([sys.executable, str(FRIDAY), "nodes", *args], env=env, capture_output=True,
                        text=True, cwd=tmp_path, stdin=stdin)
     return r, cfg
@@ -102,3 +106,22 @@ def test_setup_then_check_clears_prompts(tmp_path):
     _run(tmp_path, "--setup", "laptop", "--yes", settings="{}")
     out = _check(tmp_path, None)
     assert "workflow prompt" not in out and "auto-mode prompt" not in out
+
+
+def test_setup_installs_push_timer(tmp_path):
+    r, cfg = _run(tmp_path, "--setup", "laptop", "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "friday-push.timer" in r.stdout
+    unit = cfg.parent.parent / ".config" / "systemd" / "user"
+    svc = (unit / "friday-push.service").read_text()
+    assert "ExecStart=%h/f/bin/friday status --push" in svc and "@PLUGIN_DIR@" not in svc
+    assert "OnUnitActiveSec=30s" in (unit / "friday-push.timer").read_text()
+    assert (tmp_path / "fakectl.argv").read_text().splitlines() == [
+        "--user daemon-reload", "--user enable --now friday-push.timer"]
+
+
+def test_setup_without_confirmation_installs_no_timer(tmp_path):
+    r, cfg = _run(tmp_path, "--setup", "laptop")
+    assert r.returncode == 1
+    assert not (tmp_path / "home" / ".config" / "systemd").exists()
+    assert not (tmp_path / "fakectl.argv").exists()

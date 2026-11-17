@@ -1,5 +1,5 @@
 # status-page: A tailnet dashboard of machines, projects and running sessions
-Status: approved
+Status: done
 Base: v1
 Land: pr
 
@@ -22,3 +22,4 @@ is a later goal; this one never writes to a repo or a node.
 - 2026-11-17: reshaped with the user before approval: a per-machine summary, a Jarvis-inspired
   dashboard instead of one static page, node push over the tailnet instead of SSH pull, pane
   snippets for running sessions; acting on goals deferred.
+- 2026-11-17: Landed: 3 directive(s) reverified on friday/status-page; PR into v1.

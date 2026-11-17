@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """friday: directive bookkeeping for the friday plugin. On PATH while the plugin is enabled.
 
-  friday status                     directives in this repo, the active one here, hardware leases
+  friday status [--json]            directives in this repo, the active one here, hardware leases; --json: one node snapshot
+  friday status --push [--to URL]   post this node's snapshot to the dash (URL: the master's [dash] port by default)
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
   friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), write the marker (commits nothing)
   friday verify [<id>]              run the directive's Verify command (default: the active one)
@@ -18,9 +19,11 @@
   friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
   friday nodes --setup <node> [--yes]
-                                    set the node's first-run prompt skips in ~/.claude/settings.json
+                                    set the node's first-run prompt skips in ~/.claude/settings.json and
+                                    install the friday-push.timer systemd user timer (30 s status push)
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
+  friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import friday_core as fc  # noqa: E402
 import friday_fleet as ff  # noqa: E402
+import friday_status as fs  # noqa: E402
 
 
 def _root() -> Path:
@@ -53,7 +57,29 @@ def _need(root: Path, did: str) -> dict:
     return d
 
 
+def cmd_status_push(a) -> int:
+    import friday_dash as fd
+    try:
+        url = a.to
+        if not url:
+            path = ff.find_nodes_file()
+            url = fd.master_url(ff.load_nodes(path) if path else None)
+    except (fd.DashError, ff.RegistryError) as e:
+        print(f"friday: {e}", file=sys.stderr)
+        return 1
+    ok, msg = fd.push(fs.collect(), url)
+    print(msg if ok else f"friday: {msg}", file=None if ok else sys.stderr)
+    return 0 if ok else 1
+
+
 def cmd_status(a) -> int:
+    if getattr(a, "push", False):
+        return cmd_status_push(a)
+    if getattr(a, "to", None):
+        sys.exit("friday: --to only goes with --push")
+    if getattr(a, "json", False):
+        print(json.dumps(fs.collect(), indent=2))
+        return 0
     root = _root()
     ds = {d["id"]: fc.parse_directive_full(fc.directive_path(root, d["id"]).read_text())
           for d in fc.list_directives(root)}
@@ -597,9 +623,67 @@ print("FRIDAY_SETUP ok")
 """
 
 
+_TIMER_PY = """
+import json, os, subprocess, sys
+units = json.loads(os.environ["FRIDAY_UNITS"])
+d = os.path.expanduser("~/.config/systemd/user")
+ctl = os.environ.get("FRIDAY_SYSTEMCTL") or "systemctl"
+try:
+    os.makedirs(d, exist_ok=True)
+    for name, text in units.items():
+        with open(os.path.join(d, name + ".tmp"), "w") as f:
+            f.write(text)
+        os.replace(os.path.join(d, name + ".tmp"), os.path.join(d, name))
+except OSError:
+    print("FRIDAY_TIMER error"); sys.exit(1)
+try:
+    for args in (["daemon-reload"], ["enable", "--now", "friday-push.timer"]):
+        r = subprocess.run([ctl, "--user", *args], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            print("FRIDAY_TIMER systemd " + (r.stderr.strip().splitlines() or ["failed"])[-1]); sys.exit(1)
+except (OSError, subprocess.SubprocessError):
+    print("FRIDAY_TIMER nosystemd"); sys.exit(1)
+print("FRIDAY_TIMER ok")
+"""
+
+
+def timer_units(n) -> dict:
+    """The deploy/ unit files with the node's plugin_dir filled in (~ becomes systemd's %h)."""
+    pd = n.plugin_dir.rstrip("/")
+    if pd == "~" or pd.startswith("~/"):
+        pd = "%h" + pd[1:]
+    out = {}
+    for name in ("friday-push.service", "friday-push.timer"):
+        out[name] = (ff.PLUGIN_ROOT / "deploy" / name).read_text().replace("@PLUGIN_DIR@", pd)
+    return out
+
+
+def timer_script(n) -> str:
+    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_TIMER nopython'; exit 1; }}\n"
+            f"FRIDAY_UNITS={shlex.quote(json.dumps(timer_units(n)))} python3 -c {shlex.quote(_TIMER_PY)}\n")
+
+
 def setup_script() -> str:
     return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
             f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} python3 -c {shlex.quote(_SETUP_PY)}\n")
+
+
+def setup_timer(n) -> int:
+    argv, stdin = ff.ssh_cmd(n, timer_script(n))
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=90)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"friday: {n.name}: could not install friday-push.timer: {e}")
+        return 1
+    res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_TIMER ")), "")
+    if r.returncode == 0 and res == "ok":
+        print(f"{n.name}: friday-push.timer enabled (pushes every 30 s)")
+        return 0
+    why = {"nopython": "python3 is missing on the node", "nosystemd": "systemctl is not available on the node",
+           "error": "could not write ~/.config/systemd/user"}.get(
+        res, res.removeprefix("systemd ") if res.startswith("systemd") else f"ssh failed (exit {r.returncode})")
+    print(f"friday: {n.name}: friday-push.timer not installed: {why}")
+    return 1
 
 
 def cmd_nodes_setup(a, reg) -> int:
@@ -615,6 +699,9 @@ def cmd_nodes_setup(a, reg) -> int:
         print(f"  {k} = {json.dumps(v)}")
     print("other keys are kept; the old file is saved once as settings.json.friday-bak.")
     print("trust, credentials and permission rules are not touched.")
+    print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
+          "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
+          "every 30 s.")
     if not a.yes:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             print("friday: refusing to change settings without a terminal to confirm; "
@@ -632,7 +719,7 @@ def cmd_nodes_setup(a, reg) -> int:
     res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_SETUP ")), "")
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: settings updated; run `friday nodes --check` to confirm")
-        return 0
+        return setup_timer(n)
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
            "nopython": "python3 is missing on the node",
            "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")
@@ -891,10 +978,15 @@ def cmd_parse(a) -> int:
     return 1 if out["errors"] else 0
 
 
+def cmd_dash(a) -> int:
+    import friday_dash
+    return friday_dash.main(a.bind)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("status").set_defaults(f=cmd_status)
+    s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
@@ -906,6 +998,7 @@ def main() -> int:
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
     s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
+    s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)
 
