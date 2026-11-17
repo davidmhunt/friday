@@ -189,6 +189,43 @@ def detect_workflow(lines: list[str]) -> tuple[str | None, str | None]:
     return None, None
 
 
+# ---------------------------------------------------------------- session: snippet
+# Secrets that must never leave the node. One list; each pattern's match (or, with a `value`
+# group, just that group) becomes REDACTED. Add a pattern here with a line in the tests.
+REDACTED = "[redacted]"
+REDACT_PATTERNS: list[tuple[str, re.Pattern]] = [
+    # a PEM block; an unterminated one (END scrolled off or not yet drawn) runs to the end
+    ("private key", re.compile(r"-----BEGIN [A-Z0-9 ]*KEY-----.*?(?:-----END [A-Z0-9 ]*KEY-----|\Z)", re.S)),
+    ("openai/anthropic key", re.compile(r"\bsk-[A-Za-z0-9_-]{8,}")),
+    ("github token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{8,}|\bgithub_pat_[A-Za-z0-9_]{8,}")),
+    ("aws access key", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{12,}\b")),
+    ("authorization", re.compile(r"(?i)\bauthorization\s*[:=]\s*(?:(?:bearer|basic|token)\s+)?(?P<value>[^\s'\"]+)")),
+    ("assignment", re.compile(r"(?i)\b(?:password|passwd|token|secret|api[_-]?key)\s*[=:]\s*(?P<value>[^\s'\"&;]+)")),
+]
+SNIPPET_LINES = 12
+SNIPPET_WIDTH = 200
+
+
+def redact(text: str) -> str:
+    """`text` with every REDACT_PATTERNS match replaced by [redacted]."""
+    for _name, rx in REDACT_PATTERNS:
+        if "value" in rx.groupindex:
+            text = rx.sub(lambda m: m.group(0)[:m.start("value") - m.start()] + REDACTED, text)
+        else:
+            text = rx.sub(REDACTED, text)
+    return text
+
+
+def make_snippet(pane: str) -> list[str]:
+    """The last SNIPPET_LINES non-blank pane lines, redacted, each cut to SNIPPET_WIDTH.
+
+    Redaction runs on the whole pane first (a key block spans lines) and the cut comes after,
+    so a secret is never left half-visible at a cut.
+    """
+    lines = _tail(redact(pane).splitlines(), SNIPPET_LINES)
+    return [ln.rstrip()[:SNIPPET_WIDTH] for ln in lines]
+
+
 def session_state(name: str, created, cwd: str | None, pane: str,
                   marker: dict | None = None, snippet: list[str] | None = None) -> dict:
     """One `sessions[]` entry for tmux session `name`, from its pane text and its cwd.
@@ -199,9 +236,10 @@ def session_state(name: str, created, cwd: str | None, pane: str,
       there is a marker but no workflow line; null when neither.
     - step: the status line's `done/total` (e.g. `3/4`), else null.
     - waiting / waiting_line: detect_waiting() over the pane.
-    - snippet: given by the caller (redacted pane tail, step 2); [] here by default.
+    - snippet: make_snippet(pane), redacted; `snippet` may be passed in (tests).
     `marker` may be passed in (tests); otherwise it is read from `cwd`.
     """
+    pane = redact(pane)  # nothing derived from the pane below can carry a secret
     lines = pane.splitlines()
     if marker is None and cwd:
         try:
@@ -232,5 +270,5 @@ def session_state(name: str, created, cwd: str | None, pane: str,
         "step": step,
         "waiting": waiting,
         "waiting_line": line,
-        "snippet": list(snippet or []),
+        "snippet": list(snippet) if snippet is not None else make_snippet(pane),
     }
