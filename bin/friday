@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""friday: directive bookkeeping for the friday plugin. On PATH while the plugin is enabled.
+
+  friday status                     directives in this repo, the active one here, hardware leases
+  friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
+  friday start <id> [--no-gate]     mark <id> active in this worktree, Status -> running@<host>
+  friday verify [<id>]              run the directive's Verify command (default: the active one)
+  friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
+  friday release <resource>|--all   free a hardware lease (or all of them)
+"""
+from __future__ import annotations
+
+import argparse
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import friday_core as fc  # noqa: E402
+
+
+def _root() -> Path:
+    root = fc.repo_root(Path.cwd())
+    if root is None:
+        sys.exit("friday: not inside a git repository")
+    return root
+
+
+def _need(root: Path, did: str) -> dict:
+    d = fc.read_directive(root, did)
+    if d is None:
+        sys.exit(f"friday: no directive {fc.DIRECTIVE_DIR / (did + '.md')}")
+    return d
+
+
+def cmd_status(a) -> int:
+    root = _root()
+    ds = fc.list_directives(root)
+    if not ds:
+        print(f"no directives in {fc.DIRECTIVE_DIR}/")
+    for d in ds:
+        print(f"{d['id']:<12} {d['status'][:28]:<28} {d['node'][:18]:<18} {d['title'][:60]}")
+    m = fc.read_marker(Path.cwd())
+    print(f"\nactive here: {m['id'] if m else 'none'}")
+    for lease in fc.list_leases():
+        age = int((time.time() - lease["time"]) / 60)
+        print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min)")
+    return 0
+
+
+def cmd_new(a) -> int:
+    print(fc.next_id(_root(), a.loop))
+    return 0
+
+
+def cmd_start(a) -> int:
+    root = _root()
+    d = _need(root, a.id)
+    status = d["status"].lower()
+    if not status.startswith(("approved", "running")):
+        sys.exit(f"friday: {a.id} is '{d['status']}'; only an approved directive can start (the user approves it)")
+    if not d["verify"]:
+        sys.exit(f"friday: {a.id} has no Verify: line")
+    fc.set_status(root, a.id, f"running@{socket.gethostname()}")
+    fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
+                                 "gate": not a.no_gate})
+    print(f"{a.id} active. Verify: {d['verify']}")
+    return 0
+
+
+def cmd_verify(a) -> int:
+    root = _root()
+    did = a.id or (fc.read_marker(Path.cwd()) or {}).get("id")
+    if not did:
+        sys.exit("friday: no directive given and none active here")
+    d = _need(root, did)
+    print(f"$ {d['verify']}", flush=True)
+    return subprocess.run(d["verify"], shell=True, cwd=root).returncode
+
+
+def cmd_finish(a) -> int:
+    root = _root()
+    _need(root, a.id)
+    fc.set_status(root, a.id, f"blocked: {a.blocked}" if a.blocked else "done")
+    m = fc.read_marker(Path.cwd())
+    if m and m.get("id") == a.id:
+        fc.clear_marker(Path.cwd())
+    print(f"{a.id}: {'blocked' if a.blocked else 'done'}")
+    return 0
+
+
+def cmd_release(a) -> int:
+    if not a.resource and not a.all:
+        sys.exit("friday: name a resource, or --all")
+    got = fc.release_leases(resource=None if a.all else a.resource)
+    print("released: " + (", ".join(got) if got else "nothing"))
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("status").set_defaults(f=cmd_status)
+    s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
+    s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
+    s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
+    s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
+    a = p.parse_args()
+    return a.f(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.0-alpha.1 (2026-11-17)
+
+friday becomes a Claude Code plugin built for Fable/Opus-level orchestrators. The v0.20 harness
+(nine roles, tier table, symlink installer, gitignored state, Antigravity adapter) is retired;
+tag `v0.20.0` keeps it.
+
+- `/friday:plan` skill and `/friday:execute` workflow; directives in tracked `docs/directives/`
+  with an executable `Verify:` line.
+- Agents: `implementer`, `verifier`, `runner`.
+- Hooks: deny list (ported from `command_guard.py`, now active in Claude Code), `./run`
+  enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop, lease release on
+  SessionEnd. 45 tests in `tests/`.
+- Skills: `directive`, `hardware`, `long-jobs`, `data-artifacts` (v0.20 rules 1, 5-7, 9, 11, 15, 18).
+- `bin/friday`: status, new, start, verify, finish, release.
+- Docs: workflow, runtime (`./run` + dev container), migrating from v0.
+
 <!-- Maintainer reminder: bump VERSION in the same commit as the entry
      below it documents. VERSION drifted for several releases (stuck at
      0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
