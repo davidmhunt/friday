@@ -77,8 +77,11 @@ const REVIEW = {
 }
 const LAND = {
   type: 'object',
-  required: ['pushed', 'pr_url', 'notes'],
-  properties: { pushed: { type: 'boolean' }, pr_url: { type: 'string' }, notes: { type: 'string' } },
+  required: ['exit_code', 'output'],
+  properties: {
+    exit_code: { type: 'integer', description: 'exit code of friday land' },
+    output: { type: 'string', description: 'its output, verbatim' },
+  },
 }
 
 // ---------------------------------------------------------------- helpers
@@ -169,8 +172,16 @@ if (review && review.gaps.length) {
 // ---------------------------------------------------------------- land
 phase('Land')
 const land = await agent(
-  `Land friday directive ${id} from the repo root, on branch friday/${id}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.base}..HEAD\`), "Verify passed: ${d.verify.replace(/`/g, "'")}", and "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (last line \`Directive: ${id}\`).\n3. Push: \`git push -u origin friday/${id}\`. Never push to ${d.base} or force-push.\n4. If \`gh auth status\` succeeds, open a PR: \`gh pr create --base ${d.base} --head friday/${id} --title "${id}: ${d.title.replace(/"/g, "'")}" --body-file ${directive}\`. Otherwise give the branch compare URL.\nReturn whether the push worked, the PR URL (or compare URL), and any problem.`,
+  `Land friday directive ${id} from the repo root, on branch friday/${id}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.base}..HEAD\`), "Verify passed: ${d.verify.replace(/`/g, "'")}", and "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (last line \`Directive: ${id}\`).\n3. Run exactly \`friday land ${id} --base ${d.base}\` (it pushes the branch and opens the PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it.\nReturn its exit code and its output verbatim.`,
   { agentType: 'friday:implementer', schema: LAND, label: 'land' },
 )
-const where = land ? (land.pr_url || 'branch pushed') : 'landing agent returned nothing'
-return `${id} done: Verify passed, review clean. ${where}${land && land.notes ? ` (${land.notes})` : ''}`
+const LAND_MEANING = {
+  0: 'PR open',
+  3: 'push failed',
+  4: `branch pushed, but no PR: the base branch ${d.base} is not on origin`,
+  5: 'branch pushed, but no PR: gh is missing or not signed in',
+}
+if (!land) return `${id}: Verify passed and review clean, but the landing step returned nothing. Run \`friday land ${id} --base ${d.base}\` yourself.`
+const tail = land.output.trim().split('\n').slice(-3).join(' | ')
+const meaning = LAND_MEANING[land.exit_code] || `friday land exited ${land.exit_code}`
+return `${id} done: Verify passed, review clean. ${meaning}. ${tail}${land.exit_code ? ` To retry: friday land ${id} --base ${d.base}` : ''}`

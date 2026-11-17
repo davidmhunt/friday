@@ -205,3 +205,68 @@ def test_cli_lifecycle(repo):
 def test_hook_fails_open_on_garbage():
     out = subprocess.run([sys.executable, str(HOOK), "pretool"], input="not json", capture_output=True, text=True)
     assert out.returncode == 0 and out.stdout == ""
+
+
+# ---------------------------------------------------------------- land
+@pytest.fixture
+def remote_repo(repo, tmp_path):
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(origin)], check=True)
+    return repo, origin
+
+
+def _heads(origin):
+    return subprocess.run(["git", "--git-dir", str(origin), "branch", "--format=%(refname:short)"],
+                          capture_output=True, text=True).stdout.split()
+
+
+def test_land_needs_directive_branch(remote_repo):
+    repo, _ = remote_repo
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
+    r = cli(repo, "land", "core-01", "--base", "main")
+    assert r.returncode != 0 and "friday/core-01" in r.stderr
+
+
+def test_land_reports_unpublished_base(remote_repo):
+    repo, origin = remote_repo
+    r = cli(repo, "land", "core-01", "--base", "main")
+    assert r.returncode == 4 and "not on origin" in r.stdout
+    assert "friday/core-01" in _heads(origin)
+
+
+def test_land_without_gh_gives_compare_url(remote_repo, monkeypatch):
+    repo, origin = remote_repo
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+    monkeypatch.setenv("FRIDAY_GH", "/nonexistent/gh")
+    r = cli(repo, "land", "core-01", "--base", "main")
+    assert r.returncode == 5 and "not installed or not signed in" in r.stdout
+
+
+def test_land_with_gh_opens_pr(remote_repo, monkeypatch, tmp_path):
+    repo, _ = remote_repo
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+    fake = tmp_path / "gh"
+    fake.write_text('#!/bin/sh\ncase "$1 $2" in\n"auth status") exit 0;;\n"pr view") exit 1;;\n'
+                    '"pr create") echo https://github.com/o/r/pull/7;;\nesac\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("FRIDAY_GH", str(fake))
+    r = cli(repo, "land", "core-01", "--base", "main")
+    assert r.returncode == 0 and r.stdout.strip().endswith("PR: https://github.com/o/r/pull/7")
+
+
+def test_land_refuses_dirty_tree(remote_repo):
+    repo, _ = remote_repo
+    (repo / "docs/directives/core-01.md").write_text(DIRECTIVE + "\nedit\n")
+    r = cli(repo, "land", "core-01", "--base", "main")
+    assert r.returncode != 0 and "uncommitted" in r.stderr
+
+
+def test_compare_url():
+    import importlib.machinery, importlib.util
+    loader = importlib.machinery.SourceFileLoader("friday_cli", str(CLI))
+    mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("friday_cli", loader))
+    loader.exec_module(mod)
+    assert mod._compare_url("git@github.com:davidmhunt/CPSL_TI_Radar.git", "main", "friday/x") == \
+        "https://github.com/davidmhunt/CPSL_TI_Radar/compare/main...friday/x?expand=1"
+    assert mod._compare_url("/tmp/origin.git", "main", "friday/x") is None

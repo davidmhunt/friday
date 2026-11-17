@@ -15,8 +15,14 @@ independent verifier finds no gaps. You review PRs, not steps.
      cause and it runs again, up to 4 rounds or until the same failure repeats twice.
    - **Review**: the `verifier` (Opus, read-only, fresh context) checks the diff against the
      directive; real gaps get one fix round, then Verify and review again.
-   - **Land**: Log entry, `friday finish <id>`, push the branch, open a PR with `gh` if it is
-     signed in.
+   - **Land**: Log entry, `friday finish <id>`, then `friday land <id> --base <base>`, which pushes
+     `friday/<id>` and opens the PR with `gh`. It says plainly when it can't: the push failed, the
+     base branch isn't on origin yet (publish it, then rerun `friday land`), or `gh` is missing or
+     signed out (it prints the compare URL instead).
+
+   The workflow runs one agent at a time, so it never has more than one agent working. Claude Code
+   also caps any workflow at min(16, CPUs - 2) agents at once. Allow the `friday` commands in the
+   project's `.claude/settings.json` so the workflow doesn't wait on a prompt for its own bookkeeping.
 4. **Review the PR** and merge it yourself.
 
 ## When it stops for you

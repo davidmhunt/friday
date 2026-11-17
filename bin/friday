@@ -6,6 +6,7 @@
   friday start <id> [--no-gate]     mark <id> active in this worktree, Status -> running@<host>
   friday verify [<id>]              run the directive's Verify command (default: the active one)
   friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
+  friday land <id> --base <branch>  push friday/<id> and open its PR (gh), or print why not
   friday release <resource>|--all   free a hardware lease (or all of them)
 """
 from __future__ import annotations
@@ -91,6 +92,66 @@ def cmd_finish(a) -> int:
     return 0
 
 
+def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return subprocess.CompletedProcess(args, 127, "", str(e))
+
+
+def _compare_url(remote: str, base: str, head: str) -> str | None:
+    import re
+    m = re.match(r"^(?:git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+?)(?:\.git)?/?$", remote)
+    return f"https://github.com/{m.group(1)}/compare/{base}...{head}?expand=1" if m else None
+
+
+def cmd_land(a) -> int:
+    """Push friday/<id> and open its PR. Deterministic, so the workflow doesn't improvise git.
+    Exit 0: PR open (last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
+    5: pushed, no PR because gh is missing or signed out (last line `COMPARE: <url>`)."""
+    import os
+    root = _root()
+    d = _need(root, a.id)
+    head = f"friday/{a.id}"
+    if fc.current_branch(root) != head:
+        sys.exit(f"friday: land runs on branch {head}, not {fc.current_branch(root)}")
+    if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+        sys.exit("friday: uncommitted changes to tracked files; commit them first")
+    remote = _run(["git", "remote", "get-url", "origin"], root)
+    if remote.returncode != 0:
+        sys.exit("friday: no 'origin' remote")
+    push = _run(["git", "push", "-u", "origin", head], root)
+    if push.returncode != 0:
+        print(f"push failed:\n{push.stderr.strip()}")
+        return 3
+    print(f"pushed {head}")
+    if _run(["git", "ls-remote", "--exit-code", "--heads", "origin", a.base], root).returncode != 0:
+        print(f"PR not opened: base branch '{a.base}' is not on origin. Publish it "
+              f"(`git push -u origin {a.base}`), then rerun `friday land {a.id} --base {a.base}`.")
+        return 4
+    gh = os.environ.get("FRIDAY_GH", "gh")
+    compare = _compare_url(remote.stdout.strip(), a.base, head)
+    if _run([gh, "auth", "status"], root).returncode != 0:
+        print(f"PR not opened: `{gh}` is not installed or not signed in.")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 5
+    existing = _run([gh, "pr", "view", head, "--json", "url", "--jq", ".url"], root)
+    if existing.returncode == 0 and existing.stdout.strip():
+        print(f"PR: {existing.stdout.strip()}")
+        return 0
+    pr = _run([gh, "pr", "create", "--base", a.base, "--head", head,
+               "--title", f"{a.id}: {d['title'].split(':', 1)[-1].strip()}",
+               "--body-file", str(fc.directive_path(root, a.id))], root)
+    if pr.returncode != 0:
+        print(f"PR not opened: {pr.stderr.strip()}")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 5
+    print(f"PR: {pr.stdout.strip().splitlines()[-1]}")
+    return 0
+
+
 def cmd_release(a) -> int:
     if not a.resource and not a.all:
         sys.exit("friday: name a resource, or --all")
@@ -107,6 +168,7 @@ def main() -> int:
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("land"); s.add_argument("id"); s.add_argument("--base", required=True); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
     a = p.parse_args()
     return a.f(a)
