@@ -691,10 +691,11 @@ def cmd_dispatch(a) -> int:
     report_to = a.report_to or plan["registry"].report_to
     if not report_to:
         _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
-    wt = ff.worktree_path(n, _root().name, a.goal)
-    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
     origin_url = _git_out(["remote", "get-url", "origin"], root)[1]
-    script = ff.prepare_script(n, a.goal, root.name, origin_url, plan["base"], plan["plugin_commit"])
+    repo_name = origin_url.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
+    wt = ff.worktree_path(n, repo_name, a.goal)
+    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
+    script = ff.prepare_script(n, a.goal, repo_name, origin_url, plan["base"], plan["plugin_commit"])
     if a.dry_run:
         print("prepare script:")
         print(script)
@@ -716,7 +717,7 @@ def cmd_dispatch(a) -> int:
         print(f"friday: launch failed on {n.name}: {r.stderr.strip()}", file=sys.stderr)
         return 1
     path = ff.record_dispatch({
-        "goal": a.goal, "directives": plan["directives"], "repo": root.name, "node": n.name,
+        "goal": a.goal, "directives": plan["directives"], "repo": repo_name, "node": n.name,
         "tmux_session": f"friday-{a.goal}", "worktree": wt_abs, "branch": f"friday/{a.goal}",
         "source_ref": plan["source_ref"], "plugin_commit": plan["plugin_commit"],
         "report_to": report_to, "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
