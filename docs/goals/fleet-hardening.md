@@ -1,5 +1,5 @@
 # fleet-hardening: Dispatch with no first-run prompts on the node
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
