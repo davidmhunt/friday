@@ -1,5 +1,5 @@
 # fleet-06: A dispatched session that lands its goal ends its own tmux session
-Status: approved
+Status: done
 Goal: fleet-cleanup
 Node: any
 Deliverable: code
@@ -33,3 +33,14 @@ tests/test_session_end.py proves when it acts and when it refuses, with a fake `
 - Restarting or resuming a blocked session.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 06ad29f fleet-06: document sessions after done and blocked, CHANGELOG entry
+- c5d71f4 fleet-06: test session-end acts and refuses with a fake tmux and setsid
+- b8a3960 fleet-06: report text runs session-end after done, stays open after blocked
+- 8230edf Add friday session-end: a landed dispatched session closes its own tmux session
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_session_end.py tests/test_dispatch.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

@@ -1,5 +1,5 @@
 # fleet-cleanup: Dispatched work cleans up after itself on the node
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
