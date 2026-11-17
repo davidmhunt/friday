@@ -1,5 +1,5 @@
 # fleet-03: Fleet docs and planning hand-off
-Status: approved
+Status: done
 Goal: fleet
 Node: any
 Deliverable: code
@@ -43,3 +43,13 @@ PR into `v1`.
 ## Log
 - 2026-11-17: amended to the goal model before running (HANDOFF sections 5 and 7), approved by the
   user: docs and the live gate dispatch the goal, which runs on `friday/<goal>`.
+
+### 2026-11-17
+Commits:
+- 31cfaa8 tests: docs must mention every nodes.toml key and friday subcommand
+- 9b45fec docs: plan offers friday dispatch for goals this machine can't run; README fleet section; changelog
+- 9e30ee2 docs: fleet.md, registry, node setup, dispatch and its refusals
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_docs.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
