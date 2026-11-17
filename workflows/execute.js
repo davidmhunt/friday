@@ -168,7 +168,7 @@ if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
 }
 
 const st = await agent(
-  `Start friday directive ${id}. From the repo root:\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Return the sha from the \`base <sha>\` line of its output as review_base. Commit nothing.`,
+  `Start friday directive ${id}. From the repo root:\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Return the sha from the \`base <sha>\` line of its output as review_base.\n3. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\nCommit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
