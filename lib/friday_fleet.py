@@ -111,3 +111,53 @@ def load_nodes(path) -> Registry:
                 _str(name, key, val)
         nodes[name] = Node(name, role, ssh, runtime, list(tags), repos, plugin_dir, launcher)
     return Registry(path, report_to, nodes)
+
+
+class RouteError(ValueError):
+    """No node fits a directive's `Node:` line."""
+
+
+def _lowest(cands: list, load: dict):
+    # min() keeps the first of equal keys, so ties go to registry order.
+    return min(cands, key=lambda n: load.get(n.name, 0))
+
+
+def route(node_line: str, nodes, load: dict) -> tuple:
+    """Pick the node for a `Node:` line. Returns (node_name, reason)."""
+    nodes = getattr(nodes, "nodes", nodes)
+    members = list(nodes.values())
+    line = (node_line or "").strip()
+    if line == "any":
+        workers = [n for n in members if n.role == "worker"]
+        if not workers:
+            raise RouteError("Node: any - the registry has no worker node")
+        n = _lowest(workers, load)
+        return n.name, f"any: worker '{n.name}' has the lowest load ({load.get(n.name, 0)})"
+    if line.startswith("tag:"):
+        tag = line[4:].strip()
+        if not tag:
+            raise RouteError("Node: 'tag:' needs a tag name")
+        runners = [n for n in members if n.role in ("worker", "master") and tag in n.tags]
+        if runners:
+            n = _lowest(runners, load)
+            return n.name, f"tag:{tag}: {n.role} '{n.name}' has the lowest load ({load.get(n.name, 0)})"
+        targets = [n for n in members if n.role == "target" and tag in n.tags]
+        masters = [n for n in members if n.role == "master"]
+        if targets and masters:
+            m, t = masters[0], targets[0]
+            return m.name, (f"tag:{tag}: only target '{t.name}' has it, so master '{m.name}' "
+                            f"runs the directive and its runner drives '{t.name}' over SSH")
+        if targets:
+            raise RouteError(f"Node: {line} - only target '{targets[0].name}' has the tag "
+                             "and the registry has no master to drive it")
+        raise RouteError(f"Node: {line} - no node has tag '{tag}'")
+    if line.startswith("host:"):
+        name = line[5:].strip()
+        if name not in nodes:
+            raise RouteError(f"Node: {line} - no node named '{name}' in the registry")
+        n = nodes[name]
+        if n.role == "target":
+            raise RouteError(f"Node: {line} - '{name}' is a target and cannot run directives; "
+                             "use a tag: line so the master drives it over SSH")
+        return name, f"host:{name}: named explicitly"
+    raise RouteError(f"Node: {node_line!r} - expected 'any', 'tag:<x>' or 'host:<name>'")

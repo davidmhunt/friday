@@ -76,3 +76,50 @@ def test_validation_errors(tmp_path, old, new, needle):
     with pytest.raises(ff.RegistryError) as e:
         ff.load_nodes(write(tmp_path, GOOD.replace(old, new, 1)))
     assert needle in str(e.value)
+
+
+def _reg(tmp_path, extra=""):
+    return ff.load_nodes(write(tmp_path, GOOD + extra)).nodes
+
+
+def test_route_any_lowest_load_and_ties(tmp_path):
+    extra = '[node.bert]\nrole = "worker"\nssh = "me@bert"\nrepos = "~/r"\nplugin_dir = "~/f"\n'
+    nodes = _reg(tmp_path, extra)
+    assert ff.route("any", nodes, {})[0] == "alfred"  # tie: registry order
+    assert ff.route("any", nodes, {"alfred": 2, "bert": 1})[0] == "bert"
+    assert ff.route("any", nodes, {"alfred": 1, "bert": 1, "laptop": 0})[0] == "alfred"
+
+
+def test_route_any_no_worker(tmp_path):
+    nodes = {k: v for k, v in _reg(tmp_path).items() if v.role != "worker"}
+    with pytest.raises(ff.RouteError, match="no worker"):
+        ff.route("any", nodes, {})
+
+
+def test_route_tag(tmp_path):
+    nodes = _reg(tmp_path)
+    assert ff.route("tag:gpu", nodes, {})[0] == "alfred"
+    nodes["laptop"].tags.append("gpu")
+    assert ff.route("tag:gpu", nodes, {"alfred": 3})[0] == "laptop"
+    assert ff.route("tag:gpu", nodes, {"laptop": 3})[0] == "alfred"
+    with pytest.raises(ff.RouteError, match="no node has tag 'nope'"):
+        ff.route("tag:nope", nodes, {})
+
+
+def test_route_tag_target_only(tmp_path):
+    nodes = _reg(tmp_path)
+    nodes["bot"].tags.append("arm")
+    name, reason = ff.route("tag:arm", nodes, {})
+    assert name == "laptop" and "over SSH" in reason and "bot" in reason
+
+
+def test_route_host(tmp_path):
+    nodes = _reg(tmp_path)
+    assert ff.route("host:alfred", nodes, {"alfred": 9})[0] == "alfred"
+    assert ff.route("host:laptop", nodes, {})[0] == "laptop"
+    with pytest.raises(ff.RouteError, match="target"):
+        ff.route("host:bot", nodes, {})
+    with pytest.raises(ff.RouteError, match="no node named 'zzz'"):
+        ff.route("host:zzz", nodes, {})
+    with pytest.raises(ff.RouteError, match="expected"):
+        ff.route("whatever", nodes, {})
