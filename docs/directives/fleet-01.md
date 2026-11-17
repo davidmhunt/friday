@@ -1,5 +1,5 @@
 # fleet-01: Node registry and routing (`friday nodes`)
-Status: approved
+Status: running@thinkpadP15v3
 Node: any
 Verify: uv run --with pytest pytest -q tests/test_fleet.py && uv run --with pytest pytest -q && claude plugin validate .
 Hardware: none
