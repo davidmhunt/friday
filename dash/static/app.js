@@ -1,10 +1,33 @@
 // friday dash: poll /api/state and draw the tab views. All state text goes in through
 // textContent; element trees come from render.mjs.
-import { TABS, VIEWS, needsYou, allSessions, h } from "./render.mjs";
+import { TABS, VIEWS, needsYou, allSessions, ago, h } from "./render.mjs";
 
 let state = null;
 let tab = "overview";
 const expanded = new Set();
+let fetchedAt = 0;
+const POLL_MS = 15000, STALE_MS = 45000;
+
+// localStorage can throw (private mode, blocked storage); every access is guarded.
+function load(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+function save(key, val) { try { window.localStorage.setItem(key, val); } catch (e) { /* ignore */ } }
+(function restore() {
+  const t = load("friday.tab");
+  if (t && TABS.includes(t)) tab = t;
+  try { for (const k of JSON.parse(load("friday.expanded") || "[]")) if (typeof k === "string") expanded.add(k); } catch (e) { /* ignore */ }
+})();
+
+// "updated Ns ago"; the page greys out its data when the last good fetch is old.
+let lastError = "";
+function tickUpdated() {
+  const failed = lastError;
+  const el = document.getElementById("updated");
+  if (!fetchedAt) return;
+  const age = Date.now() - fetchedAt, stale = age > STALE_MS;
+  el.textContent = "updated " + ago(age / 1000) + " ago" + (failed ? " (update failed: " + failed + ")" : "");
+  el.classList.toggle("stale", stale || !!failed);
+  document.getElementById("main").classList.toggle("stale-data", stale);
+}
 
 export function build(node) {
   if (typeof node === "string") return document.createTextNode(node);
@@ -21,7 +44,7 @@ function drawTabs() {
   nav.replaceChildren(...TABS.map((t) => {
     const b = build(h("button", { cls: "tab", role: "tab", "data-tab": t, "aria-selected": String(t === tab) }, t[0].toUpperCase() + t.slice(1),
       counts[t] ? h("span", { cls: "count" + (t === "overview" ? " warn" : "") }, String(counts[t])) : null));
-    b.addEventListener("click", () => { tab = t; draw(); });
+    b.addEventListener("click", () => { tab = t; save("friday.tab", t); draw(); });
     return b;
   }));
 }
@@ -32,7 +55,7 @@ function draw() {
   if (!state) { main.replaceChildren(build(h("p", { cls: "empty" }, "Loading..."))); return; }
   const view = build(VIEWS[tab](state, [...expanded]));
   for (const row of view.querySelectorAll("tr.row")) {
-    const toggle = () => { const k = row.dataset.key; expanded.has(k) ? expanded.delete(k) : expanded.add(k); draw(); };
+    const toggle = () => { const k = row.dataset.key; expanded.has(k) ? expanded.delete(k) : expanded.add(k); save("friday.expanded", JSON.stringify([...expanded])); draw(); };
     row.addEventListener("click", toggle);
     row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
   }
@@ -45,13 +68,18 @@ async function poll() {
     if (!r.ok) throw new Error("HTTP " + r.status);
     state = await r.json();
   } catch (e) {
-    document.getElementById("updated").textContent = "update failed: " + e.message;
+    lastError = e.message;
+    if (!fetchedAt) document.getElementById("updated").textContent = "update failed: " + e.message;
+    else tickUpdated();
     return;
   }
-  document.getElementById("updated").textContent = "";
+  lastError = "";
+  fetchedAt = Date.now();
+  tickUpdated();
   draw();
 }
 
 draw();
 poll();
-setInterval(poll, 15000);
+setInterval(poll, POLL_MS);
+setInterval(() => tickUpdated(), 1000);
