@@ -32,6 +32,7 @@ class Node:
     repos: str = ""
     plugin_dir: str = ""
     launcher: str = "tmux"
+    tailnet: str = ""  # optional tailnet device name when it differs from the host in `ssh`
 
 
 @dataclass
@@ -118,7 +119,10 @@ def load_nodes(path) -> Registry:
                 if not val:
                     raise RegistryError(f"node '{name}': {role} needs key '{key}'")
                 _str(name, key, val)
-        nodes[name] = Node(name, role, ssh, runtime, list(tags), repos, plugin_dir, launcher)
+        tailnet = raw.get("tailnet", "")
+        if tailnet != "":
+            _str(name, "tailnet", tailnet)
+        nodes[name] = Node(name, role, ssh, runtime, list(tags), repos, plugin_dir, launcher, tailnet)
     return Registry(path, report_to, nodes, dash_port)
 
 

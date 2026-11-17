@@ -4,8 +4,9 @@ A threaded `http.server` bound to 127.0.0.1 and this node's tailnet IPv4 (`tails
 only; never 0.0.0.0, `::` or any other address. The port is the registry's `[dash] port`
 (default 8787). Routes:
 
-  POST /api/report   a node pushes its `friday status --json` snapshot (sender check: status-02 step 2;
-                     until it exists every report is refused with 403)
+  POST /api/report   a node pushes its `friday status --json` snapshot; accepted only from a tailnet
+                     peer that `tailscale whois` maps to the registry node named in the report
+                     (localhost: the master node only)
   GET  /api/state    the merged state, read-only
   GET  /api/health   liveness and what the server is bound to
   GET  /<file>       static files from dash/static/ (the UI, status-03); `/` is index.html
@@ -25,6 +26,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import friday_fleet as ff
+import friday_status as fs
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = PLUGIN_ROOT / "dash" / "static"
@@ -33,6 +35,7 @@ TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")  # Tailscale's IPv4 range (CG
 MAX_BODY = 1 << 20  # 1 MiB, the cap on a report body
 REQUEST_TIMEOUT = 10  # seconds a connection may sit idle before it is dropped
 SCHEMA = 1
+WHOIS_TTL = 300  # seconds a `tailscale whois` answer is cached
 TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
          ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
 
@@ -107,7 +110,10 @@ class Dash:
     """The server's state and route logic, separate from the HTTP plumbing so tests can drive it."""
 
     def __init__(self, registry=None, port: int = ff.DASH_PORT, binds=(), static_dir: Path = STATIC_DIR,
-                 clock=time.time):
+                 clock=time.time, run=subprocess.run):
+        self.run = run
+        self.whois_cache: dict = {}  # ip -> (expires, device name labels)
+        self.reports: dict = {}  # node -> latest accepted snapshot (persisted in step 3)
         self.registry = registry
         self.port = port
         self.binds = list(binds)
@@ -127,10 +133,89 @@ class Dash:
         with self.lock:
             return {"schema": SCHEMA, "generated": self.clock(), "nodes": {}, "prs": []}
 
+    def whois_names(self, ip: str) -> set | None:
+        """The lowercase names `tailscale whois --json <ip>` gives the device at that tailnet
+        address (its short name and its full name), cached for WHOIS_TTL; None when unknown."""
+        now = self.clock()
+        with self.lock:
+            hit = self.whois_cache.get(ip)
+            if hit and hit[0] > now:
+                return hit[1]
+        names = None
+        try:
+            r = self.run(["tailscale", "whois", "--json", ip], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                node = json.loads(r.stdout).get("Node")
+                full = node.get("Name") if isinstance(node, dict) else None
+                if isinstance(full, str) and full.strip(".").strip():
+                    full = full.strip(".").lower()
+                    names = {full, full.split(".")[0]}
+        except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+            names = None
+        if names is not None:  # only answers are cached, so a node that just joined is not locked out
+            with self.lock:
+                self.whois_cache[ip] = (now + WHOIS_TTL, names)
+        return names
+
+    def node_for_device(self, names: set) -> str | None:
+        """The registry node whose `tailnet` key (else the host of its `ssh`) names that device."""
+        for n in self.registry.nodes.values():
+            want = (n.tailnet or n.ssh.rpartition("@")[2]).strip(".").lower()
+            if want and want in names:
+                return n.name
+        return None
+
     def report(self, peer_ip: str, headers, rfile) -> tuple[int, dict]:
-        """Accept or refuse one pushed report. The sender check is status-02 step 2; until then
-        this fails closed and never reads the body."""
-        return 403, {"error": "reports are not accepted yet (no sender check)"}
+        """Accept or refuse one pushed report: 403 for a sender that is not who it claims, 400 for
+        a bad body. Every refusal logs one line; the body is read only after the sender passes."""
+        def refuse(code: int, why: str):
+            sys.stderr.write(f"friday dash: refused report from {peer_ip}: {why}\n")
+            return code, {"error": why}
+
+        if self.registry is None:
+            return refuse(403, "no registry loaded")
+        local = peer_ip == LOCALHOST
+        if local:
+            sender = next((n.name for n in self.registry.nodes.values() if n.role == "master"), None)
+            if sender is None:
+                return refuse(403, "localhost report but the registry has no master node")
+        else:
+            if not is_tailnet(peer_ip):
+                return refuse(403, "peer is not a tailnet address")
+            names = self.whois_names(peer_ip)
+            if names is None:
+                return refuse(403, "tailscale whois does not know this peer")
+            sender = self.node_for_device(names)
+            if sender is None:
+                return refuse(403, f"device {sorted(names)[0]!r} is not a registry node")
+        raw_len = headers.get("Content-Length")
+        try:
+            length = int(raw_len)
+            if length < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return refuse(400, "missing or invalid Content-Length")
+        if length > MAX_BODY:
+            return refuse(400, f"body larger than {MAX_BODY} bytes")
+        body = rfile.read(length)
+        if len(body) != length:
+            return refuse(400, "body shorter than Content-Length")
+        try:
+            snap = json.loads(body)
+        except (ValueError, RecursionError):
+            return refuse(400, "body is not valid JSON")
+        if not isinstance(snap, dict):
+            return refuse(400, "body is not a JSON object")
+        problems = fs.check_schema(snap)
+        if problems:
+            return refuse(400, f"not a schema {SCHEMA} report: {problems[0]}")
+        if snap.get("node") != sender:
+            return refuse(403, f"report says node {snap.get('node')!r} but the sender is {sender!r}"
+                               + (" (localhost)" if local else ""))
+        with self.lock:
+            self.reports[sender] = snap
+        sys.stderr.write(f"friday dash: accepted report from {sender} ({peer_ip})\n")
+        return 200, {"ok": True, "node": sender}
 
     def static_file(self, url_path: str) -> Path | None:
         """The file under static_dir that url_path names, or None (missing, a directory, a dotfile,
