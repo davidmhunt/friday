@@ -442,6 +442,132 @@ def validate_goal(gid: str, text: str) -> list[Issue]:
     return issues
 
 
+_SKIP = ("README.md", "TEMPLATE.md")
+
+
+def _stems(folder: Path) -> list[str]:
+    if not folder.is_dir():
+        return []
+    return sorted(f.stem for f in folder.glob("*.md") if f.name not in _SKIP)
+
+
+def check_repo(root: Path | str, directive: str | None = None, goal: str | None = None) -> list[Issue]:
+    """Issues for one directive, one goal (its file, its listed directives' files and the
+    cross-checks), or (both None) every goal and directive file. README.md and TEMPLATE.md are
+    skipped. Cross-checks: a directive's Goal file exists and lists it; every id a goal lists has
+    a directive file; a listed directive names that goal. Warnings: a directive is done while an
+    earlier one in its goal is not; a directive is approved while its goal is proposed."""
+    root = Path(root)
+    issues: list[Issue] = []
+    seen: set = set()
+
+    def add(items: list[Issue]) -> None:
+        for i in items:
+            if i not in seen:
+                seen.add(i)
+                issues.append(i)
+
+    def read(p: Path) -> str | None:
+        try:
+            return p.read_text()
+        except OSError:
+            return None
+
+    goals: dict[str, dict | None] = {}
+
+    def load_goal(gid: str) -> dict | None:
+        if gid not in goals:
+            t = read(goal_path(root, gid))
+            goals[gid] = parse_goal(t) if t is not None else None
+        return goals[gid]
+
+    def own_directive(did: str) -> dict | None:
+        rel = str(DIRECTIVE_DIR / f"{did}.md")
+        t = read(directive_path(root, did))
+        if t is None:
+            add([Issue("error", rel, 1, f"directive file {rel} does not exist")])
+            return None
+        add(validate_directive(did, t))
+        return parse_directive_full(t)
+
+    def own_goal(gid: str) -> dict | None:
+        rel = str(GOAL_DIR / f"{gid}.md")
+        t = read(goal_path(root, gid))
+        if t is None:
+            add([Issue("error", rel, 1, f"goal file {rel} does not exist")])
+            return None
+        add(validate_goal(gid, t))
+        return load_goal(gid)
+
+    def dstatus(did: str) -> str | None:
+        t = read(directive_path(root, did))
+        return parse_directive_full(t)["status"] if t is not None else None
+
+    def cross_directive(did: str, d: dict) -> None:
+        rel = str(DIRECTIVE_DIR / f"{did}.md")
+        hl = {k: ln for k, _, ln in reversed(d["headers"])}
+        gline = hl.get("Goal", 1)
+        gid = d["goal"]
+        if not gid or not GOAL_RE.match(gid):
+            return
+        g = load_goal(gid)
+        grel = str(GOAL_DIR / f"{gid}.md")
+        if g is None:
+            add([Issue("error", rel, gline, f"Goal `{gid}`: {grel} does not exist")])
+            return
+        ids = [x["id"] for x in g["directives"]]
+        if did not in ids:
+            add([Issue("error", rel, gline, f"goal `{gid}` ({grel}) does not list {did}")])
+            return
+        if d["status"] == "done":
+            for e in ids[:ids.index(did)]:
+                if dstatus(e) != "done":
+                    add([Issue("warning", rel, hl.get("Status", 1),
+                               f"{did} is done but earlier directive {e} in goal `{gid}` is not")])
+                    break
+        if d["status"] == "approved" and g["status"] == "proposed":
+            add([Issue("warning", rel, hl.get("Status", 1),
+                       f"{did} is approved but goal `{gid}` is still proposed")])
+
+    def cross_goal(gid: str, g: dict) -> None:
+        grel = str(GOAL_DIR / f"{gid}.md")
+        for x in g["directives"]:
+            if not ID_RE.match(x["id"]):
+                continue
+            t = read(directive_path(root, x["id"]))
+            if t is None:
+                add([Issue("error", grel, x["line"],
+                           f"directive `{x['id']}` is listed but {DIRECTIVE_DIR / (x['id'] + '.md')} does not exist")])
+            elif parse_directive_full(t)["goal"] != gid:
+                add([Issue("error", grel, x["line"],
+                           f"directive `{x['id']}` is listed but its Goal is "
+                           f"`{parse_directive_full(t)['goal']}`, not `{gid}`")])
+
+    if directive is not None:
+        d = own_directive(directive)
+        if d:
+            cross_directive(directive, d)
+    elif goal is not None:
+        g = own_goal(goal)
+        if g:
+            cross_goal(goal, g)
+            for x in g["directives"]:
+                if ID_RE.match(x["id"]) and read(directive_path(root, x["id"])) is not None:
+                    d = own_directive(x["id"])
+                    if d:
+                        cross_directive(x["id"], d)
+    else:
+        for gid in _stems(root / GOAL_DIR):
+            g = own_goal(gid)
+            if g:
+                cross_goal(gid, g)
+        for did in _stems(root / DIRECTIVE_DIR):
+            d = own_directive(did)
+            if d:
+                cross_directive(did, d)
+    return issues
+
+
 # ---------------------------------------------------------------- active marker
 def marker_path(cwd: Path | str) -> Path | None:
     g = git_dir(cwd)
