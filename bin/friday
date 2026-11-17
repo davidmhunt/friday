@@ -8,6 +8,10 @@
   friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
   friday land <id> --base <branch>  push friday/<id> and open its PR (gh), or print why not
   friday release <resource>|--all   free a hardware lease (or all of them)
+  friday check [<id> | --goal <g> | --all]
+                                    validate directive/goal files (default --all); exit 1 on any error
+  friday parse <id> --json          parsed directive as JSON (exit 1 on errors, 2 if file missing)
+  friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
 """
 from __future__ import annotations
@@ -265,6 +269,73 @@ def cmd_nodes(a) -> int:
     return 0 if ok else 1
 
 
+def cmd_check(a) -> int:
+    root = _root()
+    if a.id and a.goal:
+        sys.exit("friday: check takes <id> or --goal <g>, not both")
+    issues = fc.check_repo(root, directive=None if a.all else a.id, goal=None if a.all else a.goal)
+    for i in issues:
+        print(i)
+    errs = sum(1 for i in issues if i.level == "error")
+    print(f"{errs} error(s), {len(issues) - errs} warning(s)")
+    return 1 if errs else 0
+
+
+def _msgs(issues, level: str) -> list[str]:
+    return [f"{i.path}:{i.line}: {i.message}" for i in issues if i.level == level]
+
+
+def cmd_parse(a) -> int:
+    import json
+    root = _root()
+    if bool(a.id) == bool(a.goal):
+        sys.exit("friday: parse takes <id> or --goal <g>")
+    if not a.json:
+        sys.exit("friday: parse needs --json")
+    if a.goal:
+        path = fc.goal_path(root, a.goal)
+        if not path.is_file():
+            print(f"friday: no goal {fc.GOAL_DIR / (a.goal + '.md')}", file=sys.stderr)
+            return 2
+        g = fc.parse_goal(path.read_text())
+        issues = fc.check_repo(root, goal=a.goal)
+        rows = []
+        for x in g["directives"]:
+            dp = fc.directive_path(root, x["id"])
+            d = fc.parse_directive_full(dp.read_text()) if dp.is_file() else None
+            rows.append({"id": x["id"], "status": d["status"] if d else None,
+                         "deliverable": d["deliverable"] if d else None,
+                         "land": d["land"] if d else None,
+                         "title": d["title"] if d else x["text"]})
+        out = {"goal": g["goal"], "title": g["title"], "status": g["status"], "base": g["base"],
+               "land": g["land"], "directives": rows,
+               "errors": _msgs(issues, "error"), "warnings": _msgs(issues, "warning")}
+    else:
+        path = fc.directive_path(root, a.id)
+        if not path.is_file():
+            print(f"friday: no directive {fc.DIRECTIVE_DIR / (a.id + '.md')}", file=sys.stderr)
+            return 2
+        d = fc.parse_directive_full(path.read_text())
+        issues = fc.check_repo(root, directive=a.id)
+        gp = fc.goal_path(root, d["goal"]) if d["goal"] and fc.GOAL_RE.match(d["goal"]) else None
+        g = fc.parse_goal(gp.read_text()) if gp and gp.is_file() else None
+        gd = []
+        for x in (g["directives"] if g else []):
+            dp = fc.directive_path(root, x["id"])
+            gd.append({"id": x["id"],
+                       "status": fc.parse_directive_full(dp.read_text())["status"] if dp.is_file() else None})
+        ids = [x["id"] for x in gd]
+        out = {"id": d["id"], "title": d["title"], "status": d["status"], "goal": d["goal"],
+               "base": g["base"] if g else None, "node": d["node"], "deliverable": d["deliverable"],
+               "land": d["land"], "verify": d["verify"], "hardware": d["hardware"],
+               "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"]} for s in d["steps"]],
+               "acceptance": d["acceptance"] or [], "goal_directives": gd,
+               "position": ids.index(a.id) + 1 if a.id in ids else None,
+               "errors": _msgs(issues, "error"), "warnings": _msgs(issues, "warning")}
+    print(json.dumps(out, indent=2))
+    return 1 if out["errors"] else 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -275,6 +346,8 @@ def main() -> int:
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
     s = sub.add_parser("land"); s.add_argument("id"); s.add_argument("--base", required=True); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
+    s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
+    s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.set_defaults(f=cmd_nodes)
     a = p.parse_args()
     return a.f(a)
