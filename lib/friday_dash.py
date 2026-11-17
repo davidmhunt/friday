@@ -319,6 +319,8 @@ class Dash:
                     age = max(0.0, now - got)
                     nodes[n] = {"status": "stale" if age > STALE_AFTER else "ok", "last_seen": got,
                                 "age_s": round(age, 1), "report": self.reports[n]}
+            for n, v in nodes.items():
+                v["role"] = self.registry.nodes[n].role if self.registry and n in self.registry.nodes else None
             return {"schema": SCHEMA, "generated": now, "stale_after_s": STALE_AFTER, "nodes": nodes,
                     "prs": list(self.prs), "prs_note": self.prs_note, "prs_time": self.prs_time}
 
