@@ -926,3 +926,136 @@ def test_land_pr_defaults_base_to_goal(remote_repo):
     repo, origin = remote_repo
     r = cli(repo, "land", "core-01")
     assert r.returncode == 4 and "'main'" in r.stdout
+
+
+# ---------------------------------------------------------------- land --goal (gm-02)
+def _fake_gh(tmp_path, view_url=""):
+    """Fake gh: records argv in gh.log and copies any --body-file to gh.body."""
+    log, body = tmp_path / "gh.log", tmp_path / "gh.body"
+    fake = tmp_path / "gh"
+    fake.write_text(f"""#!/bin/sh
+echo "$@" >> {log}
+prev=""
+for x in "$@"; do [ "$prev" = "--body-file" ] && cp "$x" {body}; prev="$x"; done
+case "$1 $2" in
+"auth status") exit 0;;
+"pr view") [ -n "{view_url}" ] && echo "{view_url}" && exit 0; exit 1;;
+"pr create") echo https://github.com/o/r/pull/9;;
+"pr edit") exit 0;;
+esac
+""")
+    fake.chmod(0o755)
+    return fake, log, body
+
+
+@pytest.fixture
+def done_goal(grepo2, tmp_path):
+    """Both directives done on friday/core, with review verdicts and a Built line; origin set up."""
+    origin = _land_origin(grepo2, tmp_path)
+    _git(grepo2, "push", "-q", "origin", "main")
+    _git(grepo2, "checkout", "-qb", "friday/core")
+    for did, verdict in (("core-01", "no gaps"), ("core-02", "gaps: minor")):
+        p = grepo2 / f"docs/directives/{did}.md"
+        t = p.read_text().replace("Status: approved", "Status: done").replace("Verify: test -f ok.txt", "Verify: true")
+        p.write_text(t.rstrip("\n") + f"\n- 2026-11-17: Independent review: old\n  Independent review: {verdict}\n")
+    q = grepo2 / "docs/directives/core-02.md"
+    q.write_text(q.read_text() + "- Built: out/report.pdf\n")
+    _git(grepo2, "commit", "-qam", "done")
+    return grepo2, origin
+
+
+def test_land_goal_opens_pr_with_table(done_goal, tmp_path, monkeypatch):
+    repo, origin = done_goal
+    fake, log, body = _fake_gh(tmp_path)
+    monkeypatch.setenv("FRIDAY_GH", str(fake))
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.strip().splitlines()[-1] == "PR: https://github.com/o/r/pull/9"
+    assert "friday/core" in _heads(origin)
+    g = (repo / "docs/goals/core.md").read_text()
+    assert "Status: done" in g and "Landed:" in g
+    assert _git(repo, "log", "-1", "--format=%B").strip().endswith("Goal: core")
+    assert _git(repo, "status", "--porcelain") == ""
+    b = body.read_text()
+    assert "| core-01 | Make the thing | code | pass | no gaps |" in b
+    assert "| core-02 | Make the thing | code | pass | gaps: minor |" in b
+    assert "- core-02: Built: out/report.pdf" in b and b.startswith("Do the core.")
+    assert "--title core: The core goal" in log.read_text()
+    # rerun: goal already done -> no new commit; existing PR -> body updated via pr edit
+    n = _git(repo, "rev-list", "--count", "HEAD")
+    fake, log, body = _fake_gh(tmp_path, view_url="https://github.com/o/r/pull/9")
+    log.unlink()
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 0 and r.stdout.strip().splitlines()[-1] == "PR: https://github.com/o/r/pull/9"
+    assert _git(repo, "rev-list", "--count", "HEAD") == n
+    assert "pr edit friday/core --body-file" in log.read_text() and "pr create" not in log.read_text()
+
+
+def test_land_goal_failing_verify_exits_6(done_goal, tmp_path, monkeypatch):
+    repo, origin = done_goal
+    p = repo / "docs/directives/core-02.md"
+    p.write_text(p.read_text().replace("Verify: true", "Verify: false"))
+    _git(repo, "commit", "-qam", "break")
+    fake, log, _ = _fake_gh(tmp_path)
+    monkeypatch.setenv("FRIDAY_GH", str(fake))
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 6 and "core-02" in r.stdout and "nothing pushed" in r.stdout
+    assert "friday/core" not in _heads(origin) and not log.exists()
+    assert "Status: approved" in (repo / "docs/goals/core.md").read_text()
+
+
+def test_land_goal_external_not_run(done_goal, tmp_path, monkeypatch):
+    repo, _ = done_goal
+    p = repo / "docs/directives/core-02.md"
+    p.write_text(p.read_text().replace("Verify: true", "Verify: false").replace("Deliverable: code", "Deliverable: external"))
+    _git(repo, "commit", "-qam", "ext")
+    fake, _, body = _fake_gh(tmp_path)
+    monkeypatch.setenv("FRIDAY_GH", str(fake))
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 0, r.stdout
+    assert "| core-02 | Make the thing | external | n/a (external) | gaps: minor |" in body.read_text()
+
+
+def test_land_goal_refuses_undone_and_wrong_branch(done_goal):
+    repo, origin = done_goal
+    p = repo / "docs/directives/core-02.md"
+    p.write_text(p.read_text().replace("Status: done", "Status: running@h"))
+    _git(repo, "commit", "-qam", "undo")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode not in (0, 6) and "core-02" in r.stderr and "core-01" not in r.stderr
+    _git(repo, "checkout", "-q", "main")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode != 0 and "friday/core" in r.stderr
+    assert cli(repo, "land").returncode != 0 and cli(repo, "land", "core-01", "--goal", "core").returncode != 0
+
+
+def test_land_goal_base_missing_and_no_gh(done_goal, tmp_path, monkeypatch):
+    repo, origin = done_goal
+    _git(repo, "push", "-q", "origin", "--delete", "main")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 4 and "friday/core" in _heads(origin)
+    _git(repo, "push", "-q", "origin", "main")
+    # a github-style origin URL served from the local bare repo by a fake ssh
+    (tmp_path / "gh-root/o").mkdir(parents=True)
+    (tmp_path / "gh-root/o/r.git").symlink_to(origin)
+    ssh = tmp_path / "ssh"
+    ssh.write_text(f'#!/bin/sh\nshift\ncd {tmp_path / "gh-root"} && eval "$1"\n')
+    ssh.chmod(0o755)
+    monkeypatch.setenv("GIT_SSH_COMMAND", str(ssh))
+    monkeypatch.setenv("GIT_SSH_VARIANT", "simple")
+    _git(repo, "remote", "set-url", "origin", "git@github.com:o/r.git")
+    monkeypatch.setenv("FRIDAY_GH", "/nonexistent/gh")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 5
+    assert r.stdout.strip().splitlines()[-1] == "COMPARE: https://github.com/o/r/compare/main...friday/core?expand=1"
+
+
+def test_land_goal_land_none_commits_without_push(done_goal, tmp_path):
+    repo, origin = done_goal
+    gp = repo / "docs/goals/core.md"
+    gp.write_text(gp.read_text().replace("Land: pr", "Land: none"))
+    _git(repo, "commit", "-qam", "none")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 0 and "nothing is pushed" in r.stdout
+    assert "Status: done" in gp.read_text() and "friday/core" not in _heads(origin)
+    assert _git(repo, "log", "-1", "--format=%B").strip().endswith("Goal: core")
