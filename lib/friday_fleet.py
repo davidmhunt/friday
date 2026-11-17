@@ -431,6 +431,14 @@ def record_dispatch(rec: dict) -> Path:
     return p
 
 
+IDLE_SH = r"""idle() {
+  tail=$(tmux capture-pane -p -t "=friday-$1:" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 10) || return 1
+  [ -n "$tail" ] || return 1
+  printf '%s\n' "$tail" | grep -qiE 'esc to interrupt|do you want to|do you trust|enter to confirm|press enter to continue|allow (this|once|always)' && return 1
+  printf '%s\n' "$tail" | grep -qE '^[[:space:]│|]*[❯>]([[:space:]]|$)'
+}"""
+
+
 def inventory_script(node) -> str:
     """The one remote script that inventories goal worktrees and stray clones under `node.repos`.
 
@@ -445,12 +453,7 @@ def inventory_script(node) -> str:
 REPOS={remote_path(node.repos)}
 [ -d "$REPOS" ] || {{ echo "FRIDAY_INV_EMPTY no $REPOS"; exit 0; }}
 REPOS=$(cd "$REPOS" && pwd -P)
-idle() {{
-  tail=$(tmux capture-pane -p -t "=friday-$1:" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 10) || return 1
-  [ -n "$tail" ] || return 1
-  printf '%s\\n' "$tail" | grep -qiE 'esc to interrupt|do you want to|do you trust|enter to confirm|press enter to continue|allow (this|once|always)' && return 1
-  printf '%s\\n' "$tail" | grep -qE '^[[:space:]│|]*[❯>]([[:space:]]|$)'
-}}
+{IDLE_SH}
 for wt in "$REPOS"/*.friday/*/; do
   wt=${{wt%/}}
   [ -e "$wt/.git" ] || continue
@@ -608,3 +611,74 @@ def decide_clean(inv: dict, origin_urls: dict, run=None, have_gh=None) -> dict:
         else:
             out["remove"].append({**wt, "why": why})
     return out
+
+
+def clean_script(node, items: list, dry_run: bool = False) -> str:
+    """The remote script that removes finished goal worktrees (`items`: dicts with `repo`, `goal`, `path`).
+
+    Per item: refuse unless its `friday-<goal>` session is absent or idle, kill that session, `git
+    worktree remove` (never --force, so a dirty tree stays), `git branch -D friday/<goal>` in the clone
+    (`<path>/../../<repo>`), `git worktree prune`, and drop `projects[<path>]` from ~/.claude.json
+    (temp file + rename, other keys kept). With `dry_run` it prints the plan and changes nothing.
+    Prints `FRIDAY_CLEANED repo/goal`, `FRIDAY_KEPT repo/goal reason` or (dry run) `FRIDAY_WOULD ...`.
+    """
+    import shlex
+    rows = "\n".join(f"{shlex.quote(i['repo'])} {shlex.quote(i['goal'])} {shlex.quote(i['path'])}"
+                     for i in items)
+    return f"""set -u
+DRY={1 if dry_run else 0}
+{IDLE_SH}
+untrust() {{
+python3 - "$1" <<'PY'
+import json, os, sys, tempfile
+wt = sys.argv[1]
+cfg = os.path.expanduser("~/.claude.json")
+try:
+    data = json.load(open(cfg))
+    projects = data.get("projects") if isinstance(data, dict) else None
+    if not isinstance(projects, dict):
+        sys.exit(0)
+    keys = {{k for k in (wt, os.path.realpath(wt)) if k in projects}}
+    if not keys:
+        sys.exit(0)
+    for k in keys:
+        del projects[k]
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(cfg), prefix=".claude.json.friday-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(tmp, os.stat(cfg).st_mode & 0o777)
+    os.replace(tmp, cfg)
+except (OSError, ValueError):
+    sys.exit(1)
+PY
+}}
+while read -r repo goal wt; do
+  [ -n "$repo" ] || continue
+  eval "repo=$repo goal=$goal wt=$wt"
+  id="$repo/$goal"
+  clone="$(dirname "$(dirname "$wt")")/$repo"
+  has_session=0
+  if tmux has-session -t "=friday-$goal" 2>/dev/null; then
+    has_session=1
+    if ! idle "$goal"; then echo "FRIDAY_KEPT $id session friday-$goal is not idle"; continue; fi
+  fi
+  if [ "$DRY" = 1 ]; then
+    [ "$has_session" = 1 ] && echo "FRIDAY_WOULD $id: tmux kill-session -t =friday-$goal"
+    echo "FRIDAY_WOULD $id: git worktree remove $wt"
+    echo "FRIDAY_WOULD $id: git -C $clone branch -D friday/$goal"
+    echo "FRIDAY_WOULD $id: git -C $clone worktree prune"
+    echo "FRIDAY_WOULD $id: remove projects[$wt] from ~/.claude.json"
+    continue
+  fi
+  [ -e "$wt" ] && {{
+    err=$(git -C "$clone" worktree remove "$wt" 2>&1) || {{ echo "FRIDAY_KEPT $id worktree remove refused: $(printf '%s' "$err" | head -n 1)"; continue; }}
+  }}
+  [ "$has_session" = 1 ] && tmux kill-session -t "=friday-$goal" 2>/dev/null
+  git -C "$clone" branch -D "friday/$goal" >/dev/null 2>&1
+  git -C "$clone" worktree prune
+  untrust "$wt" || echo "FRIDAY_KEPT $id could not remove the trust entry from ~/.claude.json"
+  echo "FRIDAY_CLEANED $id"
+done <<'FRIDAY_ROWS'
+{rows}
+FRIDAY_ROWS
+"""

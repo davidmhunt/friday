@@ -159,3 +159,90 @@ def test_decide_gh_failure_falls_back_with_note():
     d = _decide([_wt_rec("g", goalstatus="done")], _Run(gh_fails=True))
     assert [w["goal"] for w in d["remove"]] == ["g"]
     assert any("gh failed" in n for n in d["notes"])
+
+
+def _clean(tmp_path, repos, items, dry_run=False, sessions=()):
+    """Run clean_script locally under a temp HOME with a fake tmux that tracks `sessions` (idle)."""
+    home = tmp_path / "home"
+    bin_ = home / ".local" / "bin"
+    bin_.mkdir(parents=True, exist_ok=True)
+    log = tmp_path / "tmux.log"
+    (bin_ / "tmux").write_text(
+        "#!/bin/bash\nsub=$1; shift; t=; while [ $# -gt 0 ]; do [ \"$1\" = -t ] && t=$2; shift; done\n"
+        f"t=${{t#=}}; t=${{t%:}}; echo \"$sub $t\" >> {log}\n"
+        f"[ -f \"{tmp_path}/$t.pane\" ] || exit 1\n"
+        f"[ \"$sub\" = capture-pane ] && cat \"{tmp_path}/$t.pane\"\n"
+        f"[ \"$sub\" = kill-session ] && rm \"{tmp_path}/$t.pane\"\nexit 0\n")
+    (bin_ / "tmux").chmod(0o755)
+    for s in sessions:
+        (tmp_path / f"friday-{s}.pane").write_text("done\n\n❯ \n")
+    argv, stdin = ff.ssh_cmd(_node(repos), ff.clean_script(_node(repos), items, dry_run))
+    r = subprocess.run(["bash", "-s"], input=stdin, capture_output=True, text=True,
+                       env=dict(os.environ, HOME=str(home)))
+    assert r.returncode == 0, r.stderr
+    return r.stdout, log
+
+
+def _trust(tmp_path, *paths):
+    import json
+    cfg = tmp_path / "home" / ".claude.json"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(json.dumps({"theme": "dark", "projects": {
+        **{str(Path(p).resolve()): {"hasTrustDialogAccepted": True} for p in paths},
+        "/other": {"x": 1}}}))
+    return cfg
+
+
+def _items(*wts):
+    return [{"repo": "proj", "goal": w.name, "path": str(w)} for w in wts]
+
+
+def test_clean_removes_worktree_branch_trust_and_idle_session(tmp_path):
+    import json
+    repos = tmp_path / "repos"
+    c = _mkclone(repos, "proj", "git@github.com:me/proj.git")
+    a, b = _wt(c, "a"), _wt(c, "b")
+    cfg = _trust(tmp_path, a, b)
+    out, log = _clean(tmp_path, repos, _items(a), sessions=["a"])
+    assert "FRIDAY_CLEANED proj/a" in out
+    assert not a.exists() and b.exists()
+    br = subprocess.run(["git", "branch", "--list", "friday/*"], cwd=c, capture_output=True, text=True).stdout
+    assert "friday/a" not in br and "friday/b" in br
+    assert "worktree list" and str(a) not in subprocess.run(
+        ["git", "worktree", "list"], cwd=c, capture_output=True, text=True).stdout
+    data = json.loads(cfg.read_text())
+    assert str(a.resolve()) not in data["projects"] and str(b.resolve()) in data["projects"]
+    assert data["theme"] == "dark" and data["projects"]["/other"] == {"x": 1}
+    assert "kill-session friday-a" in log.read_text()
+    assert not list(cfg.parent.glob(".claude.json.friday-*"))
+
+
+def test_clean_keeps_dirty_worktree_and_busy_session(tmp_path):
+    repos = tmp_path / "repos"
+    c = _mkclone(repos, "proj", "git@github.com:me/proj.git")
+    d, busy = _wt(c, "d"), _wt(c, "busy")
+    (d / "new.txt").write_text("x")
+    cfg = _trust(tmp_path, d, busy)
+    before = cfg.read_text()
+    (tmp_path / "friday-busy.pane").write_text("esc to interrupt\n")
+    out, log = _clean(tmp_path, repos, _items(d, busy))
+    assert "FRIDAY_KEPT proj/d worktree remove refused" in out
+    assert "FRIDAY_KEPT proj/busy session friday-busy is not idle" in out
+    assert d.exists() and busy.exists() and cfg.read_text() == before
+    assert "kill-session" not in log.read_text()
+    br = subprocess.run(["git", "branch", "--list", "friday/*"], cwd=c, capture_output=True, text=True).stdout
+    assert "friday/d" in br and "friday/busy" in br
+
+
+def test_clean_dry_run_changes_nothing(tmp_path):
+    repos = tmp_path / "repos"
+    c = _mkclone(repos, "proj", "git@github.com:me/proj.git")
+    a = _wt(c, "a")
+    cfg = _trust(tmp_path, a)
+    before = cfg.read_text()
+    out, log = _clean(tmp_path, repos, _items(a), dry_run=True, sessions=["a"])
+    assert "FRIDAY_WOULD proj/a: git worktree remove" in out and "kill-session" in out
+    assert "FRIDAY_CLEANED" not in out
+    assert a.exists() and cfg.read_text() == before and (tmp_path / "friday-a.pane").exists()
+    assert "kill-session" not in log.read_text()
+    assert "friday/a" in subprocess.run(["git", "branch"], cwd=c, capture_output=True, text=True).stdout
