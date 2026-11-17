@@ -191,7 +191,7 @@ def test_deny_wins_over_hardware(repo):
 def test_stop_gate(repo):
     assert hook("stop", {"cwd": str(repo)}) is None                    # nothing active
     assert cli(repo, "start", "core-01").returncode == 0
-    assert "running@" in (repo / "docs/directives/core-01.md").read_text()
+    assert "Status: approved" in (repo / "docs/directives/core-01.md").read_text()
     r = hook("stop", {"cwd": str(repo)})
     assert r["decision"] == "block" and "test -f ok.txt" in r["reason"]
     assert hook("stop", {"cwd": str(repo), "background_tasks": [{"id": "w1"}]}) is None
@@ -228,6 +228,23 @@ def test_cli_lifecycle(repo):
     cli(repo, "start", "core-01")
     assert cli(repo, "finish", "core-01", "--blocked", "needs a board").returncode == 0
     assert "Status: blocked: needs a board" in p.read_text()
+
+
+def test_start_commits_nothing_and_stores_base(repo):
+    p = repo / "docs/directives/core-01.md"
+    before = p.read_text()
+    r = cli(repo, "start", "core-01")
+    assert r.returncode == 0
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    assert f"base {head}" in r.stdout and fc.read_marker(repo)["base"] == head
+    assert p.read_text() == before and "Status: approved" in before
+    assert "runs/" in r.stderr and ".gitignore" in r.stderr
+    (repo / ".gitignore").write_text("runs/\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "ignore"], check=True)
+    r = cli(repo, "start", "core-01")  # restart keeps the stored base
+    assert r.returncode == 0 and fc.read_marker(repo)["base"] == head
+    assert f"base {head}" in r.stdout and "gitignored" not in r.stderr
 
 
 def test_hook_fails_open_on_garbage():
@@ -821,7 +838,7 @@ def test_start_creates_goal_branch_from_base(grepo2):
     assert r.returncode == 0, r.stderr
     assert _git(grepo2, "branch", "--show-current") == "friday/core"
     assert _git(grepo2, "rev-parse", "HEAD") == base and not (grepo2 / "unrelated.txt").exists()
-    assert "Status: running@" in (grepo2 / "docs/directives/core-01.md").read_text()
+    assert "Status: approved" in (grepo2 / "docs/directives/core-01.md").read_text()
     assert "Status: running\n" in (grepo2 / "docs/goals/core.md").read_text()
     _git(grepo2, "commit", "-qam", "work")
     cli(grepo2, "finish", "core-01")

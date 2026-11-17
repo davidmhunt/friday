@@ -136,7 +136,10 @@ Design (from the spec; adjust if step 0 shows a Claude Code behaviour differs):
 - A `sweep` workflow (one agent per config or dataset) with an explicit concurrency limit
   argument, e.g. at most 2 container builds at once on the laptop.
 - Parallel directives within a goal: run them as sub-branches merged into the goal branch (follow-up
-  to the goal model; today directives in a goal run one at a time).
+  to the goal model; today directives in a goal run one at a time). Every run of
+  `workflows/execute.js` shows the same name in `/workflows` (`meta.name` must be a literal), so
+  when this lands, `log()` the directive id right after the input check and prefix every agent
+  label with `[<id>]` so concurrent runs can be told apart.
 - fleet-02 amendment: its per-directive worktree and branch (`friday/<id>`) must be changed to the
   goal branch (`friday/<goal>`) before fleet-02 runs.
 - Merge `v1` into `main` after phase 3 works; then migrate other v0.20 projects with
