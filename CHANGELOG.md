@@ -21,6 +21,9 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
 - Fleet: `friday nodes --check` reports the workflow and auto-mode prompts per node;
   `friday nodes --setup <node>` sets their skip keys after confirmation; docs/fleet.md covers both
   and the master's ssh setup.
+- `friday dash` on the master collects node status pushed over the tailnet (`friday status --push`,
+  `friday-push.timer` installed by `friday nodes --setup`), read-only `/api/state` and `/api/health`;
+  docs/dashboard.md.
 - Docs: commit rules; recommendation to make squash-merge the default on GitHub
   (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
 
