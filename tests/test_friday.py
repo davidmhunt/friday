@@ -242,7 +242,7 @@ def test_finish_records_in_one_commit(repo):
     (repo / "runs/core-01/notes.md").write_text("measured 3 ms\n")
     for n in ("a", "b"):
         (repo / f"{n}.txt").write_text(n)
-        _g(repo, "add", "-A", ":!runs")
+        _g(repo, "add", f"{n}.txt")      # code only: the goal's running flip stays for finish
         _g(repo, "commit", "-qm", f"code {n}\n\nDirective: core-01")
     (repo / "x.txt").write_text("x")
     _g(repo, "add", "x.txt")
@@ -257,6 +257,9 @@ def test_finish_records_in_one_commit(repo):
     assert "Independent review: approved" in t and "- " in t and t.count("code a") == 1 and "code b" in t
     assert int(_g(repo, "rev-list", "--count", f"{base}..HEAD")) == n0 + 1
     assert r.stdout.strip() == _g(repo, "rev-parse", "HEAD").strip()
+    changed = _g(repo, "show", "--name-only", "--format=", "HEAD").split()
+    assert "docs/directives/core-01.md" in changed and "docs/goals/core.md" in changed
+    assert "+Status: running" in _g(repo, "show", "HEAD", "--", "docs/goals/core.md")
     msg = _g(repo, "log", "-1", "--format=%B")
     assert msg.startswith("core-01: record results") and "Directive: core-01" in msg
     assert fc.read_marker(repo) is None
