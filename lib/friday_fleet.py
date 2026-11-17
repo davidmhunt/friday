@@ -175,3 +175,70 @@ def ssh_cmd(node, script: str) -> tuple:
     argv = [os.environ.get("FRIDAY_SSH") or "ssh", "-o", "ConnectTimeout=5",
             "-o", "BatchMode=yes", node.ssh, "bash", "-s"]
     return argv, PATH_PREAMBLE + script
+
+
+def candidates(line: str, nodes) -> list:
+    """Names of the nodes (registry order) that satisfy one `Node:` line.
+
+    Raises RouteError (the same message `route` gives) when none does.
+    """
+    nodes = getattr(nodes, "nodes", nodes)
+    targets = {k: v for k, v in nodes.items() if v.role == "target"}
+    out = []
+    for name, n in nodes.items():
+        if n.role == "target":
+            continue
+        try:
+            got, _ = route(line, {name: n, **targets}, {})
+        except RouteError:
+            continue
+        if got == name:
+            out.append(name)
+    if not out:
+        route(line, nodes, {})  # raises the specific RouteError
+        raise RouteError(f"Node: {line} - no node satisfies it")
+    return out
+
+
+def common_nodes(lines: dict, nodes) -> list:
+    """Nodes that satisfy every `Node:` line in `lines` ({directive id: line}).
+
+    Raises RouteError naming the directives that conflict when the intersection is empty.
+    """
+    sets = {}
+    for did, line in lines.items():
+        try:
+            sets[did] = candidates(line, nodes)
+        except RouteError as e:
+            raise RouteError(f"{did}: {e}") from e
+    names = list(getattr(nodes, "nodes", nodes))
+    ok = [n for n in names if all(n in s for s in sets.values())]
+    if not ok:
+        detail = "; ".join(f"{d} wants '{lines[d]}' ({', '.join(s)})" for d, s in sets.items())
+        raise RouteError("no node satisfies every remaining directive: " + detail)
+    return ok
+
+
+LOAD_SCRIPT = ("echo FRIDAY_REACH ok\n"
+               "n=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c '^friday-')\n"
+               'echo "FRIDAY_LOAD ${n:-0}"\n')
+
+
+def probe_load(node, timeout: int = 30):
+    """Reach a node and count its `friday-*` tmux sessions. Returns the count, None if unreachable."""
+    import subprocess
+    argv, stdin = ssh_cmd(node, LOAD_SCRIPT)
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = r.stdout.splitlines()
+    if r.returncode != 0 or "FRIDAY_REACH ok" not in lines:
+        return None
+    for l in lines:
+        if l.startswith("FRIDAY_LOAD "):
+            try:
+                return int(l.split()[1])
+            except ValueError:
+                break
+    return 0

@@ -17,10 +17,13 @@
   friday parse <id> --json          parsed directive as JSON (exit 1 on errors, 2 if file missing)
   friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
+  friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
+                                    check preconditions, pick a node (refusals have their own exit codes)
 """
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import socket
 import subprocess
@@ -567,6 +570,131 @@ def cmd_nodes(a) -> int:
     return 0 if ok else 1
 
 
+# Exit codes of `friday dispatch` refusals (0 = ok). Each has a one-line fix on stderr.
+DISPATCH_EXIT = {"goal": 10, "format": 11, "directives": 12, "land-pr": 13, "unpushed": 14,
+                 "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19}
+
+
+def _refuse(kind: str, msg: str, fix: str):
+    print(f"friday: dispatch refused: {msg}\n  fix: {fix}", file=sys.stderr)
+    sys.exit(DISPATCH_EXIT[kind])
+
+
+def _git_out(args: list[str], cwd: Path) -> tuple[int, str]:
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    return r.returncode, r.stdout.strip()
+
+
+def dispatch_preconditions(root: Path, gid: str, node_name: str | None) -> dict:
+    """Every check that runs on the master before anything touches a node. Exits with the
+    refusal's own code on the first failure; returns the plan dict when all pass."""
+    gp = fc.goal_path(root, gid)
+    if not fc.GOAL_RE.match(gid) or not gp.is_file():
+        _refuse("goal", f"no goal file {fc.GOAL_DIR / (gid + '.md')}", "check the goal name (`friday status`)")
+    goal = fc.parse_goal(gp.read_text())
+    if not goal["status"].lower().startswith(("approved", "running")):
+        _refuse("goal", f"goal {gid} is '{goal['status']}'", "the user approves the goal (Status: approved) first")
+    errors = [i for i in fc.check_repo(root, goal=gid) if i.level == "error"]
+    if errors:
+        print("\n".join(str(i) for i in errors), file=sys.stderr)
+        _refuse("format", f"goal {gid} has format errors", f"fix them, then re-run `friday check --goal {gid}`")
+
+    remaining, missing = [], []
+    for x in goal["directives"]:
+        d = fc.read_directive(root, x["id"])
+        if d is None:
+            missing.append(x["id"])
+        elif d["status"] != "done":
+            remaining.append(x["id"])
+    if missing:
+        _refuse("directives", f"directive file missing for {', '.join(missing)}", "write and commit them")
+    if not remaining:
+        _refuse("directives", f"goal {gid} has no remaining directives", "nothing to dispatch")
+    parsed = {i: fc.parse_directive_full(fc.directive_path(root, i).read_text()) for i in remaining}
+    if not parsed[remaining[0]]["status"].lower().startswith("approved"):
+        _refuse("directives", f"first remaining directive {remaining[0]} is '{parsed[remaining[0]]['status']}'",
+                f"the user approves {remaining[0]} (Status: approved) first")
+    lp = [i for i in remaining if parsed[i]["land"] == "pr"]
+    if lp:
+        _refuse("land-pr", f"{', '.join(lp)} has Land: pr",
+                "those run locally on their own branch; run them with /friday:execute here")
+
+    # the goal and directive files are committed and the same on the source ref
+    base = goal["base"]
+    if _git_out(["remote", "get-url", "origin"], root)[0] != 0:
+        _refuse("unpushed", "this repo has no origin remote", "add an origin remote and publish the branch")
+    _run(["git", "fetch", "-q", "origin"], root)
+    if _git_out(["rev-parse", "--verify", "--quiet", f"refs/remotes/origin/friday/{gid}^{{commit}}"], root)[0] == 0:
+        ref = f"origin/friday/{gid}"
+    elif _git_out(["rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{base}^{{commit}}"], root)[0] == 0:
+        ref = f"origin/{base}"
+    else:
+        _refuse("unpushed", f"neither origin/friday/{gid} nor origin/{base} exists", f"publish {base} to origin")
+    paths = [str(gp.relative_to(root))] + [str(fc.directive_path(root, i).relative_to(root)) for i in remaining]
+    if _git_out(["status", "--porcelain", "--", *paths], root)[1]:
+        _refuse("unpushed", "goal or directive files have uncommitted changes", "commit them")
+    if _git_out(["diff", "--quiet", ref, "--", *paths], root)[0] != 0:
+        _refuse("unpushed", f"goal or directive files differ from {ref}",
+                f"publish the committed files to {ref.removeprefix('origin/')} on origin")
+
+    # the friday plugin's own HEAD is on its origin (the node checks out that commit)
+    plug = Path(os.environ.get("FRIDAY_PLUGIN_ROOT") or ff.PLUGIN_ROOT)
+    rc, commit = _git_out(["rev-parse", "HEAD"], plug)
+    if rc != 0:
+        _refuse("plugin", f"{plug} is not a git checkout", "dispatch needs the friday plugin as a git clone")
+    _run(["git", "fetch", "-q", "origin"], plug)
+    if not _git_out(["branch", "-r", "--contains", commit], plug)[1]:
+        _refuse("plugin", f"friday plugin commit {commit[:10]} is not on its origin",
+                f"publish it from {plug}")
+
+    # routing and reachability
+    path = ff.find_nodes_file()
+    if path is None:
+        _refuse("registry", "no nodes file",
+                f"copy {ff.PLUGIN_ROOT / 'nodes.example.toml'} to ~/.config/friday/nodes.toml and edit it")
+    try:
+        reg = ff.load_nodes(path)
+    except ff.RegistryError as e:
+        _refuse("registry", str(e), f"fix {path}")
+    lines = {i: parsed[i]["node"] or "any" for i in remaining}
+    if node_name:
+        n = reg.nodes.get(node_name)
+        if n is None or n.role == "target":
+            _refuse("node", f"--node {node_name!r} is not a master or worker in {path}",
+                    "pick one from `friday nodes`")
+        pool, why = [n], f"--node {node_name}"
+    else:
+        try:
+            pool = [reg.nodes[k] for k in ff.common_nodes(lines, reg)]
+        except ff.RouteError as e:
+            _refuse("route", str(e), "make the directives' Node: lines agree, or pass --node <name>")
+        why = "routing: " + ", ".join(f"{i}={l}" for i, l in lines.items())
+    loads = {n.name: ff.probe_load(n) for n in pool}
+    up = [n for n in pool if loads[n.name] is not None]
+    if not up:
+        n = pool[0]
+        _refuse("unreachable", f"node {', '.join(x.name for x in pool)} not reachable",
+                f"check that `ssh {n.ssh}` works non-interactively (`friday nodes --check`)")
+    node = min(up, key=lambda n: loads[n.name])  # ties: registry order
+    return {"goal": gid, "directives": remaining, "base": base, "source_ref": ref, "plugin": plug,
+            "plugin_commit": commit, "node": node, "load": loads[node.name], "reason": why,
+            "registry": reg}
+
+
+def cmd_dispatch(a) -> int:
+    root = _root()
+    plan = dispatch_preconditions(root, a.goal, a.node)
+    n = plan["node"]
+    print(f"dispatch {a.goal} -> {n.name} ({n.ssh}); {plan['reason']}; {plan['load']} friday session(s) running")
+    print(f"directives: {' '.join(plan['directives'])}")
+    print(f"source ref: {plan['source_ref']}  plugin commit: {plan['plugin_commit']}")
+    if a.dry_run:
+        print("dry run: nothing changed on any node")
+        return 0
+    print("friday: dispatch preconditions pass; the remote prepare and launch are not built yet", file=sys.stderr)
+    return 70
+
+
 def cmd_check(a) -> int:
     root = _root()
     if a.id and a.goal:
@@ -647,6 +775,7 @@ def main() -> int:
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.set_defaults(f=cmd_nodes)
+    s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
     a = p.parse_args()
     return a.f(a)
 
