@@ -1,5 +1,5 @@
 # fleet-01: Node registry and routing (`friday nodes`)
-Status: approved
+Status: done
 Node: any
 Verify: uv run --with pytest pytest -q tests/test_fleet.py && uv run --with pytest pytest -q && claude plugin validate .
 Hardware: none
@@ -52,3 +52,17 @@ probe against a fake `ssh`.
 - `friday status` across nodes (phase 4).
 
 ## Log
+
+### 2026-11-17
+
+Commits:
+- 0bb8832 Test friday nodes --check with ready, unreachable and untrusted nodes in one run
+- dc065f9 Add friday nodes [--check], nodes.example.toml, gitignore nodes.toml
+- bb724ad Add friday_fleet.ssh_cmd: argv and PATH-prefixed stdin for one remote call
+- e5f6265 Add friday_fleet.route: any/tag/host routing with RouteError
+- 2204665 Add node registry loader (friday_fleet) with validation
+- 1cd43d6 Start fleet-01
+
+Verify passed: uv run --with pytest pytest -q tests/test_fleet.py && uv run --with pytest pytest -q && claude plugin validate .
+
+Independent review: no gaps

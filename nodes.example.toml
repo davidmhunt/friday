@@ -1,0 +1,37 @@
+# friday fleet registry. Copy to nodes.toml (gitignored; it holds real tailnet names) or to
+# ~/.config/friday/nodes.toml, or point $FRIDAY_NODES at it, then edit.
+# Check it with: friday nodes --check
+
+# Name of the master's Claude session that workers message when a directive finishes (optional).
+# report_to = "friday-master"
+
+[node.laptop]
+# role: master (runs this session), worker (runs directives), or target (a device driven over ssh).
+role = "master"
+# ssh: how to reach the node (user@host or an ssh config alias); must be unique per node.
+ssh = "david@laptop-ts"
+# runtime: native (default) or container.
+# runtime = "native"
+# tags: labels that `Node: tag:<x>` routes on.
+# tags = ["laptop"]
+# repos: directory holding this node's repos (~ allowed); it or a parent must be trusted in claude.
+repos = "~/Documents"
+# plugin_dir: where the friday plugin is cloned on this node.
+plugin_dir = "~/friday"
+# launcher: how directives are started; only "tmux" is supported.
+# launcher = "tmux"
+
+[node.alfred]
+role = "worker"
+ssh = "david@alfred-ts"
+# runtime = "container"
+# tags = ["gpu"]
+repos = "~/Documents"
+plugin_dir = "~/friday"
+# launcher = "tmux"
+
+[node.ground-bot]
+# A target needs only role and ssh (and optional tags); it is checked for reachability only.
+role = "target"
+ssh = "pi@ground-bot-ts"
+# tags = ["rover"]
