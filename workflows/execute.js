@@ -3,7 +3,7 @@ export const meta = {
   description: 'Execute one approved friday directive on the goal model: parse it, implement each step on the goal branch, gate on Verify (skipped for external), independent review incl. Acceptance, land by the Land field',
   whenToUse: 'After the user approves a directive in docs/directives/. Pass the directive id, e.g. /friday:execute gm-03',
   phases: [
-    { title: 'Prepare', detail: 'friday parse --json, friday start (goal branch, order), commit the directive' },
+    { title: 'Prepare', detail: 'friday parse --json, friday start --no-gate (goal branch, order, base); no commit' },
     { title: 'Implement', detail: 'one implementer per step, in order, labelled step n/total' },
     { title: 'Verify', detail: 'run Verify; fix and rerun until it passes or stops making progress (skipped for external)' },
     { title: 'Review', detail: 'independent Opus verifier grades the steps and ## Acceptance over this directive\'s commits' },
@@ -34,7 +34,7 @@ const START = {
   properties: {
     started: { type: 'boolean', description: 'false if friday start refused' },
     output: { type: 'string', description: 'friday start output verbatim when it refused, else empty' },
-    review_base: { type: 'string', description: 'git rev-parse HEAD after start, before the directive commit' },
+    review_base: { type: 'string', description: 'the sha from the `base <sha>` line of friday start' },
   },
 }
 const STEP = {
@@ -156,7 +156,7 @@ if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
 }
 
 const st = await agent(
-  `Start friday directive ${id}. From the repo root:\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Run \`git rev-parse HEAD\` and return it as review_base (before committing).\n3. Commit ${directive} (message last line \`Directive: ${id}\`).`,
+  `Start friday directive ${id}. From the repo root:\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Return the sha from the \`base <sha>\` line of its output as review_base. Commit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
