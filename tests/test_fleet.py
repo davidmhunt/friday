@@ -135,3 +135,77 @@ def test_ssh_cmd(monkeypatch):
     assert stdin.endswith("echo hi\n")
     monkeypatch.setenv("FRIDAY_SSH", "/tmp/fake-ssh")
     assert ff.ssh_cmd(node, "x")[0][0] == "/tmp/fake-ssh"
+
+
+# ---- friday nodes ----
+import os
+import subprocess
+
+FRIDAY = ROOT / "bin" / "friday"
+
+
+def test_example_parses_and_toml_ignored():
+    reg = ff.load_nodes(ROOT / "nodes.example.toml")
+    assert [n.role for n in reg.nodes.values()] == ["master", "worker", "target"]
+    assert reg.nodes["alfred"].ssh == "david@alfred-ts" and reg.nodes["alfred"].repos == "~/Documents"
+    r = subprocess.run(["git", "check-ignore", "nodes.toml"], cwd=ROOT, capture_output=True)
+    assert r.returncode == 0
+
+
+def _friday(tmp_path, nodes_text, *args, ssh_script=None):
+    env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "n.toml"))
+    (tmp_path / "n.toml").write_text(nodes_text)
+    if ssh_script:
+        s = tmp_path / "fakessh"
+        s.write_text(ssh_script)
+        s.chmod(0o755)
+        env["FRIDAY_SSH"] = str(s)
+    return subprocess.run([sys.executable, str(FRIDAY), "nodes", *args], env=env,
+                          capture_output=True, text=True, cwd=tmp_path)
+
+
+def test_nodes_list(tmp_path):
+    r = _friday(tmp_path, GOOD)
+    assert r.returncode == 0
+    lines = r.stdout.splitlines()
+    assert str(tmp_path / "n.toml") in lines[0]
+    assert len(lines) == 4 and "me@alfred" in lines[2] and "container" in lines[2]
+
+
+def test_nodes_no_file(tmp_path):
+    env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "none"), HOME=str(tmp_path))
+    r = subprocess.run([sys.executable, str(FRIDAY), "nodes"], env=env, capture_output=True, text=True)
+    if (ROOT / "nodes.toml").exists():
+        pytest.skip("real nodes.toml present")
+    assert r.returncode != 0 and "nodes.example.toml" in r.stdout
+
+
+FAKE = """#!/bin/bash
+echo "$@" >> "$0.argv"; cat >> "$0.stdin"
+case "$*" in
+  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=ok\\n';;
+  *me@alfred*) exit 255;;
+  *me@bot*) echo FRIDAY_PROBE reach=ok;;
+esac
+"""
+
+
+def test_nodes_check_unreachable_worker_fails(tmp_path):
+    r = _friday(tmp_path, GOOD, "--check", ssh_script=FAKE)
+    assert r.returncode == 1
+    assert "unreachable" in r.stdout and "me@alfred" in r.stdout
+    assert "laptop" in r.stdout and "reachable" in r.stdout
+    assert 'export PATH="$HOME/.local/bin' in (tmp_path / "fakessh.stdin").read_text()
+    assert "BatchMode=yes" in (tmp_path / "fakessh.argv").read_text()
+
+
+def test_nodes_check_untrusted_and_ready(tmp_path):
+    fake = FAKE.replace("*me@alfred*) exit 255;;",
+                        "*me@alfred*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=missing\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=no\\n';;")
+    r = _friday(tmp_path, GOOD, "--check", ssh_script=fake)
+    assert r.returncode == 1
+    assert "accept the trust prompt" in r.stdout and "install Claude Code" in r.stdout
+    ok = GOOD.replace('[node.alfred]\nrole = "worker"', '[node.alfred]\nrole = "target"')
+    ok = ok.replace('runtime = "container"\ntags = ["gpu"]\nrepos = "~/Documents"\nplugin_dir = "~/friday"\n', '')
+    r = _friday(tmp_path, ok, "--check", ssh_script=FAKE)
+    assert r.returncode == 0, r.stdout

@@ -8,10 +8,12 @@
   friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
   friday land <id> --base <branch>  push friday/<id> and open its PR (gh), or print why not
   friday release <resource>|--all   free a hardware lease (or all of them)
+  friday nodes [--check]            list the fleet registry; --check probes each node over ssh
 """
 from __future__ import annotations
 
 import argparse
+import shlex
 import socket
 import subprocess
 import sys
@@ -20,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import friday_core as fc  # noqa: E402
+import friday_fleet as ff  # noqa: E402
 
 
 def _root() -> Path:
@@ -160,6 +163,108 @@ def cmd_release(a) -> int:
     return 0
 
 
+def _remote_path(p: str) -> str:
+    """Shell word for a remote path; a leading ~ becomes $HOME so it expands on the node."""
+    if p == "~":
+        return '"$HOME"'
+    if p.startswith("~/"):
+        return '"$HOME"/' + shlex.quote(p[2:])
+    return shlex.quote(p)
+
+
+_TRUST_PY = """
+import json, os, sys
+p = os.path.abspath(os.environ["FRIDAY_P"])
+try:
+    projects = json.load(open(os.path.expanduser("~/.claude.json"))).get("projects", {})
+except Exception:
+    projects = {}
+while True:
+    if projects.get(p, {}).get("hasTrustDialogAccepted") is True:
+        print("ok"); sys.exit()
+    if os.path.dirname(p) == p:
+        break
+    p = os.path.dirname(p)
+print("no")
+"""
+
+
+def probe_script(node) -> str:
+    if node.role == "target":
+        return "echo FRIDAY_PROBE reach=ok\n"
+    repos, plug = _remote_path(node.repos), _remote_path(node.plugin_dir)
+    return "\n".join([
+        "echo FRIDAY_PROBE reach=ok",
+        'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
+        'for t in tmux git; do command -v $t >/dev/null 2>&1 && echo "FRIDAY_PROBE $t=ok" || echo "FRIDAY_PROBE $t=missing"; done',
+        f'[ -e {plug}/.git ] && echo "FRIDAY_PROBE plugin=ok" || echo "FRIDAY_PROBE plugin=missing"',
+        "if command -v python3 >/dev/null 2>&1; then",
+        f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
+        'else echo "FRIDAY_PROBE trust=unknown"; fi',
+    ]) + "\n"
+
+
+def check_node(node) -> tuple:
+    """Probe one node. Returns (summary_text, [fix lines]); fixes empty means it passes."""
+    argv, stdin = ff.ssh_cmd(node, probe_script(node))
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+        out, rc = r.stdout, r.returncode
+    except (OSError, subprocess.TimeoutExpired) as e:
+        out, rc = "", 255
+    got = dict(l[len("FRIDAY_PROBE "):].split("=", 1) for l in out.splitlines()
+               if l.startswith("FRIDAY_PROBE ") and "=" in l)
+    if got.get("reach") != "ok":
+        return "unreachable", [f"fix: check that `ssh {node.ssh}` works non-interactively "
+                               f"(key auth, tailnet up, host awake)"]
+    if node.role == "target":
+        return "reachable", []
+    fixes = []
+    cl = got.get("claude", "missing")
+    if cl == "missing":
+        fixes.append(f"fix: install Claude Code on {node.name} (claude not on PATH or ~/.local/bin)")
+    for t in ("tmux", "git"):
+        if got.get(t) != "ok":
+            fixes.append(f"fix: install {t} on {node.name}")
+    if got.get("plugin") != "ok":
+        fixes.append(f"fix: git clone the friday repo to {node.plugin_dir} on {node.name}")
+    trust = got.get("trust")
+    if trust == "unknown":
+        fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
+    elif trust != "ok":
+        fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
+    summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
+               f"plugin_dir {got.get('plugin', '?')}, trust {trust or '?'}")
+    return summary, fixes
+
+
+def cmd_nodes(a) -> int:
+    path = ff.find_nodes_file()
+    if path is None:
+        print(f"no nodes file found; copy {ff.PLUGIN_ROOT / 'nodes.example.toml'} to "
+              f"{ff.PLUGIN_ROOT / 'nodes.toml'} (or ~/.config/friday/nodes.toml) and edit it")
+        return 1
+    print(f"nodes file: {path}")
+    try:
+        reg = ff.load_nodes(path)
+    except ff.RegistryError as e:
+        print(f"friday: {e}")
+        return 1
+    ok = True
+    for n in reg.nodes.values():
+        if not a.check:
+            print(f"{n.name:<12} {n.role:<7} {n.ssh:<24} {n.runtime:<9} "
+                  f"tags={','.join(n.tags) or '-'} repos={n.repos or '-'}")
+            continue
+        summary, fixes = check_node(n)
+        print(f"{n.name:<12} {n.role:<7} {'FAIL' if fixes else 'ok':<5} {summary}")
+        for f in fixes:
+            print(f"  {f}")
+        if fixes and n.role in ("master", "worker"):
+            ok = False
+    return 0 if ok else 1
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -170,6 +275,7 @@ def main() -> int:
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
     s = sub.add_parser("land"); s.add_argument("id"); s.add_argument("--base", required=True); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
+    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.set_defaults(f=cmd_nodes)
     a = p.parse_args()
     return a.f(a)
 
