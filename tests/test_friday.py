@@ -1,6 +1,7 @@
 """Tests for friday's hooks and CLI. Run: uv run --with pytest pytest tests/ -q"""
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -1076,3 +1077,141 @@ def test_status_lists_goals_with_progress(grepo):
     assert out[1].split()[:2] == ["core-01", "done"] and out[2].split()[:2] == ["core-02", "approved"]
     assert out[3] == "(no goal)" and out[4].split()[0] == "orphan-01"
     assert "active here: none" in cli(grepo, "status").stdout
+
+
+# ---- workflows/execute.js with a stubbed agent() --------------------------------
+
+_NODE_RUNNER = r"""
+const fs = require('fs')
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+const src = fs.readFileSync(process.argv[2], 'utf8').replace(/^export const meta/m, 'const meta')
+const scenario = JSON.parse(fs.readFileSync(0, 'utf8'))
+const calls = []
+const parse = Object.assign({
+  id: 'g-02', status: 'approved', goal: 'g', base: 'main', deliverable: 'code', land: 'goal',
+  verify: 'true', steps: [{ n: 1, text: 'do it' }], acceptance: [], errors: [],
+  position: 1, goal_directives: [{ id: 'g-02' }, { id: 'g-03' }],
+}, scenario.parse || {})
+const defaults = {
+  'parse g-02': { exit_code: scenario.parse_exit || 0, stdout: scenario.parse_stdout || JSON.stringify(parse) },
+  'start g-02': { started: true, output: '', review_base: 'abc123' },
+  'step 1/1': { status: 'done', summary: 'ok', commit: 'c1', question: '' },
+  'initial verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
+  'after review verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
+  'verifier': { gaps: [], acceptance: [], confidence: 'x' },
+  'verifier (2nd)': { gaps: [], acceptance: [], confidence: 'x' },
+  'fix review gaps': { status: 'done', summary: 'fixed', commit: 'c2', question: '' },
+  'finish': { status: 'done', summary: 'ok', commit: 'c3', question: '' },
+  'land': { exit_code: 0, output: 'pushed' },
+  'land goal': { exit_code: 0, output: 'https://example/pr/1' },
+  'record block': { status: 'done', summary: 'ok', commit: '', question: '' },
+}
+const responses = Object.assign({}, defaults, scenario.responses || {})
+const agent = async (prompt, opts) => {
+  calls.push({ label: opts.label, prompt })
+  if (!(opts.label in responses)) throw new Error('unexpected agent label: ' + opts.label)
+  return responses[opts.label]
+}
+const logs = []
+;(async () => {
+  const fn = new AsyncFunction('args', 'agent', 'phase', 'log', src)
+  const result = await fn('g-02', agent, () => {}, m => logs.push(m))
+  console.log(JSON.stringify({ result, calls, logs }))
+})().catch(e => { console.error(e); process.exit(1) })
+"""
+
+
+def _run_execute(tmp_path, **scenario):
+    runner = tmp_path / "runner.js"
+    runner.write_text(_NODE_RUNNER)
+    p = subprocess.run(
+        ["node", str(runner), str(ROOT / "workflows" / "execute.js")],
+        input=json.dumps(scenario), capture_output=True, text=True, timeout=60,
+    )
+    assert p.returncode == 0, p.stderr
+    out = json.loads(p.stdout)
+    out["labels"] = [c["label"] for c in out["calls"]]
+    return out
+
+
+needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is missing")
+
+
+@needs_node
+def test_execute_parse_errors_stop_before_start(tmp_path):
+    out = _run_execute(
+        tmp_path, parse_exit=1,
+        parse_stdout=json.dumps({"errors": ["no Goal field", "bad Land"]}),
+    )
+    assert out["result"] == "g-02 not started: no Goal field; bad Land"
+    assert out["labels"] == ["parse g-02"]
+
+
+@needs_node
+def test_execute_start_refusal_stops(tmp_path):
+    out = _run_execute(tmp_path, responses={
+        "start g-02": {"started": False, "output": "g-01 is not done", "review_base": ""}})
+    assert out["result"] == "g-02 not started: g-01 is not done"
+    assert not any(l.startswith("step") for l in out["labels"])
+
+
+@needs_node
+def test_execute_external_skips_verify(tmp_path):
+    out = _run_execute(tmp_path, parse={"deliverable": "external", "land": "none"})
+    assert not any("verify" in l for l in out["labels"])
+    assert any("Verify skipped" in m for m in out["logs"])
+    assert "Verify n/a (external)" in out["result"]
+    fin = next(c for c in out["calls"] if c["label"] == "finish")
+    assert "Verify: n/a (external)" in fin["prompt"]
+
+
+@needs_node
+def test_execute_unmet_acceptance_triggers_fix_round(tmp_path):
+    unmet = {"gaps": [], "confidence": "x",
+             "acceptance": [{"item": "docs mention it", "met": False, "evidence": "absent"}]}
+    out = _run_execute(tmp_path, parse={"acceptance": ["docs mention it"]},
+                       responses={"verifier": unmet})
+    labels = out["labels"]
+    assert "fix review gaps" in labels and "verifier (2nd)" in labels
+    fix = next(c for c in out["calls"] if c["label"] == "fix review gaps")
+    assert "not met: docs mention it" in fix["prompt"]
+    first = next(c for c in out["calls"] if c["label"] == "verifier")
+    assert "- docs mention it" in first["prompt"]
+    assert "abc123..HEAD" in first["prompt"]
+    assert "done:" in out["result"]
+
+
+@needs_node
+def test_execute_land_goal_mid_goal_pushes_only(tmp_path):
+    out = _run_execute(tmp_path)
+    lands = [c for c in out["calls"] if c["label"].startswith("land")]
+    assert [c["label"] for c in lands] == ["land"]
+    assert "`friday land g-02`" in lands[0]["prompt"]
+    assert "Pushed friday/g; next: /friday:execute g-03" in out["result"]
+
+
+@needs_node
+def test_execute_land_goal_last_directive_lands_goal(tmp_path):
+    out = _run_execute(tmp_path, parse={"position": 2})
+    lands = [c for c in out["calls"] if c["label"].startswith("land")]
+    assert [c["label"] for c in lands] == ["land", "land goal"]
+    assert "`friday land --goal g`" in lands[1]["prompt"]
+    assert "Last directive of goal g: pushed friday/g. PR open." in out["result"]
+    assert "https://example/pr/1" in out["result"]
+
+
+@needs_node
+def test_execute_land_pr_runs_land_id(tmp_path):
+    out = _run_execute(tmp_path, parse={"land": "pr"}, responses={
+        "land": {"exit_code": 0, "output": "https://example/pr/9"}})
+    lands = [c for c in out["calls"] if c["label"].startswith("land")]
+    assert [c["label"] for c in lands] == ["land"]
+    assert "`friday land g-02 --base main`" in lands[0]["prompt"]
+    assert "PR open. https://example/pr/9" in out["result"]
+
+
+@needs_node
+def test_execute_land_none_runs_no_land(tmp_path):
+    out = _run_execute(tmp_path, parse={"land": "none"})
+    assert not any(l.startswith("land") for l in out["labels"])
+    assert "committed only, nothing pushed" in out["result"]
