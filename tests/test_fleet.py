@@ -209,3 +209,16 @@ def test_nodes_check_untrusted_and_ready(tmp_path):
     ok = ok.replace('runtime = "container"\ntags = ["gpu"]\nrepos = "~/Documents"\nplugin_dir = "~/friday"\n', '')
     r = _friday(tmp_path, ok, "--check", ssh_script=FAKE)
     assert r.returncode == 0, r.stdout
+
+
+def test_nodes_check_ready_unreachable_untrusted_together(tmp_path):
+    reg = GOOD + '[node.bert]\nrole = "worker"\nssh = "me@bert"\nrepos = "~/r"\nplugin_dir = "~/f"\n'
+    fake = FAKE.replace("*me@bot*)", "*me@bert*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=no\\n';;\n  *me@bot*)")
+    r = _friday(tmp_path, reg, "--check", ssh_script=fake)
+    assert r.returncode == 1
+    out = r.stdout
+    assert "unreachable" in out and "accept the trust prompt" in out
+    argv = (tmp_path / "fakessh.argv").read_text().splitlines()
+    assert len(argv) == 4  # one probe per node
+    assert all(a.endswith("bash -s") for a in argv)
+    assert (tmp_path / "fakessh.stdin").read_text().count('export PATH="$HOME/.local/bin:$PATH"') == 4
