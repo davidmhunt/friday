@@ -366,7 +366,7 @@ def launch_line(node, goal: str, worktree: str, master_host: str, directives: li
         "tmux new -d -s", q(f"friday-{goal}"), "-c", q(worktree),
         "env", q(f"FRIDAY_RUNTIME={node.runtime}"), q(f"FRIDAY_DISPATCHED_FROM={master_host}"),
         "claude --model opus --permission-mode auto --remote-control",
-        "--name", q(f"{goal}.{node.name}"), "--plugin-dir", q(node.plugin_dir),
+        "--name", q(f"{goal}.{node.name}"), "--plugin-dir", remote_path(node.plugin_dir),
         "--append-system-prompt", q(report_text(goal, report_to)),
         q(run_text(goal, directives))])
 

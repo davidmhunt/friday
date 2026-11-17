@@ -693,13 +693,15 @@ def cmd_dispatch(a) -> int:
         _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
     wt = ff.worktree_path(n, _root().name, a.goal)
     launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
+    origin_url = _git_out(["remote", "get-url", "origin"], root)[1]
+    script = ff.prepare_script(n, a.goal, root.name, origin_url, plan["base"], plan["plugin_commit"])
     if a.dry_run:
+        print("prepare script:")
+        print(script)
         print(f"launch: {launch}")
         print("dry run: nothing changed on any node")
         return 0
-    origin_url = _git_out(["remote", "get-url", "origin"], root)[1]
-    argv, stdin = ff.ssh_cmd(n, ff.prepare_script(n, a.goal, root.name, origin_url, plan["base"],
-                                                  plan["plugin_commit"]))
+    argv, stdin = ff.ssh_cmd(n, script)
     r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
     if r.returncode != 0:
         print("\n".join(l for l in r.stdout.splitlines() if l.startswith("FRIDAY_REFUSE")) or r.stderr.strip(),

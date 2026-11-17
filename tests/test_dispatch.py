@@ -339,10 +339,17 @@ def test_launch_line_verbatim():
     assert shlex.split(line)[-1] == run and "@" not in "g1.alfred"
 
 
+def test_launch_line_expands_tilde_plugin_dir():
+    node = ff.Node("alfred", "worker", "me@alfred", repos="~/w", plugin_dir="~/my friday")
+    line = ff.launch_line(node, "g1", "/w/g1", "laptop", ["g1-01"], "boss")
+    assert '--plugin-dir "$HOME"/\'my friday\' ' in line
+
+
 def test_dry_run_prints_launch_and_no_report_to(env):
     rc, out, err = dispatch(env, "--dry-run", "--node", "alfred", "--report-to", "me")
     assert rc == 0, err
     assert "--name g1.alfred" in out and "send session me " in out and "/friday:execute g1-01" in out
+    assert "FRIDAY_WORKTREE" in out and "refuse()" in out  # the remote prepare script is printed too
     env.nodes.write_text(env.nodes.read_text().replace('report_to = "boss"\n', ""))
     rc, out, err = dispatch(env, "--dry-run")
     assert rc == 20 and "report_to" in err
