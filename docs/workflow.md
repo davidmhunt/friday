@@ -101,6 +101,31 @@ Then `friday check --all` passes, `/friday:execute bench-01` works on branch `fr
 and `friday land --goal bench-warnings` opens the PR. `Land:` is optional in the directive (it
 defaults to `goal`).
 
+## Commit rules
+
+A directive adds as few commits to its goal branch as the work needs:
+
+- `friday start` commits nothing; it prints `base <sha>`. The directive file keeps `Status: approved`
+  while it runs.
+- A step commits only when it changed tracked files (code, docs, data, configs), with the last
+  line `Directive: <id>`. A step that only reproduces, measures or inspects appends its findings
+  to the untracked `runs/<id>/notes.md` and commits nothing. Add `runs/` to `.gitignore`.
+- `friday finish <id>` writes the record in one commit (`<id>: record results` or `<id>: blocked`):
+  Status, the Log entry (commits, the notes, the Verify line, the independent review). The
+  workflow passes Verify and review results to that single call.
+- So a directive with one code change has two commits: the change and the record.
+
+### Recommended: squash-merge by default
+
+Make squash-merge each repo's default merge method on GitHub, so the base gets one commit per
+goal while the goal branch keeps the detail:
+
+```
+gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false
+```
+
+or Settings -> General -> Pull Requests. friday does not change repo settings; you run this.
+
 ## When it stops for you
 
 - A hardware command (prompt from the hardware hook).
