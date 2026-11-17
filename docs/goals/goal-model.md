@@ -1,5 +1,5 @@
 # goal-model: One branch and one PR per goal, deliverable types, a deterministic format check
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -30,3 +30,4 @@ passes on `friday/goal-model` and the six directives below are done, with one PR
 - 2026-11-17: Amended with the user: gm-05 and gm-06 added after gm-04 to cut bookkeeping commits
   (start commits nothing, finish writes one record commit, measure-only steps write
   runs/<id>/notes.md) and record the parallelism decision.
+- 2026-11-17: Landed: 6 directive(s) reverified on friday/goal-model; PR into v1.
