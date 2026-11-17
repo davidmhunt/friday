@@ -328,9 +328,11 @@ def test_launch_line_verbatim():
            "1. /friday:execute g1-01\n2. /friday:execute g1-02\n"
            "Start the next only when the previous ended done. Stop at the first that blocks.")
     report = ("When the directives of goal g1 are finished or one has blocked, send session boss exactly "
-              "one message with SendMessage, then stop. If the goal landed, the message is "
-              "`done g1 PR <url>` (the URL from the goal landing). If a directive blocked, it is "
-              "`blocked g1 <id>: <reason>`. Send no other message.")
+              "one message with SendMessage. If the goal landed, the message is "
+              "`done g1 PR <url>` (the URL from the goal landing); after sending it, "
+              "run `friday session-end --goal g1` and stop. If a directive blocked, it is "
+              "`blocked g1 <id>: <reason>`; after sending it, do not run session-end and stay "
+              "open. Send no other message.")
     q = shlex.quote
     assert line == ("tmux new -d -s friday-g1 -c /w/proj.friday/g1 env FRIDAY_RUNTIME=docker "
                     "FRIDAY_DISPATCHED_FROM=laptop claude --model opus --permission-mode auto "

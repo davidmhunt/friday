@@ -393,9 +393,11 @@ def run_text(goal: str, directives: list) -> str:
 def report_text(goal: str, report_to: str) -> str:
     """The system-prompt addition telling the session how to report back to the master."""
     return (f"When the directives of goal {goal} are finished or one has blocked, send session "
-            f"{report_to} exactly one message with SendMessage, then stop. If the goal landed, the "
-            f"message is `done {goal} PR <url>` (the URL from the goal landing). If a directive "
-            f"blocked, it is `blocked {goal} <id>: <reason>`. Send no other message.")
+            f"{report_to} exactly one message with SendMessage. If the goal landed, the "
+            f"message is `done {goal} PR <url>` (the URL from the goal landing); after sending it, "
+            f"run `friday session-end --goal {goal}` and stop. If a directive "
+            f"blocked, it is `blocked {goal} <id>: <reason>`; after sending it, do not run "
+            f"session-end and stay open. Send no other message.")
 
 
 def launch_line(node, goal: str, worktree: str, master_host: str, directives: list,
