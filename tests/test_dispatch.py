@@ -400,3 +400,21 @@ def test_refused_or_dry_run_records_nothing(env):
     (env.fake / "exit-me@alfred").write_text("31")
     assert dispatch(env, "--node", "alfred", "--report-to", "me")[0] == 31
     assert not (state / "friday" / "dispatches.jsonl").exists()
+
+
+def test_prepare_trusts_worktree_keeping_other_keys(env):
+    r, home, _ = run_prepare(env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    wt = (home / "work" / "proj.friday" / "g1").resolve()
+    assert f"FRIDAY_TRUSTED {wt}" in r.stdout
+    data = json.loads((home / ".claude.json").read_text())
+    assert data["projects"][str(wt)] == {"hasTrustDialogAccepted": True}
+    assert data["projects"][str(home)] == {"hasTrustDialogAccepted": True}
+    bak = json.loads((home / ".claude.json.friday-bak").read_text())
+    assert str(wt) not in bak["projects"]
+
+
+def test_prepare_untrusted_does_not_write(env):
+    r, home, _ = run_prepare(env, trusted=False)
+    assert r.returncode == 30
+    assert not (home / ".claude.json").exists()
