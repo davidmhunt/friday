@@ -1,6 +1,9 @@
 # fleet-03: Fleet docs and planning hand-off
 Status: approved
+Goal: fleet
 Node: any
+Deliverable: code
+Land: goal
 Verify: uv run --with pytest pytest -q tests/test_docs.py && uv run --with pytest pytest -q && claude plugin validate .
 Hardware: none
 

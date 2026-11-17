@@ -28,7 +28,7 @@ there. Requires Claude Code with workflows (v2.1.154+) and `python3` on the host
 /friday:execute core-03                                    # implement, verify, review, push, PR
 ```
 
-Then review the PR. `friday status` in a shell (or ask Claude to run it) lists directives, the one
+Then review the PR (one per goal). `friday status` in a shell (or ask Claude to run it) lists directives, the one
 active in this worktree, and hardware leases. See [docs/workflow.md](docs/workflow.md).
 
 ## What's in it
@@ -40,7 +40,34 @@ active in this worktree, and hardware leases. See [docs/workflow.md](docs/workfl
 | `agents/` | `implementer` (Sonnet; Opus for `[heavy]` steps), `verifier` (Opus, read-only), `runner` (Haiku, long and remote runs) |
 | `hooks/` | Deny list, `./run` enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop |
 | `skills/` | `directive` (format), `hardware`, `long-jobs`, `data-artifacts` |
-| `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `release` |
+| `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `land`, `release`, `check`, `parse`, `nodes` |
+
+## The goal model
+
+One `/friday:plan` run is a **goal**: one approval, one branch `friday/<goal>`, one PR. A goal lists
+**directives**, each with a `Verify:` command and a `Deliverable` (code, doc, slides, external); a
+directive is a list of **steps**, each a commit.
+
+```mermaid
+flowchart LR
+  G[goal: friday/goal] --> D1[directive 1] --> S1[step commits]
+  G --> D2[directive 2] --> S2[step commits]
+  D1 --> R[verify + review]
+  D2 --> R
+  R --> PR[friday land --goal: one PR]
+```
+
+| Unit | File | Branch | Check | Lands as |
+|---|---|---|---|---|
+| Goal | `docs/goals/<goal>.md` | `friday/<goal>` | all its directives verified and done | one PR into its Base (`friday land --goal`) |
+| Directive | `docs/directives/<id>.md` | the goal branch (`friday/<id>` for `Land: pr`) | its `Verify:` plus verifier review against `## Acceptance` | commits on the goal branch |
+| Step | numbered in the directive | the goal branch | covered by the directive's Verify | one commit |
+
+New commands: `friday check [<id> | --goal <g> | --all]` validates the file formats;
+`friday parse <id> --json` (or `--goal <g>`) prints the parsed file; `friday land --goal <g>`
+reverifies every directive, marks the goal done and opens the one PR (exit 6: a Verify failed,
+nothing pushed). A PostToolUse hook runs the format check on every edited goal or directive file and
+sends errors back to the model. Details: [docs/workflow.md](docs/workflow.md).
 
 ## Per project
 

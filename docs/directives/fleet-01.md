@@ -1,6 +1,9 @@
 # fleet-01: Node registry and routing (`friday nodes`)
 Status: done
+Goal: fleet
 Node: any
+Deliverable: code
+Land: pr
 Verify: uv run --with pytest pytest -q tests/test_fleet.py && uv run --with pytest pytest -q && claude plugin validate .
 Hardware: none
 

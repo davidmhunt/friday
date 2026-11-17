@@ -3,11 +3,19 @@
 
   friday status                     directives in this repo, the active one here, hardware leases
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
-  friday start <id> [--no-gate]     mark <id> active in this worktree, Status -> running@<host>
+  friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), write the marker (commits nothing)
   friday verify [<id>]              run the directive's Verify command (default: the active one)
-  friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
-  friday land <id> --base <branch>  push friday/<id> and open its PR (gh), or print why not
+  friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
+                                    append the Log entry, Status -> done (or blocked: R), one commit, clear the marker
+  friday land <id> [--base <branch>]
+                                    by the directive's Land: pr -> push friday/<id> and open its PR (gh);
+                                    goal -> push friday/<goal>, no PR; none -> push nothing
+  friday land --goal <g>            reverify the goal's directives, mark it done, push friday/<g>, open its PR
   friday release <resource>|--all   free a hardware lease (or all of them)
+  friday check [<id> | --goal <g> | --all]
+                                    validate directive/goal files (default --all); exit 1 on any error
+  friday parse <id> --json          parsed directive as JSON (exit 1 on errors, 2 if file missing)
+  friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
 """
 from __future__ import annotations
@@ -41,13 +49,38 @@ def _need(root: Path, did: str) -> dict:
 
 def cmd_status(a) -> int:
     root = _root()
-    ds = fc.list_directives(root)
-    if not ds:
+    ds = {d["id"]: fc.parse_directive_full(fc.directive_path(root, d["id"]).read_text())
+          for d in fc.list_directives(root)}
+    gdir = root / fc.GOAL_DIR
+    goals = [p for p in sorted(gdir.glob("*.md")) if p.name not in ("README.md", "TEMPLATE.md")] if gdir.is_dir() else []
+    if not ds and not goals:
         print(f"no directives in {fc.DIRECTIVE_DIR}/")
-    for d in ds:
-        print(f"{d['id']:<12} {d['status'][:28]:<28} {d['node'][:18]:<18} {d['title'][:60]}")
+
     m = fc.read_marker(Path.cwd())
-    print(f"\nactive here: {m['id'] if m else 'none'}")
+
+    def row(did: str, d: dict | None, text: str = "") -> None:
+        if d is not None and m and m.get("id") == did:
+            d = {**d, "status": f"running@{m.get('host', '?')}"}
+        if d is None:
+            print(f"  {did:<12} {'(missing)':<28} {'':<10} {text[:60]}")
+        else:
+            print(f"  {did:<12} {d['status'][:28]:<28} {d['deliverable'][:10]:<10} {d['title'][:60]}")
+
+    listed: set[str] = set()
+    for gp in goals:
+        g = fc.parse_goal(gp.read_text())
+        items = g["directives"]
+        done = sum(1 for x in items if x["id"] in ds and ds[x["id"]]["status"] == "done")
+        print(f"goal {gp.stem}  {g['status']}  base {g['base']}  {done}/{len(items)}  {g['title']}")
+        for x in items:
+            listed.add(x["id"])
+            row(x["id"], ds.get(x["id"]), x["text"])
+    rest = [d for i, d in ds.items() if i not in listed]
+    if rest:
+        print("(no goal)")
+        for d in rest:
+            row(d["id"], d)
+    print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
         print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min)")
@@ -59,17 +92,66 @@ def cmd_new(a) -> int:
     return 0
 
 
+def _branch_exists(root: Path, ref: str) -> bool:
+    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
+                          cwd=root, capture_output=True).returncode == 0
+
+
 def cmd_start(a) -> int:
+    """Check the directive and its goal, enforce goal order, put the work on its branch
+    (friday/<goal> for Land goal|none, friday/<id> for Land pr), then mark it running."""
+    import re
     root = _root()
     d = _need(root, a.id)
     status = d["status"].lower()
     if not status.startswith(("approved", "running")):
         sys.exit(f"friday: {a.id} is '{d['status']}'; only an approved directive can start (the user approves it)")
-    if not d["verify"]:
-        sys.exit(f"friday: {a.id} has no Verify: line")
-    fc.set_status(root, a.id, f"running@{socket.gethostname()}")
+    issues = fc.check_repo(root, directive=a.id)
+    parsed = fc.parse_directive_full(fc.directive_path(root, a.id).read_text())
+    gid = parsed["goal"]
+    if gid and fc.GOAL_RE.match(gid) and fc.goal_path(root, gid).exists():
+        issues += [i for i in fc.check_repo(root, goal=gid) if i not in issues]
+    errors = [i for i in issues if i.level == "error"]
+    if errors:
+        print("\n".join(str(i) for i in errors), file=sys.stderr)
+        sys.exit(f"friday: {a.id} or its goal has format errors; fix them first")
+    goal = fc.parse_goal(fc.goal_path(root, gid).read_text())
+    ids = [x["id"] for x in goal["directives"]]
+    undone = [e for e in ids[:ids.index(a.id)]
+              if (fc.read_directive(root, e) or {}).get("status") != "done"]
+    if undone:
+        sys.exit(f"friday: {a.id} comes after {', '.join(undone)} in goal {gid}, which must be done first")
+    branch = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
+    if fc.current_branch(root) != branch:
+        if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+            sys.exit(f"friday: uncommitted changes to tracked files; commit them before switching to {branch}")
+        if _branch_exists(root, f"refs/heads/{branch}"):
+            cmd = ["git", "switch", "-q", branch]
+        else:
+            base = goal["base"]
+            if _branch_exists(root, f"refs/heads/{base}"):
+                src = base
+            elif _branch_exists(root, f"refs/remotes/origin/{base}"):
+                src = f"origin/{base}"
+            else:
+                sys.exit(f"friday: base branch '{base}' of goal {gid} exists neither locally nor as origin/{base}")
+            cmd = ["git", "switch", "-q", "--no-track", "-c", branch, src]
+        r = _run(cmd, root)
+        if r.returncode != 0:
+            sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
+        print(f"on {branch}")
+    if goal["status"] == "approved":
+        gp = fc.goal_path(root, gid)
+        gp.write_text(re.sub(r"(?m)^Status:.*$", "Status: running", gp.read_text(), count=1))
+    old = fc.read_marker(Path.cwd())
+    base = old["base"] if old and old.get("id") == a.id and old.get("base") else \
+        _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
-                                 "gate": not a.no_gate})
+                                 "gate": not a.no_gate, "base": base})
+    print(f"base {base}")
+    if _run(["git", "check-ignore", "-q", f"runs/{a.id}/notes.md"], root).returncode != 0:
+        print("friday: warning: runs/ is not gitignored; add the line `runs/` to .gitignore "
+              "so notes stay untracked", file=sys.stderr)
     print(f"{a.id} active. Verify: {d['verify']}")
     return 0
 
@@ -85,13 +167,64 @@ def cmd_verify(a) -> int:
 
 
 def cmd_finish(a) -> int:
+    """Write the record: one Log entry, the Status, and exactly one commit carrying the directive
+    file and (if modified) its goal file. Refuses when other tracked files are uncommitted."""
+    import re
     root = _root()
     _need(root, a.id)
-    fc.set_status(root, a.id, f"blocked: {a.blocked}" if a.blocked else "done")
+    dp = fc.directive_path(root, a.id)
+    parsed = fc.parse_directive_full(dp.read_text())
+    gid = parsed["goal"]
+    gp = fc.goal_path(root, gid) if gid and fc.GOAL_RE.match(gid) else None
+    mine = {str(dp.relative_to(root))}
+    if gp is not None and gp.exists():
+        mine.add(str(gp.relative_to(root)))
+    dirty = [ln[3:].strip().strip('"') for ln in
+             _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines()]
+    other = [f for f in dirty if f not in mine]
+    if other:
+        print("\n".join(other), file=sys.stderr)
+        sys.exit(f"friday: uncommitted changes to tracked files other than {a.id} and its goal; commit them first")
     m = fc.read_marker(Path.cwd())
+    base = a.base or (m.get("base") if m and m.get("id") == a.id else None)
+    if not base:
+        sys.exit("friday: no base: pass --base SHA (no marker base for this directive here)")
+    r = _run(["git", "log", "--oneline", f"{base}..HEAD"], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: cannot list commits since {base}: {r.stderr.strip()}")
+    lines = [f"- {ln}" for ln in r.stdout.splitlines() if ln.strip()] or ["- (none)"]
+    entry = [f"### {time.strftime('%Y-%m-%d')}", "Commits:", *lines]
+    notes = root / "runs" / a.id / "notes.md"
+    if notes.is_file() and notes.read_text().strip():
+        entry += ["Notes:", notes.read_text().strip()]
+    entry.append(f"Verify: {a.verify or 'not run'}")
+    entry.append(f"Independent review: {a.review or 'not recorded'}")
+    if a.blocked:
+        entry.append(f"Blocked: {a.blocked}")
+    text = dp.read_text()
+    block = "\n".join(entry) + "\n"
+    mm = re.search(r"(?m)^## Log[ \t]*$", text)
+    if mm is None:
+        text = text.rstrip("\n") + "\n\n## Log\n\n" + block
+    else:
+        nxt = re.search(r"(?m)^## ", text[mm.end():])
+        end = mm.end() + nxt.start() if nxt else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + block + ("\n" + text[end:] if nxt else "")
+    dp.write_text(text)
+    status = f"blocked: {a.blocked}" if a.blocked else "done"
+    fc.set_status(root, a.id, status)
+    add = [str(dp)]
+    if gp is not None and str(gp.relative_to(root)) in dirty:
+        add.append(str(gp))
+    r = _run(["git", "add", *add], root)
+    if r.returncode == 0:
+        r = _run(["git", "commit", "-q", "-m",
+                  f"{a.id}: {'blocked' if a.blocked else 'record results'}\n\nDirective: {a.id}"], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
     if m and m.get("id") == a.id:
         fc.clear_marker(Path.cwd())
-    print(f"{a.id}: {'blocked' if a.blocked else 'done'}")
+    print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
     return 0
 
 
@@ -109,13 +242,33 @@ def _compare_url(remote: str, base: str, head: str) -> str | None:
 
 
 def cmd_land(a) -> int:
-    """Push friday/<id> and open its PR. Deterministic, so the workflow doesn't improvise git.
-    Exit 0: PR open (last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
-    5: pushed, no PR because gh is missing or signed out (last line `COMPARE: <url>`)."""
+    """Land a directive by its Land field. Deterministic, so the workflow doesn't improvise git.
+    Land pr: push friday/<id> and open its PR into the goal's Base (or --base).
+    Land goal: push friday/<goal>, no PR. Land none: push nothing.
+    Exit 0: done (for pr, last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
+    5: pushed, no PR because gh is missing or signed out (last line `COMPARE: <url>`).
+    6 (--goal only): a directive's Verify failed on the goal branch; nothing pushed."""
     import os
+    if bool(a.id) == bool(a.goal):
+        sys.exit("friday: land takes <id> or --goal <g>")
+    if a.goal:
+        return land_goal(a.goal)
     root = _root()
     d = _need(root, a.id)
-    head = f"friday/{a.id}"
+    parsed = fc.parse_directive_full(fc.directive_path(root, a.id).read_text())
+    land, gid = parsed["land"], parsed["goal"]
+    if land == "none":
+        print(f"{a.id}: Land none, nothing is pushed")
+        return 0
+    if land == "goal":
+        head = f"friday/{gid}"
+    else:
+        head = f"friday/{a.id}"
+        if not a.base:
+            if gid and fc.GOAL_RE.match(gid) and fc.goal_path(root, gid).exists():
+                a.base = fc.parse_goal(fc.goal_path(root, gid).read_text())["base"]
+            if not a.base:
+                sys.exit(f"friday: {a.id} has no goal Base; pass --base <branch>")
     if fc.current_branch(root) != head:
         sys.exit(f"friday: land runs on branch {head}, not {fc.current_branch(root)}")
     if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
@@ -128,6 +281,8 @@ def cmd_land(a) -> int:
         print(f"push failed:\n{push.stderr.strip()}")
         return 3
     print(f"pushed {head}")
+    if land == "goal":
+        return 0
     if _run(["git", "ls-remote", "--exit-code", "--heads", "origin", a.base], root).returncode != 0:
         print(f"PR not opened: base branch '{a.base}' is not on origin. Publish it "
               f"(`git push -u origin {a.base}`), then rerun `friday land {a.id} --base {a.base}`.")
@@ -146,6 +301,153 @@ def cmd_land(a) -> int:
     pr = _run([gh, "pr", "create", "--base", a.base, "--head", head,
                "--title", f"{a.id}: {d['title'].split(':', 1)[-1].strip()}",
                "--body-file", str(fc.directive_path(root, a.id))], root)
+    if pr.returncode != 0:
+        print(f"PR not opened: {pr.stderr.strip()}")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 5
+    print(f"PR: {pr.stdout.strip().splitlines()[-1]}")
+    return 0
+
+
+def _log_facts(text: str) -> tuple[str, list[str]]:
+    """Review verdict (last `Independent review: <verdict>` in ## Log, else `not recorded`) and
+    the Log lines starting `Built:` or `Link:` (after any bullet marker)."""
+    import re
+    sec = fc._section(fc._parse_md(text), "Log")
+    verdict, extra = "not recorded", []
+    for _, line in (sec["body"] if sec else []):
+        t = re.sub(r"^-\s+", "", line.strip())
+        m = re.search(r"Independent review:\s*(.+?)\s*$", t)
+        if m:
+            verdict = m.group(1)
+        if t.startswith(("Built:", "Link:")):
+            extra.append(t)
+    return verdict, extra
+
+
+def _set_goal_status(path: Path, status: str, log: str | None = None) -> None:
+    import re
+    text = re.sub(r"(?m)^Status:.*$", f"Status: {status}", path.read_text(), count=1)
+    if log:
+        text = text.rstrip("\n") + f"\n{log}\n"
+    path.write_text(text)
+
+
+def land_goal(gid: str) -> int:
+    """`friday land --goal <g>`: reverify every Land goal directive on friday/<g>, mark the goal
+    done (one commit), push and open or update the goal's PR. Exit codes as in cmd_land, plus 6."""
+    import os
+    import tempfile
+    root = _root()
+    gp = fc.goal_path(root, gid)
+    if not fc.GOAL_RE.match(gid) or not gp.is_file():
+        sys.exit(f"friday: no goal {fc.GOAL_DIR / (gid + '.md')}")
+    head = f"friday/{gid}"
+    if fc.current_branch(root) != head:
+        sys.exit(f"friday: land --goal runs on branch {head}, not {fc.current_branch(root)}")
+    if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+        sys.exit("friday: uncommitted changes to tracked files; commit them first")
+    goal = fc.parse_goal(gp.read_text())
+    rows, missing, undone = [], [], []
+    for x in goal["directives"]:
+        dp = fc.directive_path(root, x["id"])
+        if not dp.is_file():
+            missing.append(x["id"])
+            continue
+        text = dp.read_text()
+        d = fc.parse_directive_full(text)
+        if d["land"] != "goal":
+            continue
+        if d["status"] != "done":
+            undone.append(f"{x['id']} ({d['status']})")
+        rows.append((x["id"], d, text))
+    if missing:
+        sys.exit(f"friday: goal {gid} lists {', '.join(missing)} with no directive file")
+    if undone:
+        sys.exit(f"friday: goal {gid} has directives not done: {', '.join(undone)}")
+    results, failed = {}, []
+    for did, d, _ in rows:
+        if d["deliverable"] == "external":
+            results[did] = "n/a (external)"
+            print(f"{did}: Verify n/a (external)")
+            continue
+        print(f"{did}: $ {d['verify']}", flush=True)
+        r = subprocess.run(d["verify"], shell=True, cwd=root, capture_output=True, text=True)
+        if r.returncode == 0:
+            results[did] = "pass"
+            print(f"{did}: Verify pass")
+        else:
+            results[did] = f"fail (exit {r.returncode})"
+            failed.append(did)
+            tail = (r.stdout + r.stderr).strip().splitlines()[-20:]
+            print(f"{did}: Verify FAILED (exit {r.returncode})\n" + "\n".join("  " + t for t in tail))
+    if failed:
+        print(f"Verify failed for {', '.join(failed)}; nothing pushed")
+        return 6
+    if goal["status"] != "done":
+        if goal["land"] == "none":
+            _set_goal_status(gp, "done")
+        else:
+            _set_goal_status(gp, "done", f"- {time.strftime('%Y-%m-%d')}: Landed: {len(rows)} directive(s) "
+                                         f"reverified on {head}; PR into {goal['base']}.")
+        c = _run(["git", "commit", "-q", "-m", f"Goal {gid} done: all directives reverified\n\nGoal: {gid}",
+                  "--", str(gp.relative_to(root))], root)
+        if c.returncode != 0:
+            sys.exit(f"friday: cannot commit the goal status: {(c.stderr or c.stdout).strip()}")
+        print(f"goal {gid}: done")
+    if goal["land"] == "none":
+        print(f"goal {gid}: Land none, nothing is pushed")
+        return 0
+    remote = _run(["git", "remote", "get-url", "origin"], root)
+    if remote.returncode != 0:
+        sys.exit("friday: no 'origin' remote")
+    push = _run(["git", "push", "-u", "origin", head], root)
+    if push.returncode != 0:
+        print(f"push failed:\n{push.stderr.strip()}")
+        return 3
+    print(f"pushed {head}")
+    base = goal["base"]
+    if _run(["git", "ls-remote", "--exit-code", "--heads", "origin", base], root).returncode != 0:
+        print(f"PR not opened: base branch '{base}' is not on origin. Publish it "
+              f"(`git push -u origin {base}`), then rerun `friday land --goal {gid}`.")
+        return 4
+    gh = os.environ.get("FRIDAY_GH", "gh")
+    compare = _compare_url(remote.stdout.strip(), base, head)
+    if _run([gh, "auth", "status"], root).returncode != 0:
+        print(f"PR not opened: `{gh}` is not installed or not signed in.")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 5
+    gsec = fc._section(fc._parse_md(gp.read_text()), "Goal")
+    body = ["\n".join(l for _, l in gsec["body"]).strip() if gsec else "", "",
+            "| Directive | Title | Deliverable | Verify | Review |", "|---|---|---|---|---|"]
+    extras = []
+    for did, d, text in rows:
+        verdict, extra = _log_facts(text)
+        body.append(f"| {did} | {d['title'].replace('|', '/')} | {d['deliverable']} | {results[did]} "
+                    f"| {verdict.replace('|', '/')} |")
+        extras += [f"- {did}: {e}" for e in extra]
+    if extras:
+        body += [""] + extras
+    with tempfile.NamedTemporaryFile("w", suffix=".md", prefix="friday-pr-", delete=False) as f:
+        f.write("\n".join(body) + "\n")
+        body_file = f.name
+    try:
+        existing = _run([gh, "pr", "view", head, "--json", "url", "--jq", ".url"], root)
+        if existing.returncode == 0 and existing.stdout.strip():
+            url = existing.stdout.strip()
+            ed = _run([gh, "pr", "edit", head, "--body-file", body_file], root)
+            if ed.returncode != 0:
+                print(f"PR body not updated: {ed.stderr.strip()}")
+            else:
+                print(f"updated the body of {url}:\n" + "\n".join(body))
+            print(f"PR: {url}")
+            return 0
+        pr = _run([gh, "pr", "create", "--base", base, "--head", head,
+                   "--title", f"{gid}: {goal['title']}", "--body-file", body_file], root)
+    finally:
+        os.unlink(body_file)
     if pr.returncode != 0:
         print(f"PR not opened: {pr.stderr.strip()}")
         if compare:
@@ -265,6 +567,73 @@ def cmd_nodes(a) -> int:
     return 0 if ok else 1
 
 
+def cmd_check(a) -> int:
+    root = _root()
+    if a.id and a.goal:
+        sys.exit("friday: check takes <id> or --goal <g>, not both")
+    issues = fc.check_repo(root, directive=None if a.all else a.id, goal=None if a.all else a.goal)
+    for i in issues:
+        print(i)
+    errs = sum(1 for i in issues if i.level == "error")
+    print(f"{errs} error(s), {len(issues) - errs} warning(s)")
+    return 1 if errs else 0
+
+
+def _msgs(issues, level: str) -> list[str]:
+    return [f"{i.path}:{i.line}: {i.message}" for i in issues if i.level == level]
+
+
+def cmd_parse(a) -> int:
+    import json
+    root = _root()
+    if bool(a.id) == bool(a.goal):
+        sys.exit("friday: parse takes <id> or --goal <g>")
+    if not a.json:
+        sys.exit("friday: parse needs --json")
+    if a.goal:
+        path = fc.goal_path(root, a.goal)
+        if not path.is_file():
+            print(f"friday: no goal {fc.GOAL_DIR / (a.goal + '.md')}", file=sys.stderr)
+            return 2
+        g = fc.parse_goal(path.read_text())
+        issues = fc.check_repo(root, goal=a.goal)
+        rows = []
+        for x in g["directives"]:
+            dp = fc.directive_path(root, x["id"])
+            d = fc.parse_directive_full(dp.read_text()) if dp.is_file() else None
+            rows.append({"id": x["id"], "status": d["status"] if d else None,
+                         "deliverable": d["deliverable"] if d else None,
+                         "land": d["land"] if d else None,
+                         "title": d["title"] if d else x["text"]})
+        out = {"goal": g["goal"], "title": g["title"], "status": g["status"], "base": g["base"],
+               "land": g["land"], "directives": rows,
+               "errors": _msgs(issues, "error"), "warnings": _msgs(issues, "warning")}
+    else:
+        path = fc.directive_path(root, a.id)
+        if not path.is_file():
+            print(f"friday: no directive {fc.DIRECTIVE_DIR / (a.id + '.md')}", file=sys.stderr)
+            return 2
+        d = fc.parse_directive_full(path.read_text())
+        issues = fc.check_repo(root, directive=a.id)
+        gp = fc.goal_path(root, d["goal"]) if d["goal"] and fc.GOAL_RE.match(d["goal"]) else None
+        g = fc.parse_goal(gp.read_text()) if gp and gp.is_file() else None
+        gd = []
+        for x in (g["directives"] if g else []):
+            dp = fc.directive_path(root, x["id"])
+            gd.append({"id": x["id"],
+                       "status": fc.parse_directive_full(dp.read_text())["status"] if dp.is_file() else None})
+        ids = [x["id"] for x in gd]
+        out = {"id": d["id"], "title": d["title"], "status": d["status"], "goal": d["goal"],
+               "base": g["base"] if g else None, "node": d["node"], "deliverable": d["deliverable"],
+               "land": d["land"], "verify": d["verify"], "hardware": d["hardware"],
+               "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"]} for s in d["steps"]],
+               "acceptance": d["acceptance"] or [], "goal_directives": gd,
+               "position": ids.index(a.id) + 1 if a.id in ids else None,
+               "errors": _msgs(issues, "error"), "warnings": _msgs(issues, "warning")}
+    print(json.dumps(out, indent=2))
+    return 1 if out["errors"] else 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -272,9 +641,11 @@ def main() -> int:
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
-    s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
-    s = sub.add_parser("land"); s.add_argument("id"); s.add_argument("--base", required=True); s.set_defaults(f=cmd_land)
+    s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
+    s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
+    s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.set_defaults(f=cmd_nodes)
     a = p.parse_args()
     return a.f(a)

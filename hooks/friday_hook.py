@@ -4,6 +4,8 @@
   pretool      PreToolUse on Bash: deny list, ./run enforcement, commit trailer, hardware gate
   stop         Stop: while a directive is active in this worktree, its Verify: must pass
   session-end  SessionEnd: release this session's hardware leases
+  posttool     PostToolUse on Write|Edit|MultiEdit: a goal/directive file's own format errors go
+               back to the model (stderr, exit 2); warnings and clean files are silent
 
 Every decision is deterministic and explained in its reason, so the agent learns the fix from
 the refusal. Malformed input fails open (no decision): a hook bug must never wedge a session.
@@ -204,12 +206,37 @@ def session_end(payload: dict) -> None:
     fc.release_leases(session=payload.get("session_id") or None)
 
 
+# ------------------------------------------------------------------ posttool
+def posttool(payload: dict) -> int:
+    """Validate one edited goal/directive file (no cross-checks). Returns the exit code."""
+    fp = (payload.get("tool_input") or {}).get("file_path")
+    if payload.get("tool_name") not in ("Write", "Edit", "MultiEdit") or not fp:
+        return 0
+    path = Path(fp)
+    if path.suffix != ".md" or path.name in ("README.md", "TEMPLATE.md") or not path.is_file():
+        return 0
+    folder = path.parent
+    if folder.name == "directives" and folder.parent.name == "docs":
+        validate = fc.validate_directive
+    elif folder.name == "goals" and folder.parent.name == "docs":
+        validate = fc.validate_goal
+    else:
+        return 0
+    errors = [i for i in validate(path.stem, path.read_text()) if i.level == "error"]
+    if not errors:
+        return 0
+    print("\n".join(str(i) for i in errors), file=sys.stderr)
+    return 2
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except ValueError:
         return 0
     try:
+        if sys.argv[1] == "posttool":
+            return posttool(payload)
         {"pretool": pretool, "stop": stop, "session-end": session_end}[sys.argv[1]](payload)
     except Exception as e:  # fail open, but say so
         print(f"friday hook error ({sys.argv[1:]}): {e}", file=sys.stderr)

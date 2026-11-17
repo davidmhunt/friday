@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
+
+- Goals in `docs/goals/<goal>.md`; directives gain `Goal`, `Deliverable` (code, doc, slides,
+  external), `Land` and `## Acceptance`.
+- `friday check`, `friday parse`, `friday land --goal` (exit code 6: a Verify failed, nothing
+  pushed); `start` works on the goal branch and enforces order.
+- PostToolUse hook returns format errors of an edited goal or directive file to the model.
+- `/friday:execute` is driven by the parsed directive and reviews against Acceptance.
+- Skills `plan` and `directive` document the formats and the deliverable table.
+- Lean bookkeeping: `friday start` commits nothing and prints `base <sha>`; `friday finish`
+  writes the record in one commit. `/friday:execute` steps commit only tracked-file changes
+  (measure-only steps write `runs/<id>/notes.md`), pass Verify and review results to one
+  `friday finish`, and label progress `step n/total`, `fix n/max`.
+- Docs: commit rules; recommendation to make squash-merge the default on GitHub
+  (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
+
 ## v1.0.0-alpha.1 (2026-11-17)
 
 friday becomes a Claude Code plugin built for Fable/Opus-level orchestrators. The v0.20 harness
