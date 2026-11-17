@@ -270,3 +270,29 @@ def test_compare_url():
     assert mod._compare_url("git@github.com:davidmhunt/CPSL_TI_Radar.git", "main", "friday/x") == \
         "https://github.com/davidmhunt/CPSL_TI_Radar/compare/main...friday/x?expand=1"
     assert mod._compare_url("/tmp/origin.git", "main", "friday/x") is None
+
+
+# ---------------------------------------------------------------- posttool hook
+def _post(repo, rel, text=None, tool="Write"):
+    f = repo / rel
+    if text is not None:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+    return subprocess.run([sys.executable, str(HOOK), "posttool"], capture_output=True, text=True,
+                          input=json.dumps({"tool_name": tool, "tool_input": {"file_path": str(f)}, "cwd": str(repo)}))
+
+
+def test_posttool_hook(repo):
+    good = ("# core-01: T\nStatus: approved\nGoal: core\nNode: any\nDeliverable: code\nVerify: true\n"
+            "Hardware: none\n\n## Goal\ng\n\n## Steps\n1. s\n\n## Out of scope\n- x\n\n## Log\n")
+    r = _post(repo, "docs/directives/core-01.md", good)
+    assert r.returncode == 0 and r.stdout == "" and r.stderr == ""
+    r = _post(repo, "docs/directives/core-01.md", "# wrong: x\n")
+    assert r.returncode == 2 and "error:" in r.stderr and "core-01.md" in r.stderr
+    assert _post(repo, "docs/directives/README.md", "garbage").returncode == 0
+    assert _post(repo, "docs/directives/TEMPLATE.md", "garbage").returncode == 0
+    assert _post(repo, "notes/core-01.md", "garbage").returncode == 0
+    assert _post(repo, "docs/goals/bad.md", "garbage").returncode == 2
+    assert _post(repo, "docs/directives/core-01.md", good, tool="Bash").returncode == 0
+    g = subprocess.run([sys.executable, str(HOOK), "posttool"], input="nope", capture_output=True, text=True)
+    assert g.returncode == 0 and g.stderr == ""
