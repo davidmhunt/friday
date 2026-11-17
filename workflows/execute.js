@@ -59,8 +59,17 @@ const VERIFY = {
 }
 const REVIEW = {
   type: 'object',
-  required: ['gaps', 'confidence'],
+  required: ['gaps', 'acceptance', 'confidence'],
   properties: {
+    acceptance: {
+      type: 'array',
+      description: 'one entry per ## Acceptance bullet; empty when the directive has none',
+      items: {
+        type: 'object',
+        required: ['item', 'met', 'evidence'],
+        properties: { item: { type: 'string' }, met: { type: 'boolean' }, evidence: { type: 'string' } },
+      },
+    },
     gaps: {
       type: 'array',
       items: {
@@ -91,6 +100,15 @@ async function block(reason) {
     { agentType: 'friday:implementer', schema: STEP, label: 'record block', phase: 'Land' },
   )
   return `${id} is blocked and needs you: ${reason}`
+}
+
+// Every reported gap plus every unmet Acceptance item.
+function allGaps(r) {
+  const gaps = (r && Array.isArray(r.gaps) ? r.gaps : []).map(g => ({ ...g }))
+  for (const a of (r && Array.isArray(r.acceptance) ? r.acceptance : [])) {
+    if (!a.met) gaps.push({ where: 'Acceptance', problem: `not met: ${a.item}`, evidence: a.evidence })
+  }
+  return gaps
 }
 
 async function verifyLoop(d, label) {
@@ -162,29 +180,42 @@ for (const s of d.steps) {
 
 // ---------------------------------------------------------------- verify + review
 phase('Verify')
-let v = await verifyLoop(d, 'initial')
-if (!v.ok) return await block(v.why)
+const external = d.deliverable === 'external'
+let v
+if (external) {
+  log(`${id}: Verify skipped: Deliverable is external (nothing in this repo to run)`)
+  v = { ok: true, rounds: 0 }
+} else {
+  v = await verifyLoop(d, 'initial')
+  if (!v.ok) return await block(v.why)
+}
+const accept = Array.isArray(d.acceptance) && d.acceptance.length
+  ? `Acceptance bullets (grade each as met or not, with evidence, in the acceptance field):\n${d.acceptance.map(a => `- ${a}`).join('\n')}`
+  : 'The directive has no Acceptance bullets; return an empty acceptance array.'
+const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'Its Verify command already passes.'
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. Its Verify command already passes. Report only gaps that affect correctness or the directive's stated requirements.`,
+  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
-if (review && review.gaps.length) {
-  const list = review.gaps.map((g, i) => `${i + 1}. ${g.where}: ${g.problem} (evidence: ${g.evidence})`).join('\n')
+if (review && allGaps(review).length) {
+  const list = allGaps(review).map((g, i) => `${i + 1}. ${g.where}: ${g.problem} (evidence: ${g.evidence})`).join('\n')
   const fix = await agent(
     `An independent review of directive ${id} (${directive}) found these gaps:\n${list}\n\nFix each one that is real, within scope. If you disagree with one, leave it and explain why with evidence. Commit (last line \`Directive: ${id}\`).`,
     { agentType: 'friday:implementer', schema: STEP, label: 'fix review gaps', phase: 'Review' },
   )
   if (fix && fix.status === 'needs_user') return await block(fix.question)
-  v = await verifyLoop(d, 'after review')
-  if (!v.ok) return await block(v.why)
+  if (!external) {
+    v = await verifyLoop(d, 'after review')
+    if (!v.ok) return await block(v.why)
+  }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements.`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
-  if (review && review.gaps.length) {
-    return await block(`review gaps remain: ${review.gaps.map(g => `${g.where}: ${g.problem}`).join('; ')}`)
+  if (review && allGaps(review).length) {
+    return await block(`review gaps remain: ${allGaps(review).map(g => `${g.where}: ${g.problem}`).join('; ')}`)
   }
 }
 
