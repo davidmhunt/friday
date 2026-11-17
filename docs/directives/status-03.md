@@ -1,5 +1,5 @@
 # status-03: Dashboard UI modelled on Jarvis OS: Overview, Machines, Projects, Sessions
-Status: approved
+Status: blocked: step 1: Where is the Jarvis OS checkout, or its 'tokens.css'? Please give me the path, or copy it to '/home/david/Documents/claude_temp/jarvis/jarvis_os/static/tokens.css'. My recommendation is to wait for the real file, because the step requires it to be vendored with a source header. The alternative is for me to write my own 'tokens.css' with the variables the step names ('--warn' and the dark and light palettes), labelled 'modelled on Jarvis OS, not vendored'. That departs from the step's wording, so I won't do it unless you say so.
 Goal: status-page
 Node: any
 Deliverable: code
@@ -42,3 +42,12 @@ tests/test_dash_ui.py proves the page renders every section from a fixture state
 - Authentication in the page (the tailnet bind and whois check in status-02 are the boundary).
 
 ## Log
+
+### 2026-11-17
+Commits:
+- (none)
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: not run
+Independent review: not recorded
+Blocked: step 1: Where is the Jarvis OS checkout, or its 'tokens.css'? Please give me the path, or copy it to '/home/david/Documents/claude_temp/jarvis/jarvis_os/static/tokens.css'. My recommendation is to wait for the real file, because the step requires it to be vendored with a source header. The alternative is for me to write my own 'tokens.css' with the variables the step names ('--warn' and the dark and light palettes), labelled 'modelled on Jarvis OS, not vendored'. That departs from the step's wording, so I won't do it unless you say so.
