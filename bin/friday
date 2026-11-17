@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -978,6 +979,35 @@ def cmd_parse(a) -> int:
     return 1 if out["errors"] else 0
 
 
+def cmd_session_end(a) -> int:
+    """Close this dispatched session's own tmux session shortly after its goal is done."""
+    def no(why: str) -> int:
+        print(f"friday: session-end refused: {why}", file=sys.stderr)
+        return 1
+    if not fc.GOAL_RE.match(a.goal):
+        return no(f"bad goal id '{a.goal}'")
+    if not os.environ.get("FRIDAY_DISPATCHED_FROM"):
+        return no("not a dispatched session (FRIDAY_DISPATCHED_FROM is unset)")
+    try:
+        r = subprocess.run(["tmux", "display-message", "-p", "#S"], capture_output=True, text=True)
+    except OSError:
+        return no("tmux is not available")
+    cur = r.stdout.strip() if r.returncode == 0 else ""
+    if cur != f"friday-{a.goal}":
+        return no(f"current tmux session is '{cur or 'none'}', not friday-{a.goal}")
+    gp = fc.goal_path(_root(), a.goal)
+    if not gp.is_file():
+        return no(f"no goal file {gp}")
+    m = re.search(r"(?m)^Status:\s*(\S+)", gp.read_text())
+    if not m or m.group(1) != "done":
+        return no(f"goal {a.goal} is '{m.group(1) if m else '?'}', not done")
+    cmd = f"sleep 10; tmux kill-session -t =friday-{a.goal}"
+    subprocess.Popen(["setsid", "sh", "-c", cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    print(f"session-end: scheduled in 10s: {cmd}")
+    return 0
+
+
 def cmd_dash(a) -> int:
     import friday_dash
     return friday_dash.main(a.bind)
@@ -998,6 +1028,7 @@ def main() -> int:
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
     s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
+    s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
     s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)

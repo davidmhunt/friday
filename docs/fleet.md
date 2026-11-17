@@ -161,6 +161,12 @@ friday dispatch --goal <g> [--node <name>] [--report-to <session>] [--dry-run]
 prepares the worktree over ssh, starts tmux session `friday-<g>` there running `claude` with Remote
 Control, and tells it to run the goal's remaining directives in order and land the goal.
 
+### Ending a finished session
+
+`friday session-end --goal <g>` closes the dispatched session's own tmux session `friday-<g>` ten
+seconds later. It acts only when `FRIDAY_DISPATCHED_FROM` is set, the current tmux session is
+`friday-<g>`, and the goal file says `Status: done`; otherwise it prints one line and exits 1.
+
 ### Refusals
 
 Each refusal prints one line and a fix on stderr and exits with its own code.
