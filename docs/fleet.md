@@ -167,6 +167,13 @@ Control, and tells it to run the goal's remaining directives in order and land t
 seconds later. It acts only when `FRIDAY_DISPATCHED_FROM` is set, the current tmux session is
 `friday-<g>`, and the goal file says `Status: done`; otherwise it prints one line and exits 1.
 
+After the session sends `done <g> PR <url>` it runs `friday session-end --goal <g>` and stops, so no
+idle Claude is left on the node. After `blocked ...` it does not run it and stays open, so you can
+attach (`tmux attach -t friday-<g>`) or use Remote Control to unblock it.
+
+To close a blocked session by hand, on the node: `tmux kill-session -t =friday-<g>`. The worktree
+and branch stay as they are.
+
 ### Refusals
 
 Each refusal prints one line and a fix on stderr and exits with its own code.

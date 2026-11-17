@@ -24,6 +24,8 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
 - `friday dash` on the master collects node status pushed over the tailnet (`friday status --push`,
   `friday-push.timer` installed by `friday nodes --setup`), read-only `/api/state` and `/api/health`;
   docs/dashboard.md.
+- Fleet: a dispatched session that lands its goal runs `friday session-end --goal <g>` and its tmux
+  session closes ten seconds later; a blocked session stays open; docs/fleet.md.
 - Docs: commit rules; recommendation to make squash-merge the default on GitHub
   (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
 
