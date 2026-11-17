@@ -811,9 +811,15 @@ def grepo2(tmp_path, monkeypatch):
 
 
 def test_start_creates_goal_branch_from_base(grepo2):
+    base = _git(grepo2, "rev-parse", "main")
+    _git(grepo2, "checkout", "-qb", "other")  # start from elsewhere: the branch must come from Base, not HEAD
+    (grepo2 / "unrelated.txt").write_text("x\n")
+    _git(grepo2, "add", "unrelated.txt")
+    _git(grepo2, "commit", "-qm", "unrelated")
     r = cli(grepo2, "start", "core-01")
     assert r.returncode == 0, r.stderr
     assert _git(grepo2, "branch", "--show-current") == "friday/core"
+    assert _git(grepo2, "rev-parse", "HEAD") == base and not (grepo2 / "unrelated.txt").exists()
     assert "Status: running@" in (grepo2 / "docs/directives/core-01.md").read_text()
     assert "Status: running\n" in (grepo2 / "docs/goals/core.md").read_text()
     _git(grepo2, "commit", "-qam", "work")
@@ -1066,7 +1072,7 @@ def test_status_lists_goals_with_progress(grepo):
     q.write_text((grepo / "docs/directives/core-02.md").read_text()
                  .replace("core-02", "orphan-01").replace("Goal: core\n", ""))
     out = cli(grepo, "status").stdout.splitlines()
-    assert out[0].startswith("goal core  ") and "base main  1/2" in out[0]
+    assert out[0].startswith("goal core  approved  ") and "base main  1/2" in out[0]
     assert out[1].split()[:2] == ["core-01", "done"] and out[2].split()[:2] == ["core-02", "approved"]
     assert out[3] == "(no goal)" and out[4].split()[0] == "orphan-01"
     assert "active here: none" in cli(grepo, "status").stdout
