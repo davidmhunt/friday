@@ -119,3 +119,14 @@ def test_prs_from_gh_and_skip_when_missing(tmp_path):
     d.refresh_prs()
     s = d.state()
     assert "gh is not installed" in s["prs_note"] and len(s["prs"]) == 1  # old list kept
+
+
+def test_state_nodes_carry_role(tmp_path):
+    d = make(tmp_path, Clock())
+    d.reports["stranger"] = snap("stranger")
+    d.received["stranger"] = d.clock()
+    nodes = d.state()["nodes"]
+    assert nodes["laptop"]["role"] == "master"
+    assert nodes["alfred"]["role"] == "worker"
+    assert nodes["ghost"]["role"] == "worker"  # missing node still has its registry role
+    assert nodes["stranger"]["role"] is None  # not in the registry
