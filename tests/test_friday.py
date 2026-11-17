@@ -1059,3 +1059,14 @@ def test_land_goal_land_none_commits_without_push(done_goal, tmp_path):
     assert r.returncode == 0 and "nothing is pushed" in r.stdout
     assert "Status: done" in gp.read_text() and "friday/core" not in _heads(origin)
     assert _git(repo, "log", "-1", "--format=%B").strip().endswith("Goal: core")
+
+
+def test_status_lists_goals_with_progress(grepo):
+    q = grepo / "docs/directives/orphan-01.md"
+    q.write_text((grepo / "docs/directives/core-02.md").read_text()
+                 .replace("core-02", "orphan-01").replace("Goal: core\n", ""))
+    out = cli(grepo, "status").stdout.splitlines()
+    assert out[0].startswith("goal core  ") and "base main  1/2" in out[0]
+    assert out[1].split()[:2] == ["core-01", "done"] and out[2].split()[:2] == ["core-02", "approved"]
+    assert out[3] == "(no goal)" and out[4].split()[0] == "orphan-01"
+    assert "active here: none" in cli(grepo, "status").stdout

@@ -48,11 +48,33 @@ def _need(root: Path, did: str) -> dict:
 
 def cmd_status(a) -> int:
     root = _root()
-    ds = fc.list_directives(root)
-    if not ds:
+    ds = {d["id"]: fc.parse_directive_full(fc.directive_path(root, d["id"]).read_text())
+          for d in fc.list_directives(root)}
+    gdir = root / fc.GOAL_DIR
+    goals = [p for p in sorted(gdir.glob("*.md")) if p.name not in ("README.md", "TEMPLATE.md")] if gdir.is_dir() else []
+    if not ds and not goals:
         print(f"no directives in {fc.DIRECTIVE_DIR}/")
-    for d in ds:
-        print(f"{d['id']:<12} {d['status'][:28]:<28} {d['node'][:18]:<18} {d['title'][:60]}")
+
+    def row(did: str, d: dict | None, text: str = "") -> None:
+        if d is None:
+            print(f"  {did:<12} {'(missing)':<28} {'':<10} {text[:60]}")
+        else:
+            print(f"  {did:<12} {d['status'][:28]:<28} {d['deliverable'][:10]:<10} {d['title'][:60]}")
+
+    listed: set[str] = set()
+    for gp in goals:
+        g = fc.parse_goal(gp.read_text())
+        items = g["directives"]
+        done = sum(1 for x in items if x["id"] in ds and ds[x["id"]]["status"] == "done")
+        print(f"goal {gp.stem}  {g['status']}  base {g['base']}  {done}/{len(items)}  {g['title']}")
+        for x in items:
+            listed.add(x["id"])
+            row(x["id"], ds.get(x["id"]), x["text"])
+    rest = [d for i, d in ds.items() if i not in listed]
+    if rest:
+        print("(no goal)")
+        for d in rest:
+            row(d["id"], d)
     m = fc.read_marker(Path.cwd())
     print(f"\nactive here: {m['id'] if m else 'none'}")
     for lease in fc.list_leases():
