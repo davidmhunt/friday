@@ -1,13 +1,13 @@
 export const meta = {
   name: 'execute',
-  description: 'Execute one approved friday directive: implement each step, gate on its Verify command, independent review, push the branch and open a PR',
-  whenToUse: 'After the user approves a directive in docs/directives/. Pass the directive id, e.g. /friday:execute core-03',
+  description: 'Execute one approved friday directive on the goal model: parse it, implement each step on the goal branch, gate on Verify (skipped for external), independent review incl. Acceptance, land by the Land field',
+  whenToUse: 'After the user approves a directive in docs/directives/. Pass the directive id, e.g. /friday:execute gm-03',
   phases: [
-    { title: 'Prepare', detail: 'read the directive, switch to its branch, mark it active' },
-    { title: 'Implement', detail: 'one implementer per step, in order' },
-    { title: 'Verify', detail: 'run Verify; fix and rerun until it passes or stops making progress' },
-    { title: 'Review', detail: 'independent Opus verifier against the directive' },
-    { title: 'Land', detail: 'log, push the branch, open the PR' },
+    { title: 'Prepare', detail: 'friday parse --json, friday start (goal branch, order), commit the directive' },
+    { title: 'Implement', detail: 'one implementer per step, in order, labelled step n/total' },
+    { title: 'Verify', detail: 'run Verify; fix and rerun until it passes or stops making progress (skipped for external)' },
+    { title: 'Review', detail: 'independent Opus verifier grades the steps and ## Acceptance over this directive\'s commits' },
+    { title: 'Land', detail: 'log, finish, then by Land: goal push (PR after the last directive), pr, or none' },
   ],
 }
 
@@ -162,12 +162,12 @@ const st = await agent(
 if (!st) return `${id} not started: the start step returned nothing`
 if (!st.started) return `${id} not started: ${st.output}`
 d.reviewBase = st.review_base
-log(`${id}: ${d.title} (${d.steps.length} steps)`)
+log(`${id}: ${d.steps.map(s => `${s.n}. ${s.text.slice(0, 60)}`).join(' | ')}`)
 
 // ---------------------------------------------------------------- implement
 phase('Implement')
 for (const s of d.steps) {
-  const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
+  const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}/${d.steps.length}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
   if (s.heavy) opts.model = 'opus'
   const r = await agent(
     `Implement step ${s.n} of friday directive ${id} (${directive}) on branch friday/${id}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check, then commit (last line \`Directive: ${id}\`).`,
@@ -196,7 +196,7 @@ const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'It
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
+  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements. Every commit message must contain the line `Directive: ${id}`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 if (review && allGaps(review).length) {
@@ -211,7 +211,7 @@ if (review && allGaps(review).length) {
     if (!v.ok) return await block(v.why)
   }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements. Every commit message must contain the line `Directive: ${id}`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && allGaps(review).length) {
