@@ -228,9 +228,49 @@ def test_cli_lifecycle(repo):
     assert f"active here: core-01 (base {base[:12]})" in st
     assert cli(repo, "finish", "core-01").returncode == 0
     assert "Status: done" in p.read_text() and fc.read_marker(repo) is None
+
+
+def _g(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout
+
+
+def test_finish_records_in_one_commit(repo):
+    p = repo / "docs/directives/core-01.md"
     cli(repo, "start", "core-01")
-    assert cli(repo, "finish", "core-01", "--blocked", "needs a board").returncode == 0
-    assert "Status: blocked: needs a board" in p.read_text()
+    base = fc.read_marker(repo)["base"]
+    (repo / "runs/core-01").mkdir(parents=True)
+    (repo / "runs/core-01/notes.md").write_text("measured 3 ms\n")
+    for n in ("a", "b"):
+        (repo / f"{n}.txt").write_text(n)
+        _g(repo, "add", "-A", ":!runs")
+        _g(repo, "commit", "-qm", f"code {n}\n\nDirective: core-01")
+    (repo / "x.txt").write_text("x")
+    _g(repo, "add", "x.txt")
+    r = cli(repo, "finish", "core-01")
+    assert r.returncode == 1 and "x.txt" in r.stderr
+    _g(repo, "commit", "-qm", "x\n\nDirective: core-01")
+    n0 = int(_g(repo, "rev-list", "--count", f"{base}..HEAD"))
+    r = cli(repo, "finish", "core-01", "--verify", "Verify passed", "--review", "approved")
+    assert r.returncode == 0, r.stderr
+    t = p.read_text()
+    assert "Status: done" in t and "measured 3 ms" in t and "Verify passed" in t
+    assert "Independent review: approved" in t and "- " in t and t.count("code a") == 1 and "code b" in t
+    assert int(_g(repo, "rev-list", "--count", f"{base}..HEAD")) == n0 + 1
+    assert r.stdout.strip() == _g(repo, "rev-parse", "HEAD").strip()
+    msg = _g(repo, "log", "-1", "--format=%B")
+    assert msg.startswith("core-01: record results") and "Directive: core-01" in msg
+    assert fc.read_marker(repo) is None
+
+
+def test_finish_blocked_commit(repo):
+    p = repo / "docs/directives/core-01.md"
+    cli(repo, "start", "core-01")
+    r = cli(repo, "finish", "core-01", "--blocked", "needs a board")
+    assert r.returncode == 0, r.stderr
+    t = p.read_text()
+    assert "Blocked: needs a board" in t and "Status: blocked: needs a board" in t
+    assert "Commits:\n- (none)" in t and "Verify: not run" in t and "Independent review: not recorded" in t
+    assert _g(repo, "log", "-1", "--format=%s") .strip() == "core-01: blocked"
 
 
 def test_start_commits_nothing_and_stores_base(repo):
@@ -844,8 +884,7 @@ def test_start_creates_goal_branch_from_base(grepo2):
     assert "Status: approved" in (grepo2 / "docs/directives/core-01.md").read_text()
     assert "Status: running\n" in (grepo2 / "docs/goals/core.md").read_text()
     _git(grepo2, "commit", "-qam", "work")
-    cli(grepo2, "finish", "core-01")
-    _git(grepo2, "commit", "-qam", "done")
+    assert cli(grepo2, "finish", "core-01").returncode == 0
     assert cli(grepo2, "start", "core-02").returncode == 0
     assert _git(grepo2, "branch", "--show-current") == "friday/core"
     assert _git(grepo2, "branch", "--list", "friday/*").split() == ["*", "friday/core"]

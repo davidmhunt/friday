@@ -5,7 +5,8 @@
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
   friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), write the marker (commits nothing)
   friday verify [<id>]              run the directive's Verify command (default: the active one)
-  friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
+  friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
+                                    append the Log entry, Status -> done (or blocked: R), one commit, clear the marker
   friday land <id> [--base <branch>]
                                     by the directive's Land: pr -> push friday/<id> and open its PR (gh);
                                     goal -> push friday/<goal>, no PR; none -> push nothing
@@ -166,13 +167,64 @@ def cmd_verify(a) -> int:
 
 
 def cmd_finish(a) -> int:
+    """Write the record: one Log entry, the Status, and exactly one commit carrying the directive
+    file and (if modified) its goal file. Refuses when other tracked files are uncommitted."""
+    import re
     root = _root()
     _need(root, a.id)
-    fc.set_status(root, a.id, f"blocked: {a.blocked}" if a.blocked else "done")
+    dp = fc.directive_path(root, a.id)
+    parsed = fc.parse_directive_full(dp.read_text())
+    gid = parsed["goal"]
+    gp = fc.goal_path(root, gid) if gid and fc.GOAL_RE.match(gid) else None
+    mine = {str(dp.relative_to(root))}
+    if gp is not None and gp.exists():
+        mine.add(str(gp.relative_to(root)))
+    dirty = [ln[3:].strip().strip('"') for ln in
+             _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines()]
+    other = [f for f in dirty if f not in mine]
+    if other:
+        print("\n".join(other), file=sys.stderr)
+        sys.exit(f"friday: uncommitted changes to tracked files other than {a.id} and its goal; commit them first")
     m = fc.read_marker(Path.cwd())
+    base = a.base or (m.get("base") if m and m.get("id") == a.id else None)
+    if not base:
+        sys.exit("friday: no base: pass --base SHA (no marker base for this directive here)")
+    r = _run(["git", "log", "--oneline", f"{base}..HEAD"], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: cannot list commits since {base}: {r.stderr.strip()}")
+    lines = [f"- {ln}" for ln in r.stdout.splitlines() if ln.strip()] or ["- (none)"]
+    entry = [f"### {time.strftime('%Y-%m-%d')}", "Commits:", *lines]
+    notes = root / "runs" / a.id / "notes.md"
+    if notes.is_file() and notes.read_text().strip():
+        entry += ["Notes:", notes.read_text().strip()]
+    entry.append(f"Verify: {a.verify or 'not run'}")
+    entry.append(f"Independent review: {a.review or 'not recorded'}")
+    if a.blocked:
+        entry.append(f"Blocked: {a.blocked}")
+    text = dp.read_text()
+    block = "\n".join(entry) + "\n"
+    mm = re.search(r"(?m)^## Log[ \t]*$", text)
+    if mm is None:
+        text = text.rstrip("\n") + "\n\n## Log\n\n" + block
+    else:
+        nxt = re.search(r"(?m)^## ", text[mm.end():])
+        end = mm.end() + nxt.start() if nxt else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + block + ("\n" + text[end:] if nxt else "")
+    dp.write_text(text)
+    status = f"blocked: {a.blocked}" if a.blocked else "done"
+    fc.set_status(root, a.id, status)
+    add = [str(dp)]
+    if gp is not None and str(gp.relative_to(root)) in dirty:
+        add.append(str(gp))
+    r = _run(["git", "add", *add], root)
+    if r.returncode == 0:
+        r = _run(["git", "commit", "-q", "-m",
+                  f"{a.id}: {'blocked' if a.blocked else 'record results'}\n\nDirective: {a.id}"], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
     if m and m.get("id") == a.id:
         fc.clear_marker(Path.cwd())
-    print(f"{a.id}: {'blocked' if a.blocked else 'done'}")
+    print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
     return 0
 
 
@@ -589,7 +641,7 @@ def main() -> int:
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
-    s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
