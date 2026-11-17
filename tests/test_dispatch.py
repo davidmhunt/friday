@@ -418,3 +418,63 @@ def test_prepare_untrusted_does_not_write(env):
     r, home, _ = run_prepare(env, trusted=False)
     assert r.returncode == 30
     assert not (home / ".claude.json").exists()
+
+
+def test_prepare_trust_keeps_other_projects_and_keys_and_backs_up_once(env):
+    home = env.tmp / "home"
+    home.mkdir()
+    orig = {"numStartups": 7, "theme": "dark",
+            "projects": {str(home): {"hasTrustDialogAccepted": True, "allowedTools": ["x"]},
+                         "/other": {"hasTrustDialogAccepted": False, "k": 1}}}
+    (home / ".claude.json").write_text(json.dumps(orig))
+    r, home, _ = run_prepare(env, trusted=False)
+    assert r.returncode == 0, r.stdout + r.stderr
+    wt = str((home / "work" / "proj.friday" / "g1").resolve())
+    data = json.loads((home / ".claude.json").read_text())
+    expect = json.loads(json.dumps(orig))
+    expect["projects"][wt] = {"hasTrustDialogAccepted": True}
+    assert data == expect
+    bak = home / ".claude.json.friday-bak"
+    assert json.loads(bak.read_text()) == orig
+    # a second prepare (fresh worktree) must not overwrite the first backup
+    subprocess.run(["git", "-C", str(home / "work" / "proj"), "worktree", "remove", "--force", wt],
+                   check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(home / "work" / "proj"), "branch", "-D", "friday/g1"],
+                   check=True, capture_output=True)
+    r, _, _ = run_prepare(env, trusted=False)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert json.loads(bak.read_text()) == orig
+    assert not list(home.glob(".claude.json.*tmp*"))
+
+
+def test_prepare_untrusted_repos_refuses_without_backup(env):
+    home = env.tmp / "home"
+    home.mkdir()
+    (home / ".claude.json").write_text(json.dumps({"projects": {"/other": {}}}))
+    before = (home / ".claude.json").read_text()
+    r, home, _ = run_prepare(env, trusted=False)
+    assert r.returncode == 30
+    assert (home / ".claude.json").read_text() == before
+    assert not (home / ".claude.json.friday-bak").exists()
+
+
+def test_repo_name_from_origin_not_folder(env):
+    other = env.tmp / "friday-plugin"
+    subprocess.run(["git", "clone", "-q", str(env.repo.parent / "proj.git"), str(other)],
+                   check=True, capture_output=True)
+    env.repo = other
+    rc, out, err = dispatch(env, "--dry-run", "--node", "alfred", "--report-to", "me")
+    assert rc == 0, err
+    assert "proj.friday/g1" in out and "friday-plugin" not in out
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_RUN)
+    state = env.tmp / "state"
+    env.env["XDG_STATE_HOME"] = str(state)
+    assert dispatch(env, "--node", "alfred", "--report-to", "me")[0] == 0
+    rec = json.loads((state / "friday" / "dispatches.jsonl").read_text().splitlines()[0])
+    assert rec["repo"] == "proj"
+
+
+def test_dry_run_shows_trust_step(env):
+    rc, out, err = dispatch(env, "--dry-run", "--node", "alfred", "--report-to", "me")
+    assert rc == 0, err
+    assert "FRIDAY_TRUSTED" in out and "hasTrustDialogAccepted" in out
