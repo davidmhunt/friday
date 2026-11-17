@@ -1,5 +1,5 @@
 # fleet: Run directives on other machines
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -13,3 +13,4 @@ friday routes a goal to one node that satisfies its directives' `Node:` lines, r
 3. fleet-03: Fleet docs and planning hand-off
 
 ## Log
+- 2026-11-17: Landed: 2 directive(s) reverified on friday/fleet; PR into v1.
