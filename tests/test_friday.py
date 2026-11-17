@@ -1210,6 +1210,16 @@ def test_execute_parse_errors_stop_before_start(tmp_path):
 
 
 @needs_node
+def test_execute_prepare_dispatched_note_instruction(tmp_path):
+    out = _run_execute(tmp_path)
+    start = next(c for c in out["calls"] if c["label"] == "start g-02")
+    p = start["prompt"]
+    assert "FRIDAY_DISPATCHED_FROM" in p
+    assert "Dispatched from" in p and "runs/g-02/notes.md" in p
+    assert p.rstrip().endswith("Commit nothing.")
+
+
+@needs_node
 def test_execute_start_refusal_stops(tmp_path):
     out = _run_execute(tmp_path, responses={
         "start g-02": {"started": False, "output": "g-01 is not done", "review_base": ""}})
