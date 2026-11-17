@@ -480,3 +480,42 @@ def test_dry_run_shows_trust_step(env):
     rc, out, err = dispatch(env, "--dry-run", "--node", "alfred", "--report-to", "me")
     assert rc == 0, err
     assert "FRIDAY_TRUSTED" in out and "hasTrustDialogAccepted" in out
+
+
+# ---- fleet-07 step 4: dispatch cleans the target node first ----
+FAKE_SSH_CLEAN = """#!/bin/sh
+for a; do host=$a; shift; [ "$1" = bash ] && break; done
+cat > "$FAKE_DIR/stdin-$host-$$"
+echo "$host $(grep -q FRIDAY_WT "$FAKE_DIR/stdin-$host-$$" && echo inventory)\
+$(grep -q 'refuse()' "$FAKE_DIR/stdin-$host-$$" && echo prepare)" >> "$FAKE_DIR/order"
+if grep -q 'FRIDAY_WT' "$FAKE_DIR/stdin-$host-$$"; then
+  [ -e "$FAKE_DIR/clean-fails" ] && { echo "inventory boom" >&2; exit 5; }
+  echo "FRIDAY_STRAY folder=odd origin=proj path=/w/odd"
+  exit 0
+fi
+echo FRIDAY_REACH ok
+echo "FRIDAY_LOAD 0"
+echo "FRIDAY_WORKTREE /abs/work/proj.friday/g1"
+exit 0
+"""
+
+
+def test_dispatch_cleans_first_and_reports(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_CLEAN)
+    env.env["XDG_STATE_HOME"] = str(env.tmp / "state")
+    rc, out, err = dispatch(env, "--node", "alfred", "--report-to", "me")
+    assert rc == 0, out + err
+    order = [l.split()[-1] for l in (env.fake / "order").read_text().splitlines() if l.split()[-1:] != ["me@alfred"]]
+    assert order[:2] == ["inventory", "prepare"]
+    assert "clean alfred: stray clone odd" in out and "remove by hand" in out
+    assert out.index("clean alfred") < out.index("dispatched g1")
+
+
+def test_dispatch_proceeds_when_clean_fails(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_CLEAN)
+    env.env["XDG_STATE_HOME"] = str(env.tmp / "state")
+    (env.fake / "clean-fails").write_text("")
+    rc, out, err = dispatch(env, "--node", "alfred", "--report-to", "me")
+    assert rc == 0, out + err
+    assert "clean alfred: failed (inventory boom); dispatching anyway" in out
+    assert "dispatched g1 to alfred" in out

@@ -682,3 +682,43 @@ done <<'FRIDAY_ROWS'
 {rows}
 FRIDAY_ROWS
 """
+
+
+def run_clean(node, origin_urls: dict, dry_run: bool = False, run=None) -> dict:
+    """Inventory `node`, decide on the master, run the clean script there. Never raises.
+
+    Returns {"cleaned": [id], "kept": [str], "would": [str], "strays": [dict], "notes": [str],
+    "error": str|None}. `kept` holds `<id>: reason` lines from the decision and from the node.
+    """
+    import subprocess
+    run = run or subprocess.run
+    res = {"cleaned": [], "kept": [], "would": [], "strays": [], "notes": [], "error": None}
+
+    def ssh(script):
+        argv, stdin = ssh_cmd(node, script)
+        r = run(argv, input=stdin, capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "").strip().splitlines()[-1:] and
+                               (r.stderr or r.stdout).strip().splitlines()[-1]
+                               or f"ssh exited {r.returncode}")
+        return r.stdout
+
+    try:
+        inv = parse_inventory(ssh(inventory_script(node)))
+        res["strays"] = inv["stray"]
+        plan = decide_clean(inv, origin_urls)
+        res["notes"] = plan["notes"]
+        res["kept"] = [f"{w['repo']}/{w['goal']}: {why}" for w, why in plan["keep"]]
+        if plan["remove"]:
+            out = ssh(clean_script(node, plan["remove"], dry_run))
+            for line in out.splitlines():
+                if line.startswith("FRIDAY_CLEANED "):
+                    res["cleaned"].append(line.split(" ", 1)[1])
+                elif line.startswith("FRIDAY_KEPT "):
+                    _id, _, why = line[len("FRIDAY_KEPT "):].partition(" ")
+                    res["kept"].append(f"{_id}: {why}")
+                elif line.startswith("FRIDAY_WOULD "):
+                    res["would"].append(line[len("FRIDAY_WOULD "):])
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        res["error"] = str(e) or type(e).__name__
+    return res

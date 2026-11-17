@@ -868,6 +868,18 @@ def dispatch_preconditions(root: Path, gid: str, node_name: str | None) -> dict:
             "registry": reg}
 
 
+def print_clean_lines(n, clean: dict) -> list[str]:
+    """Report lines for a clean run before a dispatch; a failure is reported, never fatal."""
+    if clean["error"]:
+        return [f"clean {n.name}: failed ({clean['error']}); dispatching anyway"]
+    out = [f"clean {n.name}: removed {i}" for i in clean["cleaned"]]
+    out += [f"clean {n.name}: kept {k}" for k in clean["kept"]]
+    out += [f"clean {n.name}: note: {x}" for x in clean["notes"]]
+    out += [f"clean {n.name}: stray clone {s['folder']} (origin {s['origin']}) at {s['path']}; remove by hand"
+            for s in clean["strays"]]
+    return out or [f"clean {n.name}: nothing to remove"]
+
+
 def cmd_dispatch(a) -> int:
     root = _root()
     plan = dispatch_preconditions(root, a.goal, a.node)
@@ -887,8 +899,12 @@ def cmd_dispatch(a) -> int:
         print("prepare script:")
         print(script)
         print(f"launch: {launch}")
+        print(f"clean: would remove finished goal worktrees on {n.name} first (`friday nodes --clean {n.name} --dry-run` plans it)")
         print("dry run: nothing changed on any node")
         return 0
+    clean = ff.run_clean(n, {repo_name: origin_url.strip()})
+    for line in print_clean_lines(n, clean):
+        print(line)
     argv, stdin = ff.ssh_cmd(n, script)
     r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
     if r.returncode != 0:
