@@ -127,7 +127,7 @@ async function verifyLoop(d, label) {
     }
     const fix = await agent(
       `Directive ${id} (${directive}): its Verify command fails.\n\nCommand: ${d.verify}\nFirst failure: ${sig}\nOutput tail:\n${v ? v.tail : '(none)'}\n\nFind and fix the root cause within the directive's scope. Do not weaken, skip or delete tests or checks. Run the failing part again to confirm, then commit (last line \`Directive: ${id}\`).`,
-      { agentType: 'friday:implementer', schema: STEP, label: `${label} fix ${round}`, phase: 'Verify' },
+      { agentType: 'friday:implementer', schema: STEP, label: `${label === 'initial' ? '' : label + ' '}fix ${round}/${MAX_FIX_ROUNDS}`, phase: 'Verify' },
     )
     if (fix && fix.status === 'needs_user') return { ok: false, why: fix.question }
   }
@@ -170,7 +170,7 @@ for (const s of d.steps) {
   const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}/${d.steps.length}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
   if (s.heavy) opts.model = 'opus'
   const r = await agent(
-    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check, then commit (last line \`Directive: ${id}\`).`,
+    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` and do not commit.`,
     opts,
   )
   if (!r) return await block(`step ${s.n} agent did not return`)
