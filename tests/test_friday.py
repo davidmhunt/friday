@@ -1341,15 +1341,12 @@ const agent = async (prompt, opts) => {
 def test_execute_simulated_run_makes_two_commits(grepo2, tmp_path):
     runner = tmp_path / "real.js"
     runner.write_text(_REAL_RUNNER)
-    parse = {"id": "g-01", "status": "approved", "goal": "core", "base": "main", "deliverable": "code",
+    parse = {"id": "core-01", "status": "approved", "goal": "core", "base": "main", "deliverable": "code",
              "land": "none", "verify": "true", "acceptance": [], "errors": [], "position": 1,
-             "goal_directives": [{"id": "g-01"}, {"id": "g-02"}],
+             "goal_directives": [{"id": "core-01"}, {"id": "core-02"}],
              "steps": [{"n": i, "text": f"s{i}"} for i in (1, 2, 3)]}
-    # the fixture's directives are core-01/core-02; the runner uses core ids via replacement below
-    parse["id"] = "core-01"
-    parse["goal_directives"] = [{"id": "core-01"}, {"id": "core-02"}]
-    src = _REAL_RUNNER.replace("g-01", "core-01")
-    runner.write_text(src)
+    # the fixture's directives are core-01/core-02; point the runner's ids at them
+    runner.write_text(_REAL_RUNNER.replace("g-01", "core-01"))
     base = _git(grepo2, "rev-parse", "HEAD")
     p = subprocess.run(["node", str(runner), str(ROOT / "workflows" / "execute.js")],
                        input=json.dumps({"repo": str(grepo2), "cli": str(CLI), "parse": parse}),
@@ -1357,6 +1354,7 @@ def test_execute_simulated_run_makes_two_commits(grepo2, tmp_path):
     assert p.returncode == 0, p.stderr
     out = json.loads(p.stdout)
     assert "done:" in out["result"], out
+    assert not any("fix" in l for l in out["labels"])
     log = _git(grepo2, "log", "--format=%s%n%b%x00", f"{base}..HEAD").split("\x00")
     log = [c.strip() for c in log if c.strip()]
     assert len(log) == 2, log
@@ -1365,3 +1363,13 @@ def test_execute_simulated_run_makes_two_commits(grepo2, tmp_path):
     d = (grepo2 / "docs/directives/core-01.md").read_text()
     assert "measured 42" in d and "Verify: Verify passed: true" in d
     assert "Independent review: no gaps" in d and "Status: done" in d
+
+
+@needs_node
+def test_execute_prompts_for_start_and_step_briefs(tmp_path):
+    out = _run_execute(tmp_path)
+    start = next(c for c in out["calls"] if c["label"] == "start g-02")
+    assert "friday start g-02 --no-gate" in start["prompt"]
+    step = next(c for c in out["calls"] if c["label"] == "step 1/1")
+    assert "Commit only if you changed tracked files" in step["prompt"]
+    assert "runs/g-02/notes.md" in step["prompt"]
