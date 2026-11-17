@@ -55,7 +55,11 @@ def cmd_status(a) -> int:
     if not ds and not goals:
         print(f"no directives in {fc.DIRECTIVE_DIR}/")
 
+    m = fc.read_marker(Path.cwd())
+
     def row(did: str, d: dict | None, text: str = "") -> None:
+        if d is not None and m and m.get("id") == did:
+            d = {**d, "status": f"running@{m.get('host', '?')}"}
         if d is None:
             print(f"  {did:<12} {'(missing)':<28} {'':<10} {text[:60]}")
         else:
@@ -75,8 +79,7 @@ def cmd_status(a) -> int:
         print("(no goal)")
         for d in rest:
             row(d["id"], d)
-    m = fc.read_marker(Path.cwd())
-    print(f"\nactive here: {m['id'] if m else 'none'}")
+    print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
         print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min)")

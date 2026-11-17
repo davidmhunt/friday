@@ -222,7 +222,10 @@ def test_cli_lifecycle(repo):
     assert cli(repo, "verify").returncode != 0
     (repo / "ok.txt").write_text("ok")
     assert cli(repo, "verify").returncode == 0
-    assert "core-01" in cli(repo, "status").stdout
+    st = cli(repo, "status").stdout
+    base = fc.read_marker(repo)["base"]
+    assert "core-01" in st and "running@" in st and "Status: approved" in p.read_text()
+    assert f"active here: core-01 (base {base[:12]})" in st
     assert cli(repo, "finish", "core-01").returncode == 0
     assert "Status: done" in p.read_text() and fc.read_marker(repo) is None
     cli(repo, "start", "core-01")
