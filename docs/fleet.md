@@ -116,11 +116,41 @@ friday nodes --check
 ```
 
 It probes each node over ssh and reports which are reachable and how many `friday-*` sessions run.
+For each master and worker it also reports two Claude Code first-run prompts that would stop a
+dispatched session, because nobody is there to answer them:
+
+- `workflow prompt`: the workflow usage warning; cleared by `skipWorkflowUsageWarning: true`.
+- `auto-mode prompt`: the auto-mode opt-in; cleared by `skipAutoPermissionPrompt: true`.
+
+Each is a FAIL with the fix `friday nodes --setup <node>`. A missing or unparsable
+`~/.claude/settings.json` counts as both prompts.
+
+### `friday nodes --setup <node>`
+
+```
+friday nodes --setup alfred [--yes]
+```
+
+Prints the exact keys and the file (`~/.claude/settings.json` on that node), then asks `y/N` on the
+terminal. Without a TTY it refuses unless you pass `--yes`. On confirmation it merges only those two keys
+into the file: other keys stay as they are, the file is written to a temp file and renamed, and the
+previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
+permission rules. Run `friday nodes --check` again afterwards.
+
+### Setting up the master (learned on the laptop)
+
+The master is a node too, and dispatch reaches it by ssh like any other:
+
+- It needs an ssh server, or `tailscale set --ssh` so Tailscale SSH answers for it.
+- `ssh` in the registry is the node's tailnet name (for example `david@laptop-ts`), not its local hostname.
+- Accept the host key once: run `ssh <user@host>` by hand and answer `yes`. `BatchMode` cannot answer it.
+- Use key auth so `BatchMode=yes` works: `ssh-copy-id <user@host>` (not needed with Tailscale SSH).
 
 ## Dispatching
 
 Approve the goal and its first remaining directive, commit the goal and directive files, and publish
-them to `origin` (`friday/<g>` if it exists there, else the Base). Then:
+them to `origin` (`friday/<g>` if it exists there, else the Base). Run `friday dispatch` from the repo you want dispatched: the goal and its origin come from the
+current checkout. Then:
 
 ```
 friday dispatch --goal <g> [--node <name>] [--report-to <session>] [--dry-run]
