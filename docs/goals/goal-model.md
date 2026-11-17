@@ -1,5 +1,5 @@
 # goal-model: One branch and one PR per goal, deliverable types, a deterministic format check
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
