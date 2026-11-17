@@ -1,5 +1,5 @@
 # fleet-02: `friday dispatch --goal <g>` runs a goal on another node and reports back
-Status: approved
+Status: done
 Goal: fleet
 Node: any
 Deliverable: code
@@ -76,3 +76,14 @@ built, against a fake `ssh`.
   user: dispatch takes a goal and works on `friday/<goal>` instead of a per-directive branch
   `friday/<id>`; the dispatched-from note goes to `runs/<id>/notes.md` since `friday start` no
   longer commits.
+
+### 2026-11-17
+Commits:
+- b9d4375 dispatch: --dry-run prints the prepare script; launch line expands a leading ~ in plugin_dir
+- a8de2ff execute: prepare notes the dispatch in runs/<id>/notes.md when FRIDAY_DISPATCHED_FROM is set
+- 0cbd23a dispatch: run prepare and launch over ssh, record the dispatch in dispatches.jsonl on the master
+- a2d0147 dispatch: launch line built by one function (tmux, claude flags, run and report text), --report-to refusal
+- 7c6ce98 dispatch: one remote prepare script (trust, session, plugin checkout, clone reuse, goal worktree)
+- a82ec47 dispatch: preconditions on the master with their own exit codes, node routing across a goal's directives
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_dispatch.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: gaps fixed in second review: 1. /home/david/Documents/claude_temp/friday/bin/friday:695-699 (cmd_dispatch, --dry-run branch): Step 1 says '--dry-run' prints the remote script and the launch line. The dry-run branch prints only the launch line and then returns. prepare_script is only built on the non-dry-run path (line 701), so the remote prepare script never appears in dry-run output. (evidence: 'if a.dry_run: print(f'launch: {launch}'); print('dry run: nothing changed on any node'); return 0'. test_dry_run_prints_launch_and_no_report_to only checks the launch text, so this goes untested.) 2. /home/david/Documents/claude_temp/friday/lib/friday_fleet.py:369 (launch_line): plugin_dir is passed through shlex.quote unchanged. The registry's documented form is a leading '~' (nodes.example.toml: plugin_dir = '~/friday'). shlex.quote('~/friday') gives '~/friday', so the remote bash never expands the tilde and claude gets a literal '~/friday' as --plugin-dir. On a node set up as the example shows, the worker session would start without the checked-out friday plugin, and /friday:execute would not be available. prepare_script handles this through remote_path() and cmd_dispatch swaps in the absolute worktree path, but plugin_dir gets neither treatment. (evidence: 'python3 -c 'import shlex;print(shlex.quote('~/friday'))'' prints ''~/friday''. launch_line has ''--plugin-dir', q(node.plugin_dir)'. The verbatim test uses an absolute plugin_dir ('/opt/my friday'), so it misses this case.)

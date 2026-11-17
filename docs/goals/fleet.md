@@ -1,5 +1,5 @@
 # fleet: Run directives on other machines
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
