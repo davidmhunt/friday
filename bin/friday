@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """friday: directive bookkeeping for the friday plugin. On PATH while the plugin is enabled.
 
-  friday status                     directives in this repo, the active one here, hardware leases
+  friday status [--json]            directives in this repo, the active one here, hardware leases; --json: one node snapshot
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
   friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), write the marker (commits nothing)
   friday verify [<id>]              run the directive's Verify command (default: the active one)
@@ -37,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import friday_core as fc  # noqa: E402
 import friday_fleet as ff  # noqa: E402
+import friday_status as fs  # noqa: E402
 
 
 def _root() -> Path:
@@ -54,6 +55,9 @@ def _need(root: Path, did: str) -> dict:
 
 
 def cmd_status(a) -> int:
+    if getattr(a, "json", False):
+        print(json.dumps(fs.collect(), indent=2))
+        return 0
     root = _root()
     ds = {d["id"]: fc.parse_directive_full(fc.directive_path(root, d["id"]).read_text())
           for d in fc.list_directives(root)}
@@ -894,7 +898,7 @@ def cmd_parse(a) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("status").set_defaults(f=cmd_status)
+    s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
