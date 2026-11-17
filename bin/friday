@@ -6,7 +6,9 @@
   friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), Status -> running@<host>
   friday verify [<id>]              run the directive's Verify command (default: the active one)
   friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
-  friday land <id> --base <branch>  push friday/<id> and open its PR (gh), or print why not
+  friday land <id> [--base <branch>]
+                                    by the directive's Land: pr -> push friday/<id> and open its PR (gh);
+                                    goal -> push friday/<goal>, no PR; none -> push nothing
   friday release <resource>|--all   free a hardware lease (or all of them)
   friday check [<id> | --goal <g> | --all]
                                     validate directive/goal files (default --all); exit 1 on any error
@@ -156,13 +158,28 @@ def _compare_url(remote: str, base: str, head: str) -> str | None:
 
 
 def cmd_land(a) -> int:
-    """Push friday/<id> and open its PR. Deterministic, so the workflow doesn't improvise git.
-    Exit 0: PR open (last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
+    """Land a directive by its Land field. Deterministic, so the workflow doesn't improvise git.
+    Land pr: push friday/<id> and open its PR into the goal's Base (or --base).
+    Land goal: push friday/<goal>, no PR. Land none: push nothing.
+    Exit 0: done (for pr, last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
     5: pushed, no PR because gh is missing or signed out (last line `COMPARE: <url>`)."""
     import os
     root = _root()
     d = _need(root, a.id)
-    head = f"friday/{a.id}"
+    parsed = fc.parse_directive_full(fc.directive_path(root, a.id).read_text())
+    land, gid = parsed["land"], parsed["goal"]
+    if land == "none":
+        print(f"{a.id}: Land none, nothing is pushed")
+        return 0
+    if land == "goal":
+        head = f"friday/{gid}"
+    else:
+        head = f"friday/{a.id}"
+        if not a.base:
+            if gid and fc.GOAL_RE.match(gid) and fc.goal_path(root, gid).exists():
+                a.base = fc.parse_goal(fc.goal_path(root, gid).read_text())["base"]
+            if not a.base:
+                sys.exit(f"friday: {a.id} has no goal Base; pass --base <branch>")
     if fc.current_branch(root) != head:
         sys.exit(f"friday: land runs on branch {head}, not {fc.current_branch(root)}")
     if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
@@ -175,6 +192,8 @@ def cmd_land(a) -> int:
         print(f"push failed:\n{push.stderr.strip()}")
         return 3
     print(f"pushed {head}")
+    if land == "goal":
+        return 0
     if _run(["git", "ls-remote", "--exit-code", "--heads", "origin", a.base], root).returncode != 0:
         print(f"PR not opened: base branch '{a.base}' is not on origin. Publish it "
               f"(`git push -u origin {a.base}`), then rerun `friday land {a.id} --base {a.base}`.")
@@ -387,7 +406,7 @@ def main() -> int:
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
-    s = sub.add_parser("land"); s.add_argument("id"); s.add_argument("--base", required=True); s.set_defaults(f=cmd_land)
+    s = sub.add_parser("land"); s.add_argument("id"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)

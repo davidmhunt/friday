@@ -874,3 +874,55 @@ def test_start_base_from_origin_only_and_missing(grepo2, tmp_path):
     _git(grepo2, "update-ref", "-d", "refs/remotes/origin/main")
     r = cli(grepo2, "start", "core-01")
     assert r.returncode != 0 and "main" in r.stderr
+
+
+def _land_origin(repo, tmp_path):
+    origin = tmp_path / "lo.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    _git(repo, "remote", "add", "origin", str(origin))
+    return origin
+
+
+def test_land_goal_pushes_goal_branch_no_pr(grepo2, tmp_path, monkeypatch):
+    origin = _land_origin(grepo2, tmp_path)
+    log = tmp_path / "gh.log"
+    fake = tmp_path / "gh"
+    fake.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("FRIDAY_GH", str(fake))
+    assert cli(grepo2, "start", "core-01").returncode == 0
+    _git(grepo2, "commit", "-qam", "start")
+    r = cli(grepo2, "land", "core-01")
+    assert r.returncode == 0 and r.stdout.strip().splitlines()[-1] == "pushed friday/core"
+    assert "friday/core" in _heads(origin) and not log.exists()
+
+
+def test_land_goal_needs_goal_branch_and_clean_tree(grepo2, tmp_path):
+    _land_origin(grepo2, tmp_path)
+    r = cli(grepo2, "land", "core-01")
+    assert r.returncode != 0 and "friday/core" in r.stderr
+    cli(grepo2, "start", "core-01")
+    r = cli(grepo2, "land", "core-01")
+    assert r.returncode != 0 and "uncommitted" in r.stderr
+
+
+def test_land_goal_push_failure_exits_3(grepo2):
+    _git(grepo2, "remote", "add", "origin", str(grepo2 / "nonexistent.git"))
+    cli(grepo2, "start", "core-01")
+    _git(grepo2, "commit", "-qam", "start")
+    assert cli(grepo2, "land", "core-01").returncode == 3
+
+
+def test_land_none_pushes_nothing(grepo2, tmp_path):
+    origin = _land_origin(grepo2, tmp_path)
+    p = grepo2 / "docs/directives/core-01.md"
+    p.write_text(p.read_text().replace("Hardware: none", "Hardware: none\nLand: none", 1))
+    _git(grepo2, "commit", "-qam", "none")
+    r = cli(grepo2, "land", "core-01")
+    assert r.returncode == 0 and "nothing is pushed" in r.stdout and _heads(origin) == []
+
+
+def test_land_pr_defaults_base_to_goal(remote_repo):
+    repo, origin = remote_repo
+    r = cli(repo, "land", "core-01")
+    assert r.returncode == 4 and "'main'" in r.stdout
