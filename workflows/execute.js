@@ -20,24 +20,21 @@ const MAX_FIX_ROUNDS = 4        // verify -> fix cycles before giving up
 const MAX_SAME_FAILURE = 2      // the same failure this many rounds in a row = no progress
 
 // ---------------------------------------------------------------- schemas
-const PREP = {
+const PARSE = {
   type: 'object',
-  required: ['ready', 'reason', 'base', 'title', 'verify', 'hardware', 'steps'],
+  required: ['exit_code', 'stdout'],
   properties: {
-    ready: { type: 'boolean' },
-    reason: { type: 'string', description: 'why not ready, or empty' },
-    base: { type: 'string', description: 'the branch HEAD was on before switching to friday/<id>' },
-    title: { type: 'string' },
-    verify: { type: 'string', description: 'the Verify: command, verbatim' },
-    hardware: { type: 'string' },
-    steps: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['n', 'text', 'heavy'],
-        properties: { n: { type: 'integer' }, text: { type: 'string' }, heavy: { type: 'boolean' } },
-      },
-    },
+    exit_code: { type: 'integer', description: 'exit code of friday parse' },
+    stdout: { type: 'string', description: 'its stdout, verbatim' },
+  },
+}
+const START = {
+  type: 'object',
+  required: ['started', 'output', 'review_base'],
+  properties: {
+    started: { type: 'boolean', description: 'false if friday start refused' },
+    output: { type: 'string', description: 'friday start output verbatim when it refused, else empty' },
+    review_base: { type: 'string', description: 'git rev-parse HEAD after start, before the directive commit' },
   },
 }
 const STEP = {
@@ -120,11 +117,33 @@ async function verifyLoop(d, label) {
 
 // ---------------------------------------------------------------- prepare
 phase('Prepare')
-const d = await agent(
-  `Prepare friday directive ${id} for execution. From the repo root:\n1. Read ${directive}. If its Status is not "approved" or "running@...", return ready=false with the reason and change nothing.\n2. Record the current branch as base. Switch to friday/${id}: \`git switch friday/${id}\` if it exists, else \`git switch -c friday/${id}\`.\n3. Run \`friday start ${id} --no-gate\` and commit ${directive} (message last line \`Directive: ${id}\`).\nReturn the directive's title, Verify command verbatim, Hardware line, and its numbered Steps (heavy = the step is tagged [heavy]).`,
-  { agentType: 'friday:implementer', schema: PREP, label: `prepare ${id}` },
+const parsed = await agent(
+  `Run \`friday parse ${id} --json\` from the repo root. Return its exit code and its stdout verbatim (do not summarise or reformat). Change nothing.`,
+  { agentType: 'friday:runner', schema: PARSE, label: `parse ${id}`, phase: 'Prepare' },
 )
-if (!d || !d.ready) return `${id} not started: ${d ? d.reason : 'could not read the directive'}`
+if (!parsed) return `${id} not started: the parse step returned nothing`
+let d
+try {
+  d = JSON.parse(parsed.stdout)
+} catch (e) {
+  return `${id} not started: friday parse gave invalid JSON (exit ${parsed.exit_code})`
+}
+if (parsed.exit_code !== 0 || !d || typeof d !== 'object') {
+  const errs = d && Array.isArray(d.errors) && d.errors.length ? d.errors.join('; ') : `friday parse exited ${parsed.exit_code}`
+  return `${id} not started: ${errs}`
+}
+if (Array.isArray(d.errors) && d.errors.length) return `${id} not started: ${d.errors.join('; ')}`
+if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
+  return `${id} not started: Status is "${d.status}", not approved`
+}
+
+const st = await agent(
+  `Start friday directive ${id}. From the repo root:\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Run \`git rev-parse HEAD\` and return it as review_base (before committing).\n3. Commit ${directive} (message last line \`Directive: ${id}\`).`,
+  { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
+)
+if (!st) return `${id} not started: the start step returned nothing`
+if (!st.started) return `${id} not started: ${st.output}`
+d.reviewBase = st.review_base
 log(`${id}: ${d.title} (${d.steps.length} steps)`)
 
 // ---------------------------------------------------------------- implement
@@ -148,7 +167,7 @@ if (!v.ok) return await block(v.why)
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.base}...HEAD\` and \`git log --oneline ${d.base}..HEAD\`. Its Verify command already passes. Report only gaps that affect correctness or the directive's stated requirements.`,
+  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. Its Verify command already passes. Report only gaps that affect correctness or the directive's stated requirements.`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 if (review && review.gaps.length) {
@@ -161,7 +180,7 @@ if (review && review.gaps.length) {
   v = await verifyLoop(d, 'after review')
   if (!v.ok) return await block(v.why)
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.base}...HEAD\`. Report only gaps that still affect correctness or the stated requirements.`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements.`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && review.gaps.length) {
@@ -172,7 +191,7 @@ if (review && review.gaps.length) {
 // ---------------------------------------------------------------- land
 phase('Land')
 const land = await agent(
-  `Land friday directive ${id} from the repo root, on branch friday/${id}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.base}..HEAD\`), "Verify passed: ${d.verify.replace(/`/g, "'")}", and "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (last line \`Directive: ${id}\`).\n3. Run exactly \`friday land ${id} --base ${d.base}\` (it pushes the branch and opens the PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it.\nReturn its exit code and its output verbatim.`,
+  `Land friday directive ${id} from the repo root, on branch friday/${id}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.reviewBase}..HEAD\`), "Verify passed: ${d.verify.replace(/`/g, "'")}", and "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (last line \`Directive: ${id}\`).\n3. Run exactly \`friday land ${id} --base ${d.base}\` (it pushes the branch and opens the PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it.\nReturn its exit code and its output verbatim.`,
   { agentType: 'friday:implementer', schema: LAND, label: 'land' },
 )
 const LAND_MEANING = {
