@@ -196,7 +196,7 @@ const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'It
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements. Every commit message must contain the line `Directive: ${id}`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
+  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements. Every commit message must contain the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 if (review && allGaps(review).length) {
@@ -211,7 +211,7 @@ if (review && allGaps(review).length) {
     if (!v.ok) return await block(v.why)
   }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements. Every commit message must contain the line `Directive: ${id}`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements. Every commit message must contain the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && allGaps(review).length) {
