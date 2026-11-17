@@ -1,5 +1,5 @@
 # status-03: Dashboard UI modelled on Jarvis OS: Overview, Machines, Projects, Sessions
-Status: blocked: step 1: Where is the Jarvis OS checkout, or its 'tokens.css'? Please give me the path, or copy it to '/home/david/Documents/claude_temp/jarvis/jarvis_os/static/tokens.css'. My recommendation is to wait for the real file, because the step requires it to be vendored with a source header. The alternative is for me to write my own 'tokens.css' with the variables the step names ('--warn' and the dark and light palettes), labelled 'modelled on Jarvis OS, not vendored'. That departs from the step's wording, so I won't do it unless you say so.
+Status: done
 Goal: status-page
 Node: any
 Deliverable: code
@@ -51,3 +51,16 @@ Notes:
 Verify: not run
 Independent review: not recorded
 Blocked: step 1: Where is the Jarvis OS checkout, or its 'tokens.css'? Please give me the path, or copy it to '/home/david/Documents/claude_temp/jarvis/jarvis_os/static/tokens.css'. My recommendation is to wait for the real file, because the step requires it to be vendored with a source header. The alternative is for me to write my own 'tokens.css' with the variables the step names ('--warn' and the dark and light palettes), labelled 'modelled on Jarvis OS, not vendored'. That departs from the step's wording, so I won't do it unless you say so.
+
+### 2026-11-17
+Commits:
+- 8be80e9 status-03: test /api/state node role; tokens.css header states no source commit exists
+- d1fb830 status-03 step 4: tests/test_dash_ui.py, render.test.mjs and a fixture state
+- d9c4a10 status-03 step 3: textContent-only rendering, updated-ago and stale greying, localStorage tab/expanded state
+- 64176d6 status-03 step 2: index.html, app.js and render.mjs for the four views; /api/state nodes carry role
+- 36793d6 status-03 step 1: vendor Jarvis tokens.css, add dash/static/app.css on tokens
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_dash_ui.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: gaps fixed in second review: 1. /home/david/Documents/claude_temp/friday.friday/status-page/lib/friday_dash.py:322-323: Step 2 changes the backend so every /api/state node carries 'role', but no test covers it. The UI's machine-card role badge depends on this field, yet the only place it is checked is the hand-written fixture, which sets 'role' itself. (evidence: grep for 'role' in tests/test_dash_state.py and tests/test_dash_server.py finds only registry TOML lines ('role = 'master''/''worker''). No test asserts 'state['nodes'][n]['role']'. tests/fixtures/dash_state.json sets ''role'' directly, so test_dash_ui.py never exercises Dash.state().) 2. /home/david/Documents/claude_temp/friday.friday/status-page/dash/static/tokens.css:1-2: Step 1 requires a header that names the source file and its commit. The header names the file and a copy date (2026-11-17) but no commit. The source /home/david/Documents/claude_temp/jarvis is not a git repository, so there is no commit to name, but the header does not say so either. (evidence: Header: 'Vendored from Jarvis OS: jarvis/jarvis_os/static/tokens.css (copied verbatim below this header, 2026-11-17).' Running 'git log' in /home/david/Documents/claude_temp/jarvis gives 'fatal: not a git repository'. Apart from the header and one blank line, the body matches the source file exactly.)
