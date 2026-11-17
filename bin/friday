@@ -494,6 +494,19 @@ print("no")
 """
 
 
+_SETTINGS_PY = """
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.claude/settings.json")))
+    if not isinstance(d, dict):
+        d = {}
+except Exception:
+    d = {}
+for k, v in (("workflow", "skipWorkflowUsageWarning"), ("auto", "skipAutoPermissionPrompt")):
+    print("FRIDAY_PROBE %s=%s" % (k, "ok" if d.get(v) is True else "no"))
+"""
+
+
 def probe_script(node) -> str:
     if node.role == "target":
         return "echo FRIDAY_PROBE reach=ok\n"
@@ -506,6 +519,7 @@ def probe_script(node) -> str:
         "if command -v python3 >/dev/null 2>&1; then",
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
+        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
     ]) + "\n"
 
 
@@ -538,6 +552,9 @@ def check_node(node) -> tuple:
         fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
     elif trust != "ok":
         fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
+    for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
+        if got.get(key) != "ok":
+            fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"plugin_dir {got.get('plugin', '?')}, trust {trust or '?'}")
     return summary, fixes

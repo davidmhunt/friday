@@ -183,7 +183,7 @@ def test_nodes_no_file(tmp_path):
 FAKE = """#!/bin/bash
 echo "$@" >> "$0.argv"; cat >> "$0.stdin"
 case "$*" in
-  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=ok\\n';;
+  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=ok\\nFRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=ok\\n';;
   *me@alfred*) exit 255;;
   *me@bot*) echo FRIDAY_PROBE reach=ok;;
 esac
@@ -209,6 +209,37 @@ def test_nodes_check_untrusted_and_ready(tmp_path):
     ok = ok.replace('runtime = "container"\ntags = ["gpu"]\nrepos = "~/Documents"\nplugin_dir = "~/friday"\n', '')
     r = _friday(tmp_path, ok, "--check", ssh_script=FAKE)
     assert r.returncode == 0, r.stdout
+
+
+def test_nodes_check_reports_missing_settings_prompts(tmp_path):
+    base = "FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=ok\\n"
+    for extra, want, absent in [
+            ("FRIDAY_PROBE workflow=no\\nFRIDAY_PROBE auto=no\\n", ["workflow prompt", "auto-mode prompt"], []),
+            ("FRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=no\\n", ["auto-mode prompt"], ["workflow prompt"]),
+            ("", ["workflow prompt", "auto-mode prompt"], [])]:
+        fake = FAKE.replace("*me@alfred*) exit 255;;", f"*me@alfred*) printf '{base}{extra}';;")
+        r = _friday(tmp_path, GOOD, "--check", ssh_script=fake)
+        assert r.returncode == 1
+        for w in want:
+            assert f"{w}: run `friday nodes --setup alfred`" in r.stdout
+        for w in absent:
+            assert w not in r.stdout
+
+
+def test_settings_probe_script_semantics(tmp_path):
+    import subprocess as sp
+    from importlib.machinery import SourceFileLoader
+    script = SourceFileLoader("friday_bin", str(Path(__file__).resolve().parent.parent / "bin" / "friday")).load_module()._SETTINGS_PY
+    for content, want in [(None, "no no"), ("{bad", "no no"),
+                          ('{"skipWorkflowUsageWarning": true}', "ok no"),
+                          ('{"skipWorkflowUsageWarning": true, "skipAutoPermissionPrompt": true}', "ok ok")]:
+        home = tmp_path / ("h" + str(abs(hash(str(content)))))
+        (home / ".claude").mkdir(parents=True)
+        if content is not None:
+            (home / ".claude" / "settings.json").write_text(content)
+        out = sp.run([sys.executable, "-c", script], env={"HOME": str(home)}, capture_output=True, text=True).stdout
+        vals = [l.split("=")[1] for l in out.splitlines()]
+        assert " ".join(vals) == want
 
 
 def test_nodes_check_ready_unreachable_untrusted_together(tmp_path):
