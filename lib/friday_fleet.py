@@ -242,3 +242,100 @@ def probe_load(node, timeout: int = 30):
             except ValueError:
                 break
     return 0
+
+
+# Exit codes of the remote prepare script (0 = ok); each refusal prints `FRIDAY_REFUSE <kind>: ...`.
+PREPARE_EXIT = {"untrusted": 30, "session": 31, "origin": 32, "worktree": 33, "branch": 34,
+                "plugin": 35, "git": 36}
+
+
+def remote_path(p: str) -> str:
+    """Shell-quote a node path, keeping a leading `~` expandable by the remote shell."""
+    import shlex
+    if p == "~":
+        return '"$HOME"'
+    if p.startswith("~/"):
+        return '"$HOME"/' + shlex.quote(p[2:])
+    return shlex.quote(p)
+
+
+def worktree_path(node, repo_name: str, goal: str) -> str:
+    """The worktree path as the node's shell will see it (still with a leading `~` if repos has one)."""
+    return f"{node.repos.rstrip('/')}/{repo_name}.friday/{goal}"
+
+
+def prepare_script(node, goal: str, repo_name: str, origin_url: str, base: str,
+                   plugin_commit: str) -> str:
+    """The one remote script that prepares `node` for a dispatch of `goal`.
+
+    Refuses (exit code from PREPARE_EXIT, message `FRIDAY_REFUSE <kind>: ...`) if `repos` is
+    untrusted in ~/.claude.json, a tmux session friday-<goal> exists, the existing clone's origin
+    differs from `origin_url`, or the worktree path / local branch friday/<goal> already exists.
+    Never touches an existing checkout's working tree or branch. On success prints
+    `FRIDAY_WORKTREE <abs path>`.
+    """
+    import shlex
+    q = shlex.quote
+    code = PREPARE_EXIT
+    repos = remote_path(node.repos)
+    plugin = remote_path(node.plugin_dir)
+    branch = f"friday/{goal}"
+    return f"""set -u
+refuse() {{ echo "FRIDAY_REFUSE $1: $2"; exit "$3"; }}
+REPOS={repos}
+PLUGIN={plugin}
+REPO_NAME={q(repo_name)}
+ORIGIN={q(origin_url)}
+GOAL={q(goal)}
+BRANCH={q(branch)}
+BASE={q(base)}
+COMMIT={q(plugin_commit)}
+mkdir -p "$REPOS" || refuse git "cannot create $REPOS" {code['git']}
+REPOS=$(cd "$REPOS" && pwd -P)
+CLONE="$REPOS/$REPO_NAME"
+WT="$REPOS/$REPO_NAME.friday/$GOAL"
+# trust: repos or a parent must be accepted in ~/.claude.json
+python3 - "$REPOS" <<'PY' || refuse untrusted "$REPOS is not trusted in ~/.claude.json" {code['untrusted']}
+import json, os, sys
+p = os.path.realpath(sys.argv[1])
+try:
+    projects = json.load(open(os.path.expanduser("~/.claude.json"))).get("projects", {{}})
+except (OSError, ValueError):
+    sys.exit(1)
+while True:
+    if isinstance(projects.get(p), dict) and projects[p].get("hasTrustDialogAccepted"):
+        sys.exit(0)
+    if p == os.path.dirname(p):
+        sys.exit(1)
+    p = os.path.dirname(p)
+PY
+if tmux has-session -t "=friday-$GOAL" 2>/dev/null; then
+  refuse session "tmux session friday-$GOAL already exists" {code['session']}
+fi
+# plugin: fetch and check out the master's commit, detached
+git -C "$PLUGIN" fetch -q origin && git -C "$PLUGIN" checkout -q --detach "$COMMIT" \\
+  || refuse plugin "cannot check out $COMMIT in $PLUGIN" {code['plugin']}
+# repo: reuse a matching clone, else clone from the master's origin
+norm() {{ u=${{1%/}}; echo "${{u%.git}}"; }}
+if [ -e "$CLONE" ]; then
+  have=$(git -C "$CLONE" remote get-url origin 2>/dev/null) \\
+    || refuse origin "$CLONE has no origin remote (master origin: $ORIGIN)" {code['origin']}
+  [ "$(norm "$have")" = "$(norm "$ORIGIN")" ] \\
+    || refuse origin "origin mismatch at $CLONE: node has $have, master has $ORIGIN" {code['origin']}
+else
+  git clone -q "$ORIGIN" "$CLONE" || refuse git "clone of $ORIGIN failed" {code['git']}
+fi
+[ -e "$WT" ] && refuse worktree "worktree $WT already exists" {code['worktree']}
+if git -C "$CLONE" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  refuse branch "local branch $BRANCH already exists in $CLONE" {code['branch']}
+fi
+git -C "$CLONE" fetch -q origin || refuse git "fetch in $CLONE failed" {code['git']}
+if git -C "$CLONE" show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
+  git -C "$CLONE" worktree add -q -b "$BRANCH" --track "$WT" "origin/$BRANCH" \\
+    || refuse git "worktree add failed" {code['git']}
+else
+  git -C "$CLONE" worktree add -q --no-track -b "$BRANCH" "$WT" "origin/$BASE" \\
+    || refuse git "worktree add from origin/$BASE failed" {code['git']}
+fi
+echo "FRIDAY_WORKTREE $WT"
+"""

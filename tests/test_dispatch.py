@@ -230,3 +230,91 @@ def test_any_picks_fewer_sessions(env):
 
 def test_node_override_unknown_or_target(env):
     assert dispatch(env, "--dry-run", "--node", "nope")[0] == CODES["node"]
+
+
+# ---- step 2: the remote prepare script, run locally against a fake HOME ----
+sys.path.insert(0, str(ROOT / "lib"))
+import friday_fleet as ff  # noqa: E402
+import json  # noqa: E402
+
+
+def run_prepare(e, *, trusted=True, session=False, node_repos="~/work", base="main",
+                precreate=None):
+    home = e.tmp / "home"
+    home.mkdir(exist_ok=True)
+    (home / "bin").mkdir(exist_ok=True)
+    tmux = home / "bin" / "tmux"
+    tmux.write_text(f"#!/bin/sh\n{'exit 0' if session else 'exit 1'}\n")
+    tmux.chmod(0o755)
+    if trusted:
+        (home / ".claude.json").write_text(json.dumps(
+            {"projects": {str(home): {"hasTrustDialogAccepted": True}}}))
+    if not (home / "friday").exists():
+        subprocess.run(["git", "clone", "-q", str(e.plugin.parent / "plug.git"), str(home / "friday")],
+                       check=True, capture_output=True)
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=e.plugin, capture_output=True,
+                            text=True).stdout.strip()
+    node = ff.Node("alfred", "worker", "me@alfred", repos=node_repos, plugin_dir="~/friday")
+    origin = str(e.repo.parent / "proj.git")
+    script = ff.prepare_script(node, "g1", "proj", precreate or origin, base, commit)
+    env = {**e.env, "HOME": str(home), "PATH": f"{home / 'bin'}:{os.environ['PATH']}",
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    r = subprocess.run(["bash", "-s"], input=script, env=env, capture_output=True, text=True)
+    return r, home, commit
+
+
+def test_prepare_new_clone_worktree_from_base(env):
+    r, home, commit = run_prepare(env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    wt = home / "work" / "proj.friday" / "g1"
+    assert f"FRIDAY_WORKTREE {wt}" in r.stdout
+    git_out = lambda *a: subprocess.run(["git", "-C", str(wt), *a], capture_output=True, text=True).stdout.strip()
+    assert git_out("branch", "--show-current") == "friday/g1"
+    assert git_out("rev-parse", "HEAD") == git_out("rev-parse", "origin/main")
+    assert git_out("config", "--get", "branch.friday/g1.merge") == ""  # --no-track
+    plug = subprocess.run(["git", "-C", str(home / "friday"), "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    assert plug == commit
+
+
+def test_prepare_tracks_origin_goal_branch(env):
+    git(env.repo, "switch", "-q", "-c", "friday/g1")
+    (env.repo / "extra").write_text("e")
+    git(env.repo, "add", "-A")
+    git(env.repo, "commit", "-qm", "e")
+    git(env.repo, "push", "-q", "origin", "friday/g1")
+    r, home, _ = run_prepare(env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    wt = home / "work" / "proj.friday" / "g1"
+    assert (wt / "extra").exists()
+    up = subprocess.run(["git", "-C", str(wt), "rev-parse", "--abbrev-ref", "friday/g1@{upstream}"],
+                        capture_output=True, text=True).stdout.strip()
+    assert up == "origin/friday/g1"
+
+
+def test_prepare_refusals(env):
+    r, *_ = run_prepare(env, trusted=False)
+    assert r.returncode == ff.PREPARE_EXIT["untrusted"] and "FRIDAY_REFUSE untrusted" in r.stdout
+    r, *_ = run_prepare(env, session=True)
+    assert r.returncode == ff.PREPARE_EXIT["session"]
+
+
+def test_prepare_reuse_clone_mismatch_and_collisions(env):
+    r, home, _ = run_prepare(env)
+    assert r.returncode == 0
+    clone = home / "work" / "proj"
+    marker = clone / "dirty"
+    marker.write_text("keep")
+    # worktree/branch already exist -> refuse
+    r, *_ = run_prepare(env)
+    assert r.returncode == ff.PREPARE_EXIT["worktree"]
+    subprocess.run(["git", "-C", str(clone), "worktree", "remove", "--force",
+                    str(home / "work" / "proj.friday" / "g1")], check=True, capture_output=True)
+    r, *_ = run_prepare(env)
+    assert r.returncode == ff.PREPARE_EXIT["branch"]
+    assert marker.read_text() == "keep"  # existing checkout untouched
+    # origin mismatch names both URLs
+    r, *_ = run_prepare(env, precreate="/elsewhere/other.git")
+    assert r.returncode == ff.PREPARE_EXIT["origin"]
+    assert "/elsewhere/other.git" in r.stdout and "proj.git" in r.stdout
