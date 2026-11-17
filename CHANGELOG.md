@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
+
+- Goals in `docs/goals/<goal>.md`; directives gain `Goal`, `Deliverable` (code, doc, slides,
+  external), `Land` and `## Acceptance`.
+- `friday check`, `friday parse`, `friday land --goal` (exit code 6: a Verify failed, nothing
+  pushed); `start` works on the goal branch and enforces order.
+- PostToolUse hook returns format errors of an edited goal or directive file to the model.
+- `/friday:execute` is driven by the parsed directive and reviews against Acceptance.
+- Skills `plan` and `directive` document the formats and the deliverable table.
+
 ## v1.0.0-alpha.1 (2026-11-17)
 
 friday becomes a Claude Code plugin built for Fable/Opus-level orchestrators. The v0.20 harness

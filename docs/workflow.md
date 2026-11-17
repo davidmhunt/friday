@@ -3,6 +3,47 @@
 You approve once per goal; every directive finishes only when its `Verify:` command passes and an
 independent verifier finds no gaps. You review PRs, not steps.
 
+## The model: goal, directive, step
+
+A **goal** (`docs/goals/<goal>.md`) is one planning run, one approval, one branch `friday/<goal>`
+and one PR into its Base. It orders **directives** (`docs/directives/<id>.md`); each has a
+`Verify:` command, a `Deliverable` (code, doc, slides, external) and numbered **steps**. Every step
+that changes tracked files is one commit, and each directive adds one record commit.
+
+```mermaid
+flowchart TD
+  P[/friday:plan/] --> G[goal file, approved once]
+  G --> D1[directive 1] & D2[directive 2]
+  D1 --> S1[step commits on friday/goal]
+  D2 --> S2[step commits on friday/goal]
+  S1 & S2 --> V[Verify + review per directive]
+  V --> L[friday land --goal: one PR into Base]
+```
+
+| Unit | File | Branch | Check | Lands as |
+|---|---|---|---|---|
+| Goal | `docs/goals/<goal>.md` | `friday/<goal>` | every directive done and reverified | one PR into Base, opened by `friday land --goal <g>` |
+| Directive | `docs/directives/<id>.md` | goal branch; `friday/<id>` if `Land: pr` | `Verify:` passes, verifier agrees with `## Acceptance` | commits on the goal branch (`Land: goal`), its own PR (`pr`), nothing (`none`) |
+| Step | `## Steps` item | goal branch | covered by the directive's Verify | one commit |
+
+`friday land --goal <g>` is the step that opens the one PR: it reruns each directive's Verify on
+the goal branch, marks the goal done, pushes `friday/<g>` and opens or updates the PR.
+
+### Commands and the format hook
+
+- `friday check [<id> | --goal <g> | --all]`: validate formats; exit 1 on any error.
+- `friday parse <id> --json` / `--goal <g> --json`: parsed file as JSON (1 on errors, 2 if missing).
+- `friday land --goal <g>`: as above. Exit codes: 0 done, 3 push failed, 4 pushed but base not on
+  origin, 5 pushed but no PR (`gh` missing; prints a compare URL), 6 a directive's Verify failed on
+  the goal branch and nothing was pushed.
+- PostToolUse hook (Write, Edit, MultiEdit): after a goal or directive file is edited, its own
+  format errors go back to the model (exit 2); warnings and clean files are silent.
+
+Follow-up (not built): parallel directives within a goal, each on a sub-branch merged into the goal
+branch.
+
+The steps below describe a single directive's run.
+
 1. **Plan.** `/friday:plan <goal>` in a session on Fable or Opus. It reads the repo, interviews
    you, and writes directives to `docs/directives/<loop>-<NN>.md` with `Status: proposed`.
 2. **Approve.** Read each directive's goal, steps, Verify and out-of-scope list; approve, amend or
