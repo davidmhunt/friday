@@ -100,6 +100,37 @@ def resolve_binds(requested, tailnet_ip: str | None) -> list[str]:
     return out
 
 
+def master_url(reg) -> str:
+    """http://<master host>:<[dash] port> from the registry's master node (its `tailnet` key, else the ssh host)."""
+    if reg is None:
+        raise DashError("no nodes file; pass --to <url>")
+    m = next((n for n in reg.nodes.values() if n.role == "master"), None)
+    if m is None:
+        raise DashError("the registry has no master node; pass --to <url>")
+    host = (m.tailnet or m.ssh.rpartition("@")[2]).strip()
+    return f"http://{host}:{reg.dash_port}"
+
+
+def push(snap: dict, url: str, timeout: float = 10) -> tuple[bool, str]:
+    """POST one snapshot to <url>/api/report. (ok, message); never raises."""
+    import urllib.error
+    import urllib.request
+    target = url.rstrip("/") + "/api/report"
+    req = urllib.request.Request(target, data=json.dumps(snap).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return True, f"pushed {snap.get('node')} to {target} ({r.status})"
+    except urllib.error.HTTPError as e:
+        try:
+            why = json.loads(e.read()).get("error", "")
+        except (ValueError, OSError, AttributeError):
+            why = ""
+        return False, f"{target} answered {e.code}" + (f": {why}" if why else "")
+    except (OSError, ValueError) as e:
+        return False, f"cannot reach {target}: {e}"
+
+
 def state_dir() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
     return Path(base) / "friday" / "dash"
