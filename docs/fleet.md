@@ -1,0 +1,188 @@
+# Fleet: running a goal on another machine
+
+A goal can run on a node other than the one you plan on. `friday dispatch --goal <g>` prepares a
+worktree on that node, starts a Claude session in tmux there, and the session messages your master
+session when the goal lands or a directive blocks. This page is everything you need to add a node and
+dispatch to it.
+
+## Roles
+
+- **master**: the machine you work on; it runs the planning session and receives reports.
+- **worker**: a machine that runs directives (`Node: any`, `tag:<x>`, `host:<name>`).
+- **target**: a device driven over SSH by whichever node runs the directive (a rover, a Pi). It never
+  runs directives; it is only checked for reachability.
+
+## The registry (`nodes.toml`)
+
+`friday` reads the first file that exists, in this order:
+
+1. `$FRIDAY_NODES`
+2. `nodes.toml` in the friday folder (the plugin clone; gitignored, because it holds real tailnet names)
+3. `~/.config/friday/nodes.toml`
+
+Copy `nodes.example.toml` to one of those places and edit it. `friday nodes` prints the file in use and
+the nodes it holds.
+
+An installed (cached) copy of the plugin does not see the clone's `nodes.toml`: its friday folder is
+the cache, not your clone. Either start Claude with `--plugin-dir <your friday clone>` or set
+`FRIDAY_NODES` (or use `~/.config/friday/nodes.toml`, which every copy finds).
+
+### Format
+
+```toml
+# Name of the master's Claude session that workers message (optional; --report-to overrides it).
+report_to = "friday-master"
+
+[node.laptop]
+role = "master"
+ssh = "david@laptop-ts"
+repos = "~/Documents"
+plugin_dir = "~/friday"
+tags = ["laptop"]
+
+[node.alfred]
+role = "worker"
+ssh = "david@alfred-ts"
+runtime = "container"
+tags = ["gpu"]
+repos = "~/Documents"
+plugin_dir = "~/friday"
+
+[node.ground-bot]
+role = "target"            # a target needs only role and ssh (and optional tags)
+ssh = "pi@ground-bot-ts"
+tags = ["rover"]
+```
+
+Keys of `report_to` (top level) and of each `[node.<name>]` table:
+
+| key | meaning |
+|---|---|
+| `report_to` | name of the master's session that workers message; optional |
+| `role` | `master`, `worker` or `target`; required |
+| `ssh` | `user@host` or an ssh config alias; required and unique per node |
+| `runtime` | `native` (default) or `container`; passed to the worker as `FRIDAY_RUNTIME` |
+| `tags` | list of labels that `Node: tag:<x>` routes on |
+| `repos` | directory holding the node's repos (`~` allowed); required for master and worker |
+| `plugin_dir` | where the friday plugin is cloned on the node; required for master and worker |
+| `launcher` | how directives start; only `tmux` is supported (the default) |
+
+## Routing
+
+A directive's `Node:` line picks the node:
+
+- `any`: the worker with the fewest running `friday-*` tmux sessions (ties go to registry order).
+- `tag:<x>`: a worker or master carrying the tag, lowest load first. If only a target has the tag, the
+  master runs the directive and drives the target over SSH.
+- `host:<name>`: that node, named explicitly. A target cannot be named; use a `tag:` line instead.
+
+A goal runs as one session on one node, so `dispatch` takes the nodes that satisfy every remaining
+directive's `Node:` line and picks the least loaded. If no node satisfies them all, it refuses; make the
+lines agree or pass `--node <name>`.
+
+## Where work happens on a node
+
+Each node has `repos`. For a goal `<g>` in repo `<repo>`:
+
+- An existing clone at `<repos>/<repo>` is reused (its origin must match the master's origin); if there
+  is none, it is cloned from the master's origin.
+- The goal gets a worktree at `<repos>/<repo>.friday/<g>` on branch `friday/<g>`. The branch starts from
+  `origin/friday/<g>` when that exists, otherwise from the goal's Base (`origin/<Base>`).
+- Your checkout on the node is never touched: no checkout, reset or stash happens in it.
+
+To change where work happens, change `repos` for that node. It must be trusted by `claude` (see below).
+
+Every remote command starts with `export PATH="$HOME/.local/bin:$PATH"`. Non-interactive ssh does not
+read `.zshrc`, and `claude` and `uv` usually live in `~/.local/bin`, so without it they are not found.
+
+## One-time node setup
+
+On each worker (and on the master, which is also a node):
+
+1. Tailscale with Tailscale SSH on, so `ssh <user@host>` works from the master without a prompt
+   (dispatch uses `BatchMode=yes`). Alfred's is `david@alfred-ts`.
+2. `claude` installed, signed in, and current (`claude update`).
+3. `gh auth login`, so the goal's PR can be opened.
+4. `tmux` installed.
+5. The friday clone at `plugin_dir` (`git clone <friday origin> ~/friday`). Dispatch checks out the
+   master's plugin commit there.
+6. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
+   Dispatch refuses (`untrusted`) until `repos` or a parent is trusted in `~/.claude.json`.
+
+Then check from the master:
+
+```
+friday nodes --check
+```
+
+It probes each node over ssh and reports which are reachable and how many `friday-*` sessions run.
+
+## Dispatching
+
+Approve the goal and its first remaining directive, commit the goal and directive files, and publish
+them to `origin` (`friday/<g>` if it exists there, else the Base). Then:
+
+```
+friday dispatch --goal <g> [--node <name>] [--report-to <session>] [--dry-run]
+```
+
+`--dry-run` prints the prepare script and launch line and changes nothing on any node. A real run
+prepares the worktree over ssh, starts tmux session `friday-<g>` there running `claude` with Remote
+Control, and tells it to run the goal's remaining directives in order and land the goal.
+
+### Refusals
+
+Each refusal prints one line and a fix on stderr and exits with its own code.
+
+| kind | exit | cause |
+|---|---|---|
+| goal | 10 | no such goal, or its Status is not approved or running |
+| format | 11 | `friday check --goal <g>` reports errors |
+| directives | 12 | a directive file is missing, nothing remains, or the first remaining one is not approved |
+| land-pr | 13 | a remaining directive has `Land: pr`; run those locally with `/friday:execute` |
+| unpushed | 14 | no origin, or the goal or directive files are uncommitted or differ from the source ref on origin |
+| plugin | 15 | the friday folder is not a git clone, or its HEAD is not on its origin |
+| registry | 16 | no nodes file, or it is invalid |
+| route | 17 | no node satisfies every remaining directive's `Node:` line |
+| node | 18 | `--node` names a missing node or a target |
+| unreachable | 19 | the chosen node did not answer over ssh |
+| report-to | 20 | no `--report-to` and no `report_to` in the registry |
+
+The node itself can also refuse (the dispatch command exits with the node's code):
+
+| kind | exit | cause |
+|---|---|---|
+| untrusted | 30 | `repos` is not trusted in `~/.claude.json` |
+| session | 31 | tmux session `friday-<g>` already exists |
+| origin | 32 | the clone's origin is missing or differs from the master's |
+| worktree | 33 | the worktree path already exists |
+| branch | 34 | local branch `friday/<g>` already exists in the clone |
+| plugin | 35 | cannot check out the plugin commit at `plugin_dir` |
+| git | 36 | clone, fetch or worktree add failed |
+
+## The master and reports
+
+The worker reports with one message to the master's session, so the master must run with Remote Control
+on and a session name without `@` (for example `claude --remote-control --name friday-master`). Put that
+name in `report_to` or pass `--report-to`. The message is `done <g> PR <url>` or `blocked <g> <id>: <reason>`.
+
+## Where dispatches are recorded
+
+Each dispatch appends one JSON line to `dispatches.jsonl` on the master, at
+`$XDG_STATE_HOME/friday/dispatches.jsonl` (default `~/.local/state/friday/dispatches.jsonl`): goal,
+directives, node, tmux session, worktree, branch, source ref, plugin commit, report target, time. Goal
+and directive files are not changed by dispatching. On the node, `runs/<id>/notes.md` notes where the
+dispatch came from.
+
+## Hardware
+
+Hardware leases live on the machine that runs the SSH command (`~/.local/state/friday/leases/`), so a
+lease on one node says nothing about another. Keep one master per target: two masters driving the same
+device do not see each other's leases.
+
+## When no message arrives
+
+Attach to the worker's session on the node: `ssh <node> -t tmux attach -t friday-<g>` (or
+`tmux attach -t friday-<g>` if you are on it). Or open the session in the Claude app: the worker runs
+with Remote Control and is named `<g>.<node>`. If the session is gone, check the goal's branch
+`friday/<g>` on origin and the worktree on the node.
