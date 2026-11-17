@@ -13,5 +13,6 @@ finding the CLI hard to locate and call.
 ## Directives
 1. cli-01: `friday install` puts `friday` on PATH, on the master and on every node
 2. cli-02: Slash commands `/friday:nodes`, `/friday:status`, `/friday:dispatch`, `/friday:clean`
+3. cli-03: `friday init` adds the friday allow rules to a repo; dispatch refuses a repo without them
 
 ## Log
