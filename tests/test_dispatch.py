@@ -318,3 +318,31 @@ def test_prepare_reuse_clone_mismatch_and_collisions(env):
     r, *_ = run_prepare(env, precreate="/elsewhere/other.git")
     assert r.returncode == ff.PREPARE_EXIT["origin"]
     assert "/elsewhere/other.git" in r.stdout and "proj.git" in r.stdout
+
+
+def test_launch_line_verbatim():
+    import shlex
+    node = ff.Node("alfred", "worker", "me@alfred", runtime="docker", repos="~/w", plugin_dir="/opt/my friday")
+    line = ff.launch_line(node, "g1", "/w/proj.friday/g1", "laptop", ["g1-01", "g1-02"], "boss")
+    run = ("Run the remaining directives of goal g1, in this order, each with the slash command shown:\n"
+           "1. /friday:execute g1-01\n2. /friday:execute g1-02\n"
+           "Start the next only when the previous ended done. Stop at the first that blocks.")
+    report = ("When the directives of goal g1 are finished or one has blocked, send session boss exactly "
+              "one message with SendMessage, then stop. If the goal landed, the message is "
+              "`done g1 PR <url>` (the URL from the goal landing). If a directive blocked, it is "
+              "`blocked g1 <id>: <reason>`. Send no other message.")
+    q = shlex.quote
+    assert line == ("tmux new -d -s friday-g1 -c /w/proj.friday/g1 env FRIDAY_RUNTIME=docker "
+                    "FRIDAY_DISPATCHED_FROM=laptop claude --model opus --permission-mode auto "
+                    "--remote-control --name g1.alfred --plugin-dir " + q("/opt/my friday") +
+                    " --append-system-prompt " + q(report) + " " + q(run))
+    assert shlex.split(line)[-1] == run and "@" not in "g1.alfred"
+
+
+def test_dry_run_prints_launch_and_no_report_to(env):
+    rc, out, err = dispatch(env, "--dry-run", "--node", "alfred", "--report-to", "me")
+    assert rc == 0, err
+    assert "--name g1.alfred" in out and "send session me " in out and "/friday:execute g1-01" in out
+    env.nodes.write_text(env.nodes.read_text().replace('report_to = "boss"\n', ""))
+    rc, out, err = dispatch(env, "--dry-run")
+    assert rc == 20 and "report_to" in err

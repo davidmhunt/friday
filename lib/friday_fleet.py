@@ -339,3 +339,33 @@ else
 fi
 echo "FRIDAY_WORKTREE $WT"
 """
+
+
+def run_text(goal: str, directives: list) -> str:
+    """The prompt the dispatched session starts with: the remaining directives, in order."""
+    steps = "\n".join(f"{n}. /friday:execute {d}" for n, d in enumerate(directives, 1))
+    return (f"Run the remaining directives of goal {goal}, in this order, each with the slash "
+            f"command shown:\n{steps}\n"
+            "Start the next only when the previous ended done. Stop at the first that blocks.")
+
+
+def report_text(goal: str, report_to: str) -> str:
+    """The system-prompt addition telling the session how to report back to the master."""
+    return (f"When the directives of goal {goal} are finished or one has blocked, send session "
+            f"{report_to} exactly one message with SendMessage, then stop. If the goal landed, the "
+            f"message is `done {goal} PR <url>` (the URL from the goal landing). If a directive "
+            f"blocked, it is `blocked {goal} <id>: <reason>`. Send no other message.")
+
+
+def launch_line(node, goal: str, worktree: str, master_host: str, directives: list,
+                report_to: str) -> str:
+    """The one command that starts the worker session in tmux on `node`. Every value is quoted."""
+    import shlex
+    q = shlex.quote
+    return " ".join([
+        "tmux new -d -s", q(f"friday-{goal}"), "-c", q(worktree),
+        "env", q(f"FRIDAY_RUNTIME={node.runtime}"), q(f"FRIDAY_DISPATCHED_FROM={master_host}"),
+        "claude --model opus --permission-mode auto --remote-control",
+        "--name", q(f"{goal}.{node.name}"), "--plugin-dir", q(node.plugin_dir),
+        "--append-system-prompt", q(report_text(goal, report_to)),
+        q(run_text(goal, directives))])

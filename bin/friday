@@ -572,7 +572,7 @@ def cmd_nodes(a) -> int:
 
 # Exit codes of `friday dispatch` refusals (0 = ok). Each has a one-line fix on stderr.
 DISPATCH_EXIT = {"goal": 10, "format": 11, "directives": 12, "land-pr": 13, "unpushed": 14,
-                 "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19}
+                 "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19, "report-to": 20}
 
 
 def _refuse(kind: str, msg: str, fix: str):
@@ -688,7 +688,13 @@ def cmd_dispatch(a) -> int:
     print(f"dispatch {a.goal} -> {n.name} ({n.ssh}); {plan['reason']}; {plan['load']} friday session(s) running")
     print(f"directives: {' '.join(plan['directives'])}")
     print(f"source ref: {plan['source_ref']}  plugin commit: {plan['plugin_commit']}")
+    report_to = a.report_to or plan["registry"].report_to
+    if not report_to:
+        _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
+    wt = ff.worktree_path(n, _root().name, a.goal)
+    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
     if a.dry_run:
+        print(f"launch: {launch}")
         print("dry run: nothing changed on any node")
         return 0
     print("friday: dispatch preconditions pass; the remote prepare and launch are not built yet", file=sys.stderr)
