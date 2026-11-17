@@ -1163,10 +1163,10 @@ const defaults = {
   'verifier': { gaps: [], acceptance: [], confidence: 'x' },
   'verifier (2nd)': { gaps: [], acceptance: [], confidence: 'x' },
   'fix review gaps': { status: 'done', summary: 'fixed', commit: 'c2', question: '' },
-  'finish': { status: 'done', summary: 'ok', commit: 'c3', question: '' },
+  'finish': { exit_code: 0, output: 'c3' },
   'land': { exit_code: 0, output: 'pushed' },
   'land goal': { exit_code: 0, output: 'https://example/pr/1' },
-  'record block': { status: 'done', summary: 'ok', commit: '', question: '' },
+  'record block': { exit_code: 0, output: 'c4' },
 }
 const responses = Object.assign({}, defaults, scenario.responses || {})
 const agent = async (prompt, opts) => {
@@ -1224,7 +1224,7 @@ def test_execute_external_skips_verify(tmp_path):
     assert any("Verify skipped" in m for m in out["logs"])
     assert "Verify n/a (external)" in out["result"]
     fin = next(c for c in out["calls"] if c["label"] == "finish")
-    assert "Verify: n/a (external)" in fin["prompt"]
+    assert '`friday finish g-02 --verify "n/a (external)" --review "no gaps"`' in fin["prompt"]
 
 
 @needs_node
@@ -1277,3 +1277,91 @@ def test_execute_land_none_runs_no_land(tmp_path):
     out = _run_execute(tmp_path, parse={"land": "none"})
     assert not any(l.startswith("land") for l in out["labels"])
     assert "committed only, nothing pushed" in out["result"]
+
+
+@needs_node
+def test_execute_finish_command_and_fix_labels(tmp_path):
+    out = _run_execute(tmp_path, responses={
+        "initial verify 1": {"passed": False, "exit_code": 1, "signature": "FAILED a", "tail": "t"},
+        "fix 1/4": {"status": "done", "summary": "ok", "commit": "c9", "question": ""},
+        "initial verify 2": {"passed": True, "exit_code": 0, "signature": "", "tail": ""}})
+    assert out["labels"].index("fix 1/4") < out["labels"].index("initial verify 2")
+    fin = next(c for c in out["calls"] if c["label"] == "finish")
+    assert '`friday finish g-02 --verify "Verify passed: true" --review "no gaps"`' in fin["prompt"]
+    assert "Write no Log text" in fin["prompt"]
+
+
+@needs_node
+def test_execute_block_runs_finish_blocked_with_state(tmp_path):
+    gap = {"gaps": [{"where": "x", "problem": "bad", "evidence": "e"}], "acceptance": [], "confidence": "x"}
+    out = _run_execute(tmp_path, responses={"verifier": gap, "verifier (2nd)": gap})
+    blk = next(c for c in out["calls"] if c["label"] == "record block")
+    assert "friday finish g-02 --blocked" in blk["prompt"]
+    assert '--verify "Verify passed: true"' in blk["prompt"]
+    assert "review gaps remain" in out["result"]
+
+
+_REAL_RUNNER = r"""
+const fs = require('fs')
+const { execSync } = require('child_process')
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+const src = fs.readFileSync(process.argv[2], 'utf8').replace(/^export const meta/m, 'const meta')
+const { repo, cli, parse } = JSON.parse(fs.readFileSync(0, 'utf8'))
+const sh = c => { try { return { exit_code: 0, output: execSync(c, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }) } }
+  catch (e) { return { exit_code: e.status, output: String(e.stdout) + String(e.stderr) } } }
+const friday = a => sh(`python3 ${cli} ${a}`)
+const labels = []
+const agent = async (prompt, opts) => {
+  labels.push(opts.label)
+  const L = opts.label
+  if (L.startsWith('parse')) return { exit_code: 0, stdout: JSON.stringify(parse) }
+  if (L.startsWith('start')) {
+    const r = friday('start g-01 --no-gate')
+    return { started: r.exit_code === 0, output: r.output, review_base: (r.output.match(/^base (\S+)/m) || [])[1] || '' }
+  }
+  if (L === 'step 1/3') { fs.writeFileSync(repo + '/code.txt', 'x\n'); sh('git add code.txt && git commit -qm "code" -m "Directive: g-01"')
+    return { status: 'done', summary: '', commit: '', question: '' } }
+  if (L === 'step 2/3') { fs.mkdirSync(repo + '/runs/g-01', { recursive: true }); fs.appendFileSync(repo + '/runs/g-01/notes.md', 'measured 42\n')
+    return { status: 'done', summary: '', commit: '', question: '' } }
+  if (L === 'step 3/3') return { status: 'done', summary: '', commit: '', question: '' }
+  if (L.includes('verify')) return { passed: true, exit_code: 0, signature: '', tail: '' }
+  if (L.startsWith('verifier')) return { gaps: [], acceptance: [], confidence: 'x' }
+  if (L === 'finish') { const m = prompt.match(/`(friday finish [^`]*)`/); return friday(m[1].slice('friday '.length)) }
+  throw new Error('unexpected agent label: ' + L)
+}
+;(async () => {
+  const fn = new AsyncFunction('args', 'agent', 'phase', 'log', src)
+  const result = await fn('g-01', agent, () => {}, () => {})
+  console.log(JSON.stringify({ result, labels }))
+})().catch(e => { console.error(e); process.exit(1) })
+"""
+
+
+@needs_node
+def test_execute_simulated_run_makes_two_commits(grepo2, tmp_path):
+    runner = tmp_path / "real.js"
+    runner.write_text(_REAL_RUNNER)
+    parse = {"id": "g-01", "status": "approved", "goal": "core", "base": "main", "deliverable": "code",
+             "land": "none", "verify": "true", "acceptance": [], "errors": [], "position": 1,
+             "goal_directives": [{"id": "g-01"}, {"id": "g-02"}],
+             "steps": [{"n": i, "text": f"s{i}"} for i in (1, 2, 3)]}
+    # the fixture's directives are core-01/core-02; the runner uses core ids via replacement below
+    parse["id"] = "core-01"
+    parse["goal_directives"] = [{"id": "core-01"}, {"id": "core-02"}]
+    src = _REAL_RUNNER.replace("g-01", "core-01")
+    runner.write_text(src)
+    base = _git(grepo2, "rev-parse", "HEAD")
+    p = subprocess.run(["node", str(runner), str(ROOT / "workflows" / "execute.js")],
+                       input=json.dumps({"repo": str(grepo2), "cli": str(CLI), "parse": parse}),
+                       capture_output=True, text=True, timeout=120)
+    assert p.returncode == 0, p.stderr
+    out = json.loads(p.stdout)
+    assert "done:" in out["result"], out
+    log = _git(grepo2, "log", "--format=%s%n%b%x00", f"{base}..HEAD").split("\x00")
+    log = [c.strip() for c in log if c.strip()]
+    assert len(log) == 2, log
+    assert all("Directive: core-01" in c for c in log)
+    assert log[0].startswith("core-01: record results")
+    d = (grepo2 / "docs/directives/core-01.md").read_text()
+    assert "measured 42" in d and "Verify: Verify passed: true" in d
+    assert "Independent review: no gaps" in d and "Status: done" in d

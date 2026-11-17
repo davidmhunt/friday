@@ -7,7 +7,7 @@ export const meta = {
     { title: 'Implement', detail: 'one implementer per step, in order, labelled step n/total' },
     { title: 'Verify', detail: 'run Verify; fix and rerun until it passes or stops making progress (skipped for external)' },
     { title: 'Review', detail: 'independent Opus verifier grades the steps and ## Acceptance over this directive\'s commits' },
-    { title: 'Land', detail: 'log, finish, then by Land: goal push (PR after the last directive), pr, or none' },
+    { title: 'Land', detail: 'finish, then by Land: goal push (PR after the last directive), pr, or none' },
   ],
 }
 
@@ -93,11 +93,19 @@ const LAND = {
 // ---------------------------------------------------------------- helpers
 const directive = `docs/directives/${id}.md`
 
+// Verify/review state known so far, recorded by `friday finish --blocked`.
+const state = { verify: '', review: '' }
+const q = t => String(t).replace(/\s+/g, ' ').replace(/[`"$\\]/g, "'").trim()
+
 async function block(reason) {
   log(`${id} blocked: ${reason}`)
+  const args = [`--blocked "${q(reason)}"`]
+  if (state.verify) args.push(`--verify "${q(state.verify)}"`)
+  if (state.review) args.push(`--review "${q(state.review)}"`)
+  const cmd = `friday finish ${id} ${args.join(' ')}`
   await agent(
-    `Directive ${id} has to stop for the user. In the repo root: append a dated entry to the "## Log" section of ${directive} that says: "Blocked: ${reason.replace(/`/g, "'")}"; then run \`friday finish ${id} --blocked "<one-line summary>"\`; then commit ${directive} with a message whose last line is \`Directive: ${id}\`. Do not push.`,
-    { agentType: 'friday:implementer', schema: STEP, label: 'record block', phase: 'Land' },
+    `Directive ${id} has to stop for the user. Run exactly \`${cmd}\` from the repo root and return its exit code and output verbatim. Write no Log text yourself and make no commit yourself (friday finish does). Do not push.`,
+    { agentType: 'friday:implementer', schema: LAND, label: 'record block', phase: 'Land' },
   )
   return `${id} is blocked and needs you: ${reason}`
 }
@@ -111,14 +119,18 @@ function allGaps(r) {
   return gaps
 }
 
+const verifyLineOf = () => `Verify passed: ${String(directiveVerify).replace(/`/g, "'")}`
+let directiveVerify = ''
+
 async function verifyLoop(d, label) {
+  directiveVerify = d.verify
   let last = '', same = 0
   for (let round = 1; ; round++) {
     const v = await agent(
       `Run the Verify command of friday directive ${id} from the repo root, exactly as written, and wait for it to finish (it can take several minutes):\n\n${d.verify}\n\nReturn whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.`,
       { agentType: 'friday:runner', schema: VERIFY, label: `${label} verify ${round}`, phase: 'Verify' },
     )
-    if (v && v.passed) return { ok: true, rounds: round }
+    if (v && v.passed) { state.verify = verifyLineOf(); return { ok: true, rounds: round } }
     const sig = v ? v.signature : 'the verify run returned nothing'
     same = sig === last ? same + 1 : 1
     last = sig
@@ -185,6 +197,7 @@ let v
 if (external) {
   log(`${id}: Verify skipped: Deliverable is external (nothing in this repo to run)`)
   v = { ok: true, rounds: 0 }
+  state.verify = 'n/a (external)'
 } else {
   v = await verifyLoop(d, 'initial')
   if (!v.ok) return await block(v.why)
@@ -199,6 +212,7 @@ let review = await agent(
   `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements. Every commit message must contain the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
+let reviewVerdict = 'no gaps'
 if (review && allGaps(review).length) {
   const list = allGaps(review).map((g, i) => `${i + 1}. ${g.where}: ${g.problem} (evidence: ${g.evidence})`).join('\n')
   const fix = await agent(
@@ -217,11 +231,14 @@ if (review && allGaps(review).length) {
   if (review && allGaps(review).length) {
     return await block(`review gaps remain: ${allGaps(review).map(g => `${g.where}: ${g.problem}`).join('; ')}`)
   }
+  reviewVerdict = `gaps fixed in second review: ${list.replace(/\n/g, ' ')}`
 }
+state.review = reviewVerdict
 
 // ---------------------------------------------------------------- land
 phase('Land')
 const landMode = d.land || 'goal'
+const lastLinesOf = o => String(o || '').trim().split('\n').slice(-3).join(' | ')
 const verifyLine = external ? 'Verify: n/a (external)' : `Verify passed: ${String(d.verify).replace(/`/g, "'")}`
 const branch = landMode === 'pr' ? `friday/${id}` : `friday/${d.goal}`
 const gdirs = Array.isArray(d.goal_directives) ? d.goal_directives : []
@@ -229,11 +246,12 @@ const isLast = landMode === 'goal' && d.position != null && d.position === gdirs
 const nextId = landMode === 'goal' && d.position != null && d.position < gdirs.length ? gdirs[d.position].id : ''
 const landCmd = landMode === 'pr' ? `friday land ${id} --base ${d.base}` : `friday land ${id}`
 
+const finishCmd = `friday finish ${id} --verify "${q(state.verify || verifyLine)}" --review "${q(reviewVerdict)}"`
 const finish = await agent(
-  `Close out friday directive ${id} from the repo root, on branch ${branch}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.reviewBase}..HEAD\`), "${verifyLine}", and the line "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (every commit message contains the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer).\nDo not push.`,
-  { agentType: 'friday:implementer', schema: STEP, label: 'finish', phase: 'Land' },
+  `Close out friday directive ${id} from the repo root, on branch ${branch}. Run exactly \`${finishCmd}\` and return its exit code and its output verbatim. Write no Log text yourself and make no commit yourself (friday finish does both). Do not push.`,
+  { agentType: 'friday:implementer', schema: LAND, label: 'finish', phase: 'Land' },
 )
-if (!finish || finish.status !== 'done') return await block(`could not log and finish: ${finish ? (finish.question || finish.summary) : 'the agent returned nothing'}`)
+if (!finish || finish.exit_code !== 0) return await block(`could not finish: ${finish ? lastLinesOf(finish.output) : 'the agent returned nothing'}`)
 
 const runLand = (cmd, label) => agent(
   `Run exactly \`${cmd}\` from the repo root, on branch ${branch} (it pushes and may open a PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it. Return its exit code and its output verbatim.`,
