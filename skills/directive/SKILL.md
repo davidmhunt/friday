@@ -107,8 +107,9 @@ collide with the branch `friday/<id>`). Error otherwise.
 
 Each key once (duplicate is an error). Unknown goal headers are ignored, with no warning.
 
-Sections: `Goal`, `Directives`, `Log` required, once each, in that order, `## Log` last; no
-`## Acceptance`. `## Directives` is a numbered list `1.`, `2.`, ... with no gaps; each item starts
+Sections: `Goal`, `Directives`, `Log` required, once each, in that order, `## Log` last. Other
+sections are allowed between them or after `## Directives`; the validator does not restrict them
+(including `## Acceptance`). `## Directives` is a numbered list `1.`, `2.`, ... with no gaps; each item starts
 with a directive id, optionally followed by `: <text>`. An id listed twice, a bad id, a stray
 unindented line, or an empty list is an error. List directives in run order.
 
