@@ -16,6 +16,8 @@ from __future__ import annotations
 import ipaddress
 import json
 import mimetypes
+import os
+import re
 import signal
 import subprocess
 import sys
@@ -35,6 +37,10 @@ TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")  # Tailscale's IPv4 range (CG
 MAX_BODY = 1 << 20  # 1 MiB, the cap on a report body
 REQUEST_TIMEOUT = 10  # seconds a connection may sit idle before it is dropped
 SCHEMA = 1
+STALE_AFTER = 90  # seconds without a report before a node is "stale"
+MASTER_EVERY = 30  # seconds between the master's in-process snapshots
+PRS_EVERY = 120  # seconds between `gh pr list` rounds
+SAFE_NODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 WHOIS_TTL = 300  # seconds a `tailscale whois` answer is cached
 TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
          ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
@@ -94,6 +100,19 @@ def resolve_binds(requested, tailnet_ip: str | None) -> list[str]:
     return out
 
 
+def state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "friday" / "dash"
+
+
+def repo_slug(origin) -> str | None:
+    """`owner/repo` from a GitHub remote URL (https, ssh or scp form), else None."""
+    if not isinstance(origin, str):
+        return None
+    m = re.search(r"github\.com[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?\Z", origin.strip())
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
 def load_registry(path=None):
     """(registry or None, port). No registry file: None and the default port."""
     reg_file = Path(path) if path else ff.find_nodes_file()
@@ -110,8 +129,15 @@ class Dash:
     """The server's state and route logic, separate from the HTTP plumbing so tests can drive it."""
 
     def __init__(self, registry=None, port: int = ff.DASH_PORT, binds=(), static_dir: Path = STATIC_DIR,
-                 clock=time.time, run=subprocess.run):
+                 clock=time.time, run=subprocess.run, state_path: Path | None = None, collect=None):
         self.run = run
+        self.collect = collect or fs.collect
+        self.state_path = Path(state_path) if state_path is not None else state_dir()
+        self.received: dict = {}  # node -> when the latest report arrived (server clock)
+        self.prs: list = []
+        self.prs_note: str | None = "open PRs not fetched yet"
+        self.prs_time: float | None = None
+        self._stop = threading.Event()
         self.whois_cache: dict = {}  # ip -> (expires, device name labels)
         self.reports: dict = {}  # node -> latest accepted snapshot (persisted in step 3)
         self.registry = registry
@@ -121,6 +147,125 @@ class Dash:
         self.clock = clock
         self.started = clock()
         self.lock = threading.Lock()
+        self.load_saved()
+
+    # ------------------------------------------------------------ persisted state
+    def load_saved(self) -> None:
+        """Reload the last report of each node from the state dir (a restart shows the last known
+        state). Unreadable or malformed files are skipped."""
+        try:
+            files = sorted(self.state_path.glob("*.json"))
+        except OSError:
+            return
+        for f in files:
+            try:
+                d = json.loads(f.read_text())
+                snap, got = d["report"], float(d["received"])
+                if f.stem != snap.get("node") or fs.check_schema(snap):
+                    continue
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
+                continue
+            self.reports[f.stem] = snap
+            self.received[f.stem] = got
+
+    def _save(self, node: str, snap: dict, got: float) -> None:
+        """Atomic write of ~/.local/state/friday/dash/<node>.json; failure is logged, not fatal."""
+        if not SAFE_NODE.match(node):
+            return
+        tmp = self.state_path / f".{node}.json.tmp{os.getpid()}.{threading.get_ident()}"
+        try:
+            self.state_path.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps({"received": got, "report": snap}))
+            os.replace(tmp, self.state_path / f"{node}.json")
+        except OSError as e:
+            sys.stderr.write(f"friday dash: cannot save state for {node}: {e}\n")
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+    def store(self, node: str, snap: dict) -> None:
+        got = self.clock()
+        with self.lock:
+            self.reports[node] = snap
+            self.received[node] = got
+            self._save(node, snap, got)
+
+    # ------------------------------------------------------------ master snapshot and PRs
+    def master_name(self) -> str | None:
+        if self.registry is None:
+            return None
+        return next((n.name for n in self.registry.nodes.values() if n.role == "master"), None)
+
+    def refresh_master(self) -> bool:
+        """Take the master's own snapshot in-process (no HTTP, no whois)."""
+        name = self.master_name()
+        if name is None:
+            return False
+        try:
+            snap = self.collect(registry_path=self.registry.path, node_name=name)
+            problems = fs.check_schema(snap)
+            if problems or snap.get("node") != name:
+                raise ValueError(problems[0] if problems else f"node is {snap.get('node')!r}")
+        except Exception as e:
+            sys.stderr.write(f"friday dash: master snapshot failed: {type(e).__name__}: {e}\n")
+            return False
+        self.store(name, snap)
+        return True
+
+    def refresh_prs(self) -> None:
+        """Open `friday/*` PRs of every repo any node reported, via `gh pr list --json`. When gh is
+        missing or fails everywhere, keep the old list and say why in prs_note."""
+        with self.lock:
+            slugs = sorted({s for r in self.reports.values() for repo in r.get("repos", [])
+                            if (s := repo_slug(repo.get("origin")))})
+        prs: list = []
+        notes: list = []
+        for slug in slugs:
+            try:
+                r = self.run(["gh", "pr", "list", "-R", slug, "--state", "open", "--limit", "100",
+                              "--json", "number,title,url,headRefName,isDraft,author,updatedAt"],
+                             capture_output=True, text=True, timeout=60)
+            except FileNotFoundError:
+                with self.lock:
+                    self.prs_note = "gh is not installed; open PRs skipped"
+                return
+            except (OSError, subprocess.SubprocessError) as e:
+                notes.append(f"{slug}: {type(e).__name__}")
+                continue
+            if r.returncode != 0:
+                notes.append(f"{slug}: gh failed ({(r.stderr or '').strip()[:100] or r.returncode})")
+                continue
+            try:
+                items = json.loads(r.stdout)
+                for p in items:
+                    if str(p.get("headRefName", "")).startswith("friday/"):
+                        prs.append({"repo": slug, **p})
+            except (ValueError, AttributeError, TypeError):
+                notes.append(f"{slug}: unreadable gh output")
+        with self.lock:
+            if slugs and notes and len(notes) == len(slugs):
+                self.prs_note = "gh unavailable: " + "; ".join(notes)
+                return
+            self.prs = prs
+            self.prs_time = self.clock()
+            self.prs_note = ("; ".join(notes) or None) if slugs else "no known repos yet"
+
+    def start(self) -> None:
+        """Background refresh: master snapshot every 30 s, PRs every 2 min."""
+        def loop(fn, every):
+            while True:
+                try:
+                    fn()
+                except Exception as e:
+                    sys.stderr.write(f"friday dash: {fn.__name__} failed: {type(e).__name__}: {e}\n")
+                if self._stop.wait(every):
+                    return
+        for fn, every in ((self.refresh_master, MASTER_EVERY), (self.refresh_prs, PRS_EVERY)):
+            threading.Thread(target=loop, args=(fn, every), name=f"dash-{fn.__name__}", daemon=True).start()
+
+    def close(self) -> None:
+        self._stop.set()
 
     def health(self) -> dict:
         now = self.clock()
@@ -130,8 +275,21 @@ class Dash:
                 "nodes": len(self.registry.nodes) if self.registry else 0}
 
     def state(self) -> dict:
+        now = self.clock()
         with self.lock:
-            return {"schema": SCHEMA, "generated": self.clock(), "nodes": {}, "prs": []}
+            names = list(self.registry.nodes) if self.registry else []
+            names += sorted(n for n in self.reports if n not in names)
+            nodes = {}
+            for n in names:
+                got = self.received.get(n)
+                if got is None:
+                    nodes[n] = {"status": "missing", "last_seen": None, "age_s": None, "report": None}
+                else:
+                    age = max(0.0, now - got)
+                    nodes[n] = {"status": "stale" if age > STALE_AFTER else "ok", "last_seen": got,
+                                "age_s": round(age, 1), "report": self.reports[n]}
+            return {"schema": SCHEMA, "generated": now, "stale_after_s": STALE_AFTER, "nodes": nodes,
+                    "prs": list(self.prs), "prs_note": self.prs_note, "prs_time": self.prs_time}
 
     def whois_names(self, ip: str) -> set | None:
         """The lowercase names `tailscale whois --json <ip>` gives the device at that tailnet
@@ -212,8 +370,7 @@ class Dash:
         if snap.get("node") != sender:
             return refuse(403, f"report says node {snap.get('node')!r} but the sender is {sender!r}"
                                + (" (localhost)" if local else ""))
-        with self.lock:
-            self.reports[sender] = snap
+        self.store(sender, snap)
         sys.stderr.write(f"friday dash: accepted report from {sender} ({peer_ip})\n")
         return 200, {"ok": True, "node": sender}
 
@@ -340,6 +497,7 @@ def main(binds_requested=None, registry_path=None) -> int:
         binds = resolve_binds(binds_requested, tip)
         app = Dash(reg, port, binds)
         servers = serve(app, binds, port)
+        app.start()
     except DashError as e:
         print(f"friday dash: {e}", file=sys.stderr)
         return 1
@@ -353,5 +511,6 @@ def main(binds_requested=None, registry_path=None) -> int:
         done.wait()
     except KeyboardInterrupt:
         pass
+    app.close()
     stop(servers)
     return 0
