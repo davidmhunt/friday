@@ -221,17 +221,53 @@ if (review && allGaps(review).length) {
 
 // ---------------------------------------------------------------- land
 phase('Land')
-const land = await agent(
-  `Land friday directive ${id} from the repo root, on branch friday/${id}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.reviewBase}..HEAD\`), "Verify passed: ${d.verify.replace(/`/g, "'")}", and "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (last line \`Directive: ${id}\`).\n3. Run exactly \`friday land ${id} --base ${d.base}\` (it pushes the branch and opens the PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it.\nReturn its exit code and its output verbatim.`,
-  { agentType: 'friday:implementer', schema: LAND, label: 'land' },
+const landMode = d.land || 'goal'
+const verifyLine = external ? 'Verify: n/a (external)' : `Verify passed: ${String(d.verify).replace(/`/g, "'")}`
+const branch = landMode === 'pr' ? `friday/${id}` : `friday/${d.goal}`
+const gdirs = Array.isArray(d.goal_directives) ? d.goal_directives : []
+const isLast = landMode === 'goal' && d.position != null && d.position === gdirs.length
+const nextId = landMode === 'goal' && d.position != null && d.position < gdirs.length ? gdirs[d.position].id : ''
+const landCmd = landMode === 'pr' ? `friday land ${id} --base ${d.base}` : `friday land ${id}`
+
+const finish = await agent(
+  `Close out friday directive ${id} from the repo root, on branch ${branch}:\n1. Append a dated entry to the "## Log" section of ${directive}: the commits (\`git log --oneline ${d.reviewBase}..HEAD\`), "${verifyLine}", and the line "Independent review: no gaps".\n2. Run \`friday finish ${id}\`, then commit ${directive} (every commit message contains the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer).\nDo not push.`,
+  { agentType: 'friday:implementer', schema: STEP, label: 'finish', phase: 'Land' },
 )
+if (!finish || finish.status !== 'done') return await block(`could not log and finish: ${finish ? (finish.question || finish.summary) : 'the agent returned nothing'}`)
+
+const runLand = (cmd, label) => agent(
+  `Run exactly \`${cmd}\` from the repo root, on branch ${branch} (it pushes and may open a PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it. Return its exit code and its output verbatim.`,
+  { agentType: 'friday:implementer', schema: LAND, label, phase: 'Land' },
+)
+const lastLines = o => String(o || '').trim().split('\n').slice(-3).join(' | ')
 const LAND_MEANING = {
   0: 'PR open',
   3: 'push failed',
   4: `branch pushed, but no PR: the base branch ${d.base} is not on origin`,
   5: 'branch pushed, but no PR: gh is missing or not signed in',
+  6: 'not pushed: a directive Verify failed on the goal branch',
 }
-if (!land) return `${id}: Verify passed and review clean, but the landing step returned nothing. Run \`friday land ${id} --base ${d.base}\` yourself.`
-const tail = land.output.trim().split('\n').slice(-3).join(' | ')
-const meaning = LAND_MEANING[land.exit_code] || `friday land exited ${land.exit_code}`
-return `${id} done: Verify passed, review clean. ${meaning}. ${tail}${land.exit_code ? ` To retry: friday land ${id} --base ${d.base}` : ''}`
+const head = `${id} done: ${external ? 'Verify n/a (external)' : 'Verify passed'}, review clean.`
+
+if (landMode === 'none') return `${head} Land none: committed only, nothing pushed.`
+
+const land = await runLand(landCmd, 'land')
+if (!land) return `${head} The landing step returned nothing. Run \`${landCmd}\` yourself.`
+
+if (landMode === 'pr') {
+  const meaning = LAND_MEANING[land.exit_code] || `friday land exited ${land.exit_code}`
+  return `${head} ${meaning}. ${lastLines(land.output)}${land.exit_code ? ` To retry: ${landCmd}` : ''}`
+}
+
+// Land goal
+if (land.exit_code !== 0) {
+  return `${head} ${LAND_MEANING[land.exit_code] || `friday land exited ${land.exit_code}`}. ${lastLines(land.output)} To retry: ${landCmd}`
+}
+if (!isLast) {
+  return `${head} Pushed ${branch}; next: /friday:execute ${nextId || '(none)'}`
+}
+const goalCmd = `friday land --goal ${d.goal}`
+const gl = await runLand(goalCmd, 'land goal')
+if (!gl) return `${head} Pushed ${branch}, but the goal landing step returned nothing. Run \`${goalCmd}\` yourself.`
+const gm = LAND_MEANING[gl.exit_code] || `friday land --goal exited ${gl.exit_code}`
+return `${head} Last directive of goal ${d.goal}: pushed ${branch}. ${gm}. ${lastLines(gl.output)}${gl.exit_code ? ` To retry: ${goalCmd}` : ''}`
