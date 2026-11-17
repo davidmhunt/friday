@@ -118,9 +118,22 @@ must name this goal.
 
 ## Lifecycle
 
-- Status: `proposed` -> `approved` (only the user approves) -> `running@<host>` -> `done`, or
-  `blocked: <reason>`. The goal goes `proposed` -> `approved` -> `running` -> `done`. During
-  execution change a directive's Status with `friday start` / `friday finish`, not by hand.
+- Status: `proposed` -> `approved` (only the user approves) -> `done`, or `blocked: <reason>`.
+  While a directive runs its file keeps `Status: approved`; `friday start <id>` commits nothing
+  and records id, host, start time and `base` (the HEAD after the branch switch) in the local
+  marker, and `friday status` shows `running@<host>` from that marker. (Old files may still hold
+  `running@<host>`; it validates.) The goal goes `proposed` -> `approved` -> `running` -> `done`;
+  `start` makes the goal's first `approved -> running` edit uncommitted, and the finish commit
+  carries it. Never edit a directive's Status or Log by hand.
+- `friday finish <id> [--verify TEXT] [--review TEXT] [--base SHA] [--blocked REASON]` writes the
+  record: one dated Log entry (`Commits:` from `git log <base>..HEAD`, `Notes:` from
+  `runs/<id>/notes.md`, `Verify:` line, `Independent review:` line, `Blocked:` with `--blocked`),
+  sets Status `done` or `blocked: <reason>`, and makes ONE commit `<id>: record results` (or
+  `<id>: blocked`) with the directive and goal files. It refuses when other tracked files are
+  uncommitted, and without a base (`--base`, else the marker's). It clears the marker.
+- A directive adds exactly one bookkeeping commit: the finish record. Steps commit only when they
+  changed tracked files (code, docs, data, configs); a step that only reproduces, measures or
+  inspects appends findings to the untracked `runs/<id>/notes.md` and commits nothing.
 - Directives run in listed order; `friday start <id>` refuses one while an earlier directive of its
   goal is not done.
 - Work happens on the goal branch `friday/<goal>` (created from the goal's Base). A directive with
