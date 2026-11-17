@@ -1,5 +1,5 @@
 # fleet-05: `friday nodes --check` reports blocking prompts; `friday nodes --setup <node>`
-Status: approved
+Status: done
 Goal: fleet-hardening
 Node: any
 Deliverable: code
@@ -37,3 +37,14 @@ tests/test_node_setup.py proves the check and the setup against a fake `ssh`.
 - Detecting prompts in an already-running session (status-02's "needs you" list).
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 7072717 fleet-05: test node prompt check against real settings files and setup-then-check
+- 886bd88 fleet-05: document node prompts, --setup and master ssh setup
+- fad34cd fleet-05: friday nodes --setup <node> merges the prompt-skip keys after confirmation
+- e076080 fleet-05: nodes --check reports the workflow and auto-mode prompts
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_node_setup.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
