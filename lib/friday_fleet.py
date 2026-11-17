@@ -1,7 +1,8 @@
 """Node registry for friday's fleet dispatch. Standard library only.
 
 Registry file (TOML), first existing of: $FRIDAY_NODES, <plugin root>/nodes.toml,
-~/.config/friday/nodes.toml. Top-level `report_to` (optional) and `[node.<name>]` tables.
+~/.config/friday/nodes.toml. Top-level `report_to` (optional), `[dash]` (optional `port` for
+`friday dash`, default 8787) and `[node.<name>]` tables.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 ROLES = ("master", "worker", "target")
 RUNTIMES = ("container", "native")
 LAUNCHERS = ("tmux",)
+DASH_PORT = 8787
 
 
 class RegistryError(ValueError):
@@ -37,6 +39,7 @@ class Registry:
     path: Path
     report_to: str | None
     nodes: dict  # name -> Node, in file order
+    dash_port: int = DASH_PORT
 
 
 def find_nodes_file() -> Path | None:
@@ -71,6 +74,12 @@ def load_nodes(path) -> Registry:
     report_to = data.get("report_to")
     if report_to is not None and not isinstance(report_to, str):
         raise RegistryError("'report_to' must be a string")
+    dash = data.get("dash", {})
+    if not isinstance(dash, dict):
+        raise RegistryError("'dash' must be a table")
+    dash_port = dash.get("port", DASH_PORT)
+    if isinstance(dash_port, bool) or not isinstance(dash_port, int) or not 1 <= dash_port <= 65535:
+        raise RegistryError(f"[dash] 'port' must be an integer 1-65535, not {dash_port!r}")
     table = data.get("node")
     if not isinstance(table, dict) or not table:
         raise RegistryError(f"{path}: no [node.<name>] tables")
@@ -110,7 +119,7 @@ def load_nodes(path) -> Registry:
                     raise RegistryError(f"node '{name}': {role} needs key '{key}'")
                 _str(name, key, val)
         nodes[name] = Node(name, role, ssh, runtime, list(tags), repos, plugin_dir, launcher)
-    return Registry(path, report_to, nodes)
+    return Registry(path, report_to, nodes, dash_port)
 
 
 class RouteError(ValueError):

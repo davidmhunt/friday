@@ -54,7 +54,7 @@ ssh = "pi@ground-bot-ts"
 tags = ["rover"]
 ```
 
-Keys of `report_to` (top level) and of each `[node.<name>]` table:
+Keys of `report_to` and `[dash]` (top level) and of each `[node.<name>]` table:
 
 | key | meaning |
 |---|---|
@@ -66,6 +66,7 @@ Keys of `report_to` (top level) and of each `[node.<name>]` table:
 | `repos` | directory holding the node's repos (`~` allowed); required for master and worker |
 | `plugin_dir` | where the friday plugin is cloned on the node; required for master and worker |
 | `launcher` | how directives start; only `tmux` is supported (the default) |
+| `[dash]` `port` | port `friday dash` listens on (top-level `[dash]` table); default 8787 |
 
 ## Routing
 

@@ -84,7 +84,8 @@ skills under `.claude/skills/`.
 
 A goal whose directives' `Node:` lines this machine doesn't satisfy runs on another machine with
 `friday dispatch --goal <goal>` (over Tailscale SSH, in a tmux session on the node). Registry,
-node setup and refusals: [docs/fleet.md](docs/fleet.md).
+node setup and refusals: [docs/fleet.md](docs/fleet.md). `friday dash` on the master serves the
+fleet's status over the tailnet only (127.0.0.1 and its tailnet address, port `[dash] port`).
 
 ## Status
 

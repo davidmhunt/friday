@@ -5,6 +5,10 @@
 # Name of the master's Claude session that workers message when a directive finishes (optional).
 # report_to = "friday-master"
 
+# friday dash (the status server on the master): port it listens on (default 8787).
+# [dash]
+# port = 8787
+
 [node.laptop]
 # role: master (runs this session), worker (runs directives), or target (a device driven over ssh).
 role = "master"

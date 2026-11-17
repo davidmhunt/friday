@@ -21,6 +21,7 @@
                                     set the node's first-run prompt skips in ~/.claude/settings.json
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
+  friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
 """
 from __future__ import annotations
 
@@ -895,6 +896,11 @@ def cmd_parse(a) -> int:
     return 1 if out["errors"] else 0
 
 
+def cmd_dash(a) -> int:
+    import friday_dash
+    return friday_dash.main(a.bind)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -910,6 +916,7 @@ def main() -> int:
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
     s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
+    s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)
 
