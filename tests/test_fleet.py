@@ -123,3 +123,15 @@ def test_route_host(tmp_path):
         ff.route("host:zzz", nodes, {})
     with pytest.raises(ff.RouteError, match="expected"):
         ff.route("whatever", nodes, {})
+
+
+def test_ssh_cmd(monkeypatch):
+    node = ff.Node("alfred", "worker", "me@alfred")
+    monkeypatch.delenv("FRIDAY_SSH", raising=False)
+    argv, stdin = ff.ssh_cmd(node, "echo hi\n")
+    assert argv == ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+                    "me@alfred", "bash", "-s"]
+    assert stdin.startswith('export PATH="$HOME/.local/bin:$PATH"\n')
+    assert stdin.endswith("echo hi\n")
+    monkeypatch.setenv("FRIDAY_SSH", "/tmp/fake-ssh")
+    assert ff.ssh_cmd(node, "x")[0][0] == "/tmp/fake-ssh"

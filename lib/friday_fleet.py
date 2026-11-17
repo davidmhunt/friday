@@ -161,3 +161,17 @@ def route(node_line: str, nodes, load: dict) -> tuple:
                              "use a tag: line so the master drives it over SSH")
         return name, f"host:{name}: named explicitly"
     raise RouteError(f"Node: {node_line!r} - expected 'any', 'tag:<x>' or 'host:<name>'")
+
+
+PATH_PREAMBLE = 'export PATH="$HOME/.local/bin:$PATH"\n'
+
+
+def ssh_cmd(node, script: str) -> tuple:
+    """One remote call: returns (argv, stdin_text). The script is fed to `bash -s` on stdin.
+
+    Non-interactive ssh on the workstation lacks ~/.local/bin (where claude and uv live), so
+    every script starts with the PATH export.
+    """
+    argv = [os.environ.get("FRIDAY_SSH") or "ssh", "-o", "ConnectTimeout=5",
+            "-o", "BatchMode=yes", node.ssh, "bash", "-s"]
+    return argv, PATH_PREAMBLE + script
