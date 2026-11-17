@@ -1,5 +1,5 @@
 # status-page: A tailnet dashboard of machines, projects and running sessions
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
