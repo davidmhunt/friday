@@ -40,6 +40,13 @@ SessionEnd lease release), agents (`implementer`, `verifier`, `runner`), skills 
 51 tests pass; `claude plugin validate .` passes. Not yet on GitHub: the `v1` branch exists only on
 the laptop. Push it (`git push -u origin v1`) when the user agrees.
 
+**Goal model** (branch `friday/goal-model`, directives gm-01..gm-04): work is now goal -> directive
+-> step. A goal (`docs/goals/<goal>.md`) owns one branch `friday/<goal>` and one PR; its directives
+run in order on that branch and each is verified by its Deliverable type (code, doc, slides,
+external). `bin/friday` gains `check`, `parse`, `land --goal` and exit code 6, and a PostToolUse
+hook validates goal and directive files on write. The plan and directive skills, README,
+`docs/workflow.md` and CHANGELOG describe it.
+
 **CPSL_TI_Radar** (pilot, branch `friday-v1/runtime`, on GitHub): dev container + `./run` +
 `tools/check.sh` (the default Verify), short `CLAUDE.md`, `.claude/friday.json` (hardware patterns
 `radar-bench`, `host-config`), `.claude/settings.json` (allows the `friday` commands), firmware
@@ -128,6 +135,10 @@ Design (from the spec; adjust if step 0 shows a Claude Code behaviour differs):
   `--plugin-dir` (check the current marketplace format in the Claude Code docs first).
 - A `sweep` workflow (one agent per config or dataset) with an explicit concurrency limit
   argument, e.g. at most 2 container builds at once on the laptop.
+- Parallel directives within a goal: run them as sub-branches merged into the goal branch (follow-up
+  to the goal model; today directives in a goal run one at a time).
+- fleet-02 amendment: its per-directive worktree and branch (`friday/<id>`) must be changed to the
+  goal branch (`friday/<goal>`) before fleet-02 runs.
 - Merge `v1` into `main` after phase 3 works; then migrate other v0.20 projects with
   `docs/migrating-from-v0.md`.
 
