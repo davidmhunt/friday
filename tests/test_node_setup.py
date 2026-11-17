@@ -73,3 +73,32 @@ def test_setup_unknown_and_target_node(tmp_path):
     for name in ("nope", "bot"):
         r, _ = _run(tmp_path, "--setup", name, "--yes")
         assert r.returncode == 1 and not (tmp_path / "fakessh.argv").exists()
+
+
+def _check(tmp_path, settings):
+    r, _ = _run(tmp_path, "--check", settings=settings)
+    return r.stdout
+
+
+def test_check_reports_prompts_from_real_settings_file(tmp_path):
+    both = '{"skipWorkflowUsageWarning": true, "skipAutoPermissionPrompt": true}'
+    cases = [
+        (None, True, True),
+        ('{"theme": "dark"}', True, True),
+        ('{"skipWorkflowUsageWarning": true}', False, True),
+        ('{"skipAutoPermissionPrompt": true}', True, False),
+        (both, False, False),
+        ("{bad", True, True),
+    ]
+    for i, (content, wf, auto) in enumerate(cases):
+        sub = tmp_path / str(i)
+        sub.mkdir()
+        out = _check(sub, content)
+        assert ("workflow prompt: run `friday nodes --setup laptop`" in out) == wf, (content, out)
+        assert ("auto-mode prompt: run `friday nodes --setup laptop`" in out) == auto, (content, out)
+
+
+def test_setup_then_check_clears_prompts(tmp_path):
+    _run(tmp_path, "--setup", "laptop", "--yes", settings="{}")
+    out = _check(tmp_path, None)
+    assert "workflow prompt" not in out and "auto-mode prompt" not in out
