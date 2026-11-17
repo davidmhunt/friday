@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import os
 import socket
 import subprocess
 import time
@@ -376,21 +377,30 @@ def _is_friday_repo(p: Path) -> bool:
     return (p / ".git").exists() and ((p / "docs" / "goals").is_dir() or (p / "docs" / "directives").is_dir())
 
 
-def find_repos(cwd, registry_path=None, node_name: str | None = None, errors: list | None = None) -> list[Path]:
-    """This node's friday repos: the checkouts under its registry `repos` (and their
-    `<repo>.friday/<goal>` worktrees), else the repo containing `cwd` (and its worktrees)."""
+def registry_node(registry_path=None, node_name: str | None = None, errors: list | None = None):
+    """This node's registry entry (matched on name or ssh against node_name/hostname), or None."""
     errors = errors if errors is not None else []
-    bases: list[Path] = []
     try:
         reg_file = Path(registry_path) if registry_path else ff.find_nodes_file()
         if reg_file:
             reg = ff.load_nodes(reg_file)
             names = {node_name, socket.gethostname()} if node_name else {socket.gethostname()}
-            node = next((n for n in reg.nodes.values() if n.name in names or n.ssh in names), None)
-            if node and node.repos:
-                bases.append(Path(node.repos).expanduser())
+            return next((n for n in reg.nodes.values() if n.name in names or n.ssh in names), None)
     except ff.RegistryError as e:
         errors.append({"where": "registry", "error": str(e)})
+    return None
+
+
+def find_repos(cwd, registry_path=None, node_name: str | None = None, errors: list | None = None,
+               node=None) -> list[Path]:
+    """This node's friday repos: the checkouts under its registry `repos` (and their
+    `<repo>.friday/<goal>` worktrees), else the repo containing `cwd` (and its worktrees)."""
+    errors = errors if errors is not None else []
+    bases: list[Path] = []
+    if node is None:
+        node = registry_node(registry_path, node_name, errors)
+    if node and node.repos:
+        bases.append(Path(node.repos).expanduser())
     found: list[Path] = []
     if bases:
         for base in bases:
@@ -504,9 +514,12 @@ def collect(cwd=None, proc_root: str | Path = "/proc", registry_path=None, node_
     """The whole snapshot for this node. Never raises for a bad file or a missing tool."""
     cwd = Path(cwd or Path.cwd())
     host = socket.gethostname()
-    snap = empty_snapshot(node_name or host, host, time.time() if now is None else now)
-    errors = snap["errors"]
-    paths = find_repos(cwd, registry_path, node_name, errors)
+    errors: list = []
+    reg_node = registry_node(registry_path, node_name, errors)
+    snap = empty_snapshot(node_name or (reg_node.name if reg_node else host), host,
+                          time.time() if now is None else now)
+    snap["errors"] = errors
+    paths = find_repos(cwd, registry_path, node_name, errors, node=reg_node)
     snap["health"] = collect_health(proc_root, paths[0] if paths else cwd, errors)
     snap["gpus"] = collect_gpus(errors)
     for p in paths:
@@ -516,7 +529,9 @@ def collect(cwd=None, proc_root: str | Path = "/proc", registry_path=None, node_
         except Exception as e:
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})
     try:
-        snap["leases"] = fc.list_leases()
+        base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+        # list_leases() would mkdir the lease dir; status writes nothing.
+        snap["leases"] = fc.list_leases() if (base / "friday" / "leases").is_dir() else []
     except Exception as e:
         errors.append({"where": "leases", "error": f"{type(e).__name__}: {e}"})
     snap["sessions"] = collect_sessions(errors)

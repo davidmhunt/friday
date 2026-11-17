@@ -280,3 +280,19 @@ def test_plain_status_unchanged(tree):
     assert out[0].startswith("goal core  approved  base main  1/2")
     assert out[1].split()[:2] == ["core-01", "approved"] and out[2].split()[:2] == ["core-02", "done"]
     assert "active here: none" in r.stdout and not r.stdout.lstrip().startswith("{")
+
+
+def test_node_is_registry_name_when_matched_by_ssh(tree):
+    import socket
+    tree.reg.write_text(f'[node.gpu1]\nrole = "worker"\nssh = "{socket.gethostname()}"\n'
+                        f'repos = "{tree.repos}"\nplugin_dir = "~/friday"\n')
+    s = fs.collect(cwd=tree.repos / "alpha", proc_root=tree.proc, registry_path=tree.reg)
+    assert s["node"] == "gpu1"
+    assert s["host"] == socket.gethostname()
+
+
+def test_status_creates_no_lease_dir(tree):
+    state = tree.tmp / "state"
+    assert not state.exists()
+    snap(tree)
+    assert not (state / "friday").exists()
