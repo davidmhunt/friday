@@ -16,12 +16,37 @@ CLI = ROOT / "bin" / "friday"
 
 DIRECTIVE = """# core-01: Make the thing
 Status: approved
+Goal: core
 Node: any
+Deliverable: code
+Land: pr
 Verify: test -f ok.txt
 Hardware: none
 
+## Goal
+Make it.
+
 ## Steps
 1. Create ok.txt
+
+## Out of scope
+- nothing
+
+## Log
+"""
+
+GOAL = """# core: The core goal
+Status: approved
+Base: main
+Land: pr
+
+## Goal
+Do the core.
+
+## Directives
+1. core-01: Make the thing
+
+## Log
 """
 
 
@@ -41,6 +66,8 @@ def repo(tmp_path, monkeypatch):
     }))
     (r / "docs" / "directives").mkdir(parents=True)
     (r / "docs" / "directives" / "core-01.md").write_text(DIRECTIVE)
+    (r / "docs" / "goals").mkdir(parents=True)
+    (r / "docs" / "goals" / "core.md").write_text(GOAL)
     subprocess.run(["git", "-C", str(r), "add", "."], check=True)
     subprocess.run(["git", "-C", str(r), "commit", "-qm", "init"], check=True)
     subprocess.run(["git", "-C", str(r), "checkout", "-qb", "friday/core-01"], check=True)
@@ -760,3 +787,90 @@ def test_posttool_ignores_other_files(grepo, rel):
 def test_posttool_garbage_stdin_fails_open(payload):
     r = _run_post(payload)   # a caught exception may print a diagnostic on stderr; it must not block
     assert (r.returncode, r.stdout) == (0, "")
+
+
+# ---------------------------------------------------------------- start on the goal branch (gm-02)
+def _git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+@pytest.fixture
+def grepo2(tmp_path, monkeypatch):
+    """Repo on main with goal `core` (two directives, Land goal)."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    r = tmp_path / "g2"
+    r.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(r)], check=True)
+    for k, v in (("user.name", "t"), ("user.email", "t@t")):
+        _git(r, "config", k, v)
+    ds, g = _two("approved", "approved")
+    _mk(r, ds, g)
+    _git(r, "add", ".")
+    _git(r, "commit", "-qm", "init")
+    return r
+
+
+def test_start_creates_goal_branch_from_base(grepo2):
+    r = cli(grepo2, "start", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert _git(grepo2, "branch", "--show-current") == "friday/core"
+    assert "Status: running@" in (grepo2 / "docs/directives/core-01.md").read_text()
+    assert "Status: running\n" in (grepo2 / "docs/goals/core.md").read_text()
+    _git(grepo2, "commit", "-qam", "work")
+    cli(grepo2, "finish", "core-01")
+    _git(grepo2, "commit", "-qam", "done")
+    assert cli(grepo2, "start", "core-02").returncode == 0
+    assert _git(grepo2, "branch", "--show-current") == "friday/core"
+    assert _git(grepo2, "branch", "--list", "friday/*").split() == ["*", "friday/core"]
+
+
+def test_start_reuses_existing_goal_branch_and_refuses_dirty_switch(grepo2):
+    _git(grepo2, "branch", "friday/core")
+    gp = grepo2 / "docs/goals/core.md"
+    gp.write_text(gp.read_text() + "x\n")
+    r = cli(grepo2, "start", "core-01")
+    assert r.returncode != 0 and "uncommitted" in r.stderr
+    assert _git(grepo2, "branch", "--show-current") == "main"
+    _git(grepo2, "checkout", "--", ".")
+    assert cli(grepo2, "start", "core-01").returncode == 0
+    assert _git(grepo2, "branch", "--show-current") == "friday/core"
+
+
+def test_start_pr_directive_uses_own_branch(grepo2):
+    p = grepo2 / "docs/directives/core-01.md"
+    p.write_text(p.read_text().replace("Verify:", "Land: pr\nVerify:", 1))
+    _git(grepo2, "commit", "-qam", "pr")
+    assert cli(grepo2, "start", "core-01").returncode == 0
+    assert _git(grepo2, "branch", "--show-current") == "friday/core-01"
+
+
+def test_start_refuses_out_of_order(grepo2):
+    r = cli(grepo2, "start", "core-02")
+    assert r.returncode != 0 and "core-01" in r.stderr
+    assert _git(grepo2, "branch", "--show-current") == "main"
+
+
+def test_start_refuses_invalid_directive(grepo2):
+    p = grepo2 / "docs/directives/core-01.md"
+    p.write_text(p.read_text().replace("Node: any", "Node: nowhere"))
+    _git(grepo2, "commit", "-qam", "bad")
+    r = cli(grepo2, "start", "core-01")
+    assert r.returncode != 0 and "error:" in r.stderr and "Node" in r.stderr
+
+
+def test_start_base_from_origin_only_and_missing(grepo2, tmp_path):
+    origin = tmp_path / "o.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    _git(grepo2, "remote", "add", "origin", str(origin))
+    _git(grepo2, "push", "-q", "origin", "main")
+    _git(grepo2, "fetch", "-q", "origin")
+    _git(grepo2, "checkout", "-qb", "other")
+    _git(grepo2, "branch", "-qD", "main")
+    assert cli(grepo2, "start", "core-01").returncode == 0
+    assert _git(grepo2, "rev-parse", "friday/core") == _git(grepo2, "rev-parse", "origin/main")
+    _git(grepo2, "checkout", "-q", "--", ".")
+    _git(grepo2, "checkout", "-q", "other")
+    _git(grepo2, "branch", "-qD", "friday/core")
+    _git(grepo2, "update-ref", "-d", "refs/remotes/origin/main")
+    r = cli(grepo2, "start", "core-01")
+    assert r.returncode != 0 and "main" in r.stderr

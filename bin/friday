@@ -3,7 +3,7 @@
 
   friday status                     directives in this repo, the active one here, hardware leases
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
-  friday start <id> [--no-gate]     mark <id> active in this worktree, Status -> running@<host>
+  friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), Status -> running@<host>
   friday verify [<id>]              run the directive's Verify command (default: the active one)
   friday finish <id> [--blocked R]  Status -> done (or blocked: R), clear the active marker
   friday land <id> --base <branch>  push friday/<id> and open its PR (gh), or print why not
@@ -63,15 +63,58 @@ def cmd_new(a) -> int:
     return 0
 
 
+def _branch_exists(root: Path, ref: str) -> bool:
+    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
+                          cwd=root, capture_output=True).returncode == 0
+
+
 def cmd_start(a) -> int:
+    """Check the directive and its goal, enforce goal order, put the work on its branch
+    (friday/<goal> for Land goal|none, friday/<id> for Land pr), then mark it running."""
+    import re
     root = _root()
     d = _need(root, a.id)
     status = d["status"].lower()
     if not status.startswith(("approved", "running")):
         sys.exit(f"friday: {a.id} is '{d['status']}'; only an approved directive can start (the user approves it)")
-    if not d["verify"]:
-        sys.exit(f"friday: {a.id} has no Verify: line")
+    issues = fc.check_repo(root, directive=a.id)
+    parsed = fc.parse_directive_full(fc.directive_path(root, a.id).read_text())
+    gid = parsed["goal"]
+    if gid and fc.GOAL_RE.match(gid) and fc.goal_path(root, gid).exists():
+        issues += [i for i in fc.check_repo(root, goal=gid) if i not in issues]
+    errors = [i for i in issues if i.level == "error"]
+    if errors:
+        print("\n".join(str(i) for i in errors), file=sys.stderr)
+        sys.exit(f"friday: {a.id} or its goal has format errors; fix them first")
+    goal = fc.parse_goal(fc.goal_path(root, gid).read_text())
+    ids = [x["id"] for x in goal["directives"]]
+    undone = [e for e in ids[:ids.index(a.id)]
+              if (fc.read_directive(root, e) or {}).get("status") != "done"]
+    if undone:
+        sys.exit(f"friday: {a.id} comes after {', '.join(undone)} in goal {gid}, which must be done first")
+    branch = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
+    if fc.current_branch(root) != branch:
+        if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+            sys.exit(f"friday: uncommitted changes to tracked files; commit them before switching to {branch}")
+        if _branch_exists(root, f"refs/heads/{branch}"):
+            cmd = ["git", "switch", "-q", branch]
+        else:
+            base = goal["base"]
+            if _branch_exists(root, f"refs/heads/{base}"):
+                src = base
+            elif _branch_exists(root, f"refs/remotes/origin/{base}"):
+                src = f"origin/{base}"
+            else:
+                sys.exit(f"friday: base branch '{base}' of goal {gid} exists neither locally nor as origin/{base}")
+            cmd = ["git", "switch", "-q", "--no-track", "-c", branch, src]
+        r = _run(cmd, root)
+        if r.returncode != 0:
+            sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
+        print(f"on {branch}")
     fc.set_status(root, a.id, f"running@{socket.gethostname()}")
+    if goal["status"] == "approved":
+        gp = fc.goal_path(root, gid)
+        gp.write_text(re.sub(r"(?m)^Status:.*$", "Status: running", gp.read_text(), count=1))
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
                                  "gate": not a.no_gate})
     print(f"{a.id} active. Verify: {d['verify']}")
