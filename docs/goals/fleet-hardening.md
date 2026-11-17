@@ -1,5 +1,5 @@
 # fleet-hardening: Dispatch with no first-run prompts on the node
-Status: approved
+Status: done
 Base: v1
 Land: pr
 
@@ -15,3 +15,4 @@ which stopped at the folder trust and workflow approval prompts on Alfred.
 2. fleet-05: `friday nodes --check` reports blocking prompts; `friday nodes --setup <node>`
 
 ## Log
+- 2026-11-17: Landed: 2 directive(s) reverified on friday/fleet-hardening; PR into v1.

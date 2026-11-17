@@ -1,5 +1,5 @@
 # fleet-04: Dispatch trusts the new worktree and names it from origin
-Status: approved
+Status: done
 Goal: fleet-hardening
 Node: any
 Deliverable: code
@@ -34,3 +34,13 @@ tests/test_dispatch.py proves both against a fake `ssh`.
 - Cleaning up worktrees, branches or trust entries after a goal lands.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 6e84d9a fleet-04: test trust write, single backup, origin-derived repo name, dry-run trust step
+- 40bb0ff fleet-04: name clone and worktree from the origin URL, not the local folder
+- d432816 fleet-04: prepare trusts the new worktree in ~/.claude.json
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_dispatch.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

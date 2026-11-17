@@ -272,7 +272,7 @@ def prepare_script(node, goal: str, repo_name: str, origin_url: str, base: str,
     untrusted in ~/.claude.json, a tmux session friday-<goal> exists, the existing clone's origin
     differs from `origin_url`, or the worktree path / local branch friday/<goal> already exists.
     Never touches an existing checkout's working tree or branch. On success prints
-    `FRIDAY_WORKTREE <abs path>`.
+    `FRIDAY_TRUSTED <path>` (after recording trust for the worktree) and `FRIDAY_WORKTREE <abs path>`.
     """
     import shlex
     q = shlex.quote
@@ -337,6 +337,34 @@ else
   git -C "$CLONE" worktree add -q --no-track -b "$BRANCH" "$WT" "origin/$BASE" \\
     || refuse git "worktree add from origin/$BASE failed" {code['git']}
 fi
+# trust the new worktree (repos was trusted above): add it to ~/.claude.json, atomically
+python3 - "$WT" <<'PY' || refuse untrusted "cannot record trust for $WT in ~/.claude.json" {code['untrusted']}
+import json, os, shutil, sys, tempfile
+wt = os.path.realpath(sys.argv[1])
+cfg = os.path.expanduser("~/.claude.json")
+try:
+    data = json.load(open(cfg))
+    if not isinstance(data, dict):
+        sys.exit(1)
+    projects = data.setdefault("projects", {{}})
+    if not isinstance(projects, dict):
+        sys.exit(1)
+    entry = projects.get(wt)
+    if not isinstance(entry, dict):
+        entry = projects[wt] = {{}}
+    entry["hasTrustDialogAccepted"] = True
+    bak = cfg + ".friday-bak"
+    if not os.path.exists(bak):
+        shutil.copy2(cfg, bak)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(cfg), prefix=".claude.json.friday-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    shutil.copymode(cfg, tmp)
+    os.replace(tmp, cfg)
+except (OSError, ValueError):
+    sys.exit(1)
+print("FRIDAY_TRUSTED " + wt)
+PY
 echo "FRIDAY_WORKTREE $WT"
 """
 

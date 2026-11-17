@@ -17,12 +17,15 @@
   friday parse <id> --json          parsed directive as JSON (exit 1 on errors, 2 if file missing)
   friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
+  friday nodes --setup <node> [--yes]
+                                    set the node's first-run prompt skips in ~/.claude/settings.json
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import socket
@@ -494,6 +497,19 @@ print("no")
 """
 
 
+_SETTINGS_PY = """
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.claude/settings.json")))
+    if not isinstance(d, dict):
+        d = {}
+except Exception:
+    d = {}
+for k, v in (("workflow", "skipWorkflowUsageWarning"), ("auto", "skipAutoPermissionPrompt")):
+    print("FRIDAY_PROBE %s=%s" % (k, "ok" if d.get(v) is True else "no"))
+"""
+
+
 def probe_script(node) -> str:
     if node.role == "target":
         return "echo FRIDAY_PROBE reach=ok\n"
@@ -506,6 +522,7 @@ def probe_script(node) -> str:
         "if command -v python3 >/dev/null 2>&1; then",
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
+        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
     ]) + "\n"
 
 
@@ -538,9 +555,89 @@ def check_node(node) -> tuple:
         fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
     elif trust != "ok":
         fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
+    for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
+        if got.get(key) != "ok":
+            fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"plugin_dir {got.get('plugin', '?')}, trust {trust or '?'}")
     return summary, fixes
+
+
+SETUP_KEYS = {"skipWorkflowUsageWarning": True, "skipAutoPermissionPrompt": True}
+
+_SETUP_PY = """
+import json, os, shutil, sys, tempfile
+cfg = os.path.expanduser("~/.claude/settings.json")
+keys = json.loads(os.environ["FRIDAY_KEYS"])
+try:
+    if os.path.exists(cfg):
+        data = json.load(open(cfg))
+        if not isinstance(data, dict):
+            print("FRIDAY_SETUP bad"); sys.exit(1)
+    else:
+        data = {}
+except (OSError, ValueError):
+    print("FRIDAY_SETUP bad"); sys.exit(1)
+try:
+    data.update(keys)
+    os.makedirs(os.path.dirname(cfg), exist_ok=True)
+    if os.path.exists(cfg):
+        bak = cfg + ".friday-bak"
+        if not os.path.exists(bak):
+            shutil.copy2(cfg, bak)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(cfg), prefix=".settings.json.friday-")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2); f.write("\\n")
+    if os.path.exists(cfg):
+        shutil.copymode(cfg, tmp)
+    os.replace(tmp, cfg)
+except OSError:
+    print("FRIDAY_SETUP error"); sys.exit(1)
+print("FRIDAY_SETUP ok")
+"""
+
+
+def setup_script() -> str:
+    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
+            f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} python3 -c {shlex.quote(_SETUP_PY)}\n")
+
+
+def cmd_nodes_setup(a, reg) -> int:
+    n = reg.nodes.get(a.setup)
+    if n is None:
+        print(f"friday: no node named {a.setup!r}; pick one from `friday nodes`")
+        return 1
+    if n.role == "target":
+        print(f"friday: {n.name} is a target node; --setup applies to master and worker nodes")
+        return 1
+    print(f"friday will set these keys in ~/.claude/settings.json on {n.name} ({n.ssh}):")
+    for k, v in SETUP_KEYS.items():
+        print(f"  {k} = {json.dumps(v)}")
+    print("other keys are kept; the old file is saved once as settings.json.friday-bak.")
+    print("trust, credentials and permission rules are not touched.")
+    if not a.yes:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            print("friday: refusing to change settings without a terminal to confirm; "
+                  "re-run on a terminal or pass --yes")
+            return 1
+        if input("proceed? [y/N] ").strip().lower() not in ("y", "yes"):
+            print("aborted; nothing changed")
+            return 1
+    argv, stdin = ff.ssh_cmd(n, setup_script())
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"friday: could not reach {n.name}: {e}")
+        return 1
+    res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_SETUP ")), "")
+    if r.returncode == 0 and res == "ok":
+        print(f"{n.name}: settings updated; run `friday nodes --check` to confirm")
+        return 0
+    why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
+           "nopython": "python3 is missing on the node",
+           "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")
+    print(f"friday: {n.name}: {why}; nothing changed")
+    return 1
 
 
 def cmd_nodes(a) -> int:
@@ -555,6 +652,8 @@ def cmd_nodes(a) -> int:
     except ff.RegistryError as e:
         print(f"friday: {e}")
         return 1
+    if a.setup:
+        return cmd_nodes_setup(a, reg)
     ok = True
     for n in reg.nodes.values():
         if not a.check:
@@ -691,10 +790,11 @@ def cmd_dispatch(a) -> int:
     report_to = a.report_to or plan["registry"].report_to
     if not report_to:
         _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
-    wt = ff.worktree_path(n, _root().name, a.goal)
-    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
     origin_url = _git_out(["remote", "get-url", "origin"], root)[1]
-    script = ff.prepare_script(n, a.goal, root.name, origin_url, plan["base"], plan["plugin_commit"])
+    repo_name = origin_url.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
+    wt = ff.worktree_path(n, repo_name, a.goal)
+    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
+    script = ff.prepare_script(n, a.goal, repo_name, origin_url, plan["base"], plan["plugin_commit"])
     if a.dry_run:
         print("prepare script:")
         print(script)
@@ -716,7 +816,7 @@ def cmd_dispatch(a) -> int:
         print(f"friday: launch failed on {n.name}: {r.stderr.strip()}", file=sys.stderr)
         return 1
     path = ff.record_dispatch({
-        "goal": a.goal, "directives": plan["directives"], "repo": root.name, "node": n.name,
+        "goal": a.goal, "directives": plan["directives"], "repo": repo_name, "node": n.name,
         "tmux_session": f"friday-{a.goal}", "worktree": wt_abs, "branch": f"friday/{a.goal}",
         "source_ref": plan["source_ref"], "plugin_commit": plan["plugin_commit"],
         "report_to": report_to, "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
@@ -803,7 +903,8 @@ def main() -> int:
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
-    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.set_defaults(f=cmd_nodes)
+    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
+    s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
     a = p.parse_args()
     return a.f(a)

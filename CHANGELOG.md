@@ -18,6 +18,9 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
 - Fleet: `friday nodes [--check]` and `friday dispatch --goal <g>` run a goal on another machine
   over Tailscale SSH; `/friday:plan` offers it when this machine doesn't satisfy `Node:`;
   docs/fleet.md.
+- Fleet: `friday nodes --check` reports the workflow and auto-mode prompts per node;
+  `friday nodes --setup <node>` sets their skip keys after confirmation; docs/fleet.md covers both
+  and the master's ssh setup.
 - Docs: commit rules; recommendation to make squash-merge the default on GitHub
   (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
 
