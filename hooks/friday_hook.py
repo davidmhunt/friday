@@ -179,6 +179,9 @@ def stop(payload: dict) -> None:
     d = fc.read_directive(root, marker["id"]) if root else None
     if not d or not d.get("verify"):
         return
+    if d["verify"].strip().lower() == "none":
+        print(json.dumps({"systemMessage": f"friday: Verify for {marker['id']} is none, not run."}))
+        return
     counter = fc.git_dir(cwd) / "friday-stop-blocks"
     try:
         out = subprocess.run(d["verify"], shell=True, cwd=root, capture_output=True, text=True, timeout=1800)

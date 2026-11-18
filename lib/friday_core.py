@@ -391,6 +391,8 @@ def validate_directive(did: str, text: str) -> list[Issue]:
             bad("Land" if "Land" in hl else "Deliverable", "Land must be `none` for Deliverable external")
     elif deliverable_ok and "Verify" in hl and not d["verify"]:
         bad("Verify", f"Verify must not be empty for Deliverable {d['deliverable']}")
+    elif deliverable_ok and "Verify" in hl and d["verify"].strip().lower() == "none":
+        bad("Verify", f"Verify `none` is only for Deliverable external, not {d['deliverable']}")
 
     issues += _check_sections(md, DIRECTIVE_SECTIONS, path, acceptance=True)
     acc = _section(md, "Acceptance")

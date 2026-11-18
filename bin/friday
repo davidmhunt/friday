@@ -239,6 +239,9 @@ def cmd_verify(a) -> int:
     if not did:
         sys.exit("friday: no directive given and none active here")
     d = _need(root, did)
+    if d["verify"].strip().lower() == "none":
+        print(f"{did}: Verify none, not run")
+        return 0
     print(f"$ {d['verify']}", flush=True)
     return subprocess.run(d["verify"], shell=True, cwd=root).returncode
 
