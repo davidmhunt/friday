@@ -113,7 +113,7 @@ export function machineCard(n) {
   return h("div", { cls: "card machine" + (n.status !== "ok" ? " stale" : "") + (waiting ? " needs-you" : "") },
     h("div", { cls: "card-head" }, h("span", { cls: "dot " + dotClass(n), title: n.status }),
       h("span", { cls: "card-title" }, n.name), h("span", { cls: "badge" }, n.role || "node")),
-    h("div", { cls: "card-sub" }, n.status === "missing" ? "never reported" : n.status + ", seen " + ago(n.age_s) + " ago"),
+    h("div", { cls: "card-sub" }, n.status === "missing" ? "never reported: run `friday nodes --setup " + n.name + "` on the master" : n.status + ", seen " + ago(n.age_s) + " ago"),
     h("dl", { cls: "kv" }, kv.map(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])));
 }
 
