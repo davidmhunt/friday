@@ -164,6 +164,12 @@ def test_fail_closed_heredoc_cases_are_still_scanned():
         "echo $[1<<EOF]\nfriday accept hook-01\nEOF",
         "echo ${x:-<<EOF}\nfriday accept hook-01\nEOF",
         "cat <<'EOF'\nfriday accept hook-01",  # missing closing line
+        "cat <<EOF <<'X'\n$(friday accept hook-01)\nEOF\nX\n",
+        "cat <<EOF; cat <<'X'\n`friday accept hook-01`\nEOF\nX\n",
+        "cat <<EOF <<'X'\n$(sudo y)\nEOF\nX\n",
+        "(true)#<<'EOF'\nfriday accept hook-01\nEOF\n",
+        "(true)#<<'EOF'\nsudo x\nEOF\n",
+        "case x in x)#<<'EOF'\nfriday accept hook-01\nEOF\n",
     ]
     for cmd in cases:
         assert refused(cmd), cmd

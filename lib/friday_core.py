@@ -802,6 +802,8 @@ def _heredoc_at(line: str, i: int) -> tuple[int, int, int] | None:
     m = _HEREDOC.match(line, i)
     if not m or _in_expansion(line, i):
         return None
+    if "<<" in line[line.rfind("\n", 0, i) + 1:i]:  # an earlier opener's body starts at the same newline
+        return None
     delim = m.group(2) or m.group(3)
     nl = line.find("\n", m.end())
     if nl < 0:
@@ -850,7 +852,7 @@ def _strip_heredocs(line: str) -> str:
         if c == "\n" and skip and i == skip[0]:
             out.append(c); i = skip[1]; skip = None
             continue
-        if c == "#" and (i == 0 or line[i - 1] in " \t\n;&|("):
+        if c == "#" and (i == 0 or line[i - 1] in " \t\n;&|()"):
             j = line.find("\n", i)
             j = len(line) if j < 0 else j
             out.append(line[i:j]); i = j
