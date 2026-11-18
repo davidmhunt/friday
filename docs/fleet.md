@@ -12,6 +12,17 @@ dispatch to it.
 - **target**: a device driven over SSH by whichever node runs the directive (a rover, a Pi). It never
   runs directives; it is only checked for reachability.
 
+## Slash commands
+
+From any session that loads the plugin (including over Remote Control), these run the CLI for you:
+
+| Slash command | CLI form |
+|---|---|
+| `/friday:status` | `friday status` |
+| `/friday:nodes` | `friday nodes --check` |
+| `/friday:dispatch <goal>` | `friday dispatch --goal <goal>`: runs `--dry-run` first, shows it, runs for real after you say yes |
+| `/friday:clean <node>` | `friday nodes --clean <node>`: runs `--dry-run` first, shows it, runs for real after you say yes |
+
 ## The registry (`nodes.toml`)
 
 `friday` reads the first file that exists, in this order:

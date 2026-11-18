@@ -41,6 +41,15 @@ After that, just `friday ...`. On a node: `ssh <node> friday uninstall`. The `uv
 Then review the PR (one per goal). `friday status` in a shell (or ask Claude to run it) lists directives, the one
 active in this worktree, and hardware leases. See [docs/workflow.md](docs/workflow.md).
 
+Slash commands for the same CLI forms, from any session with the plugin loaded (also over Remote Control):
+
+| Slash command | CLI form |
+|---|---|
+| `/friday:status` | `friday status` |
+| `/friday:nodes` | `friday nodes --check` |
+| `/friday:dispatch <goal>` | `friday dispatch --goal <goal>` (shows `--dry-run` first, runs after you say yes) |
+| `/friday:clean <node>` | `friday nodes --clean <node>` (shows `--dry-run` first, runs after you say yes) |
+
 ## What's in it
 
 | Part | What it does |
@@ -49,6 +58,7 @@ active in this worktree, and hardware leases. See [docs/workflow.md](docs/workfl
 | `workflows/execute.js` | Prepare → implement each step → Verify (fix loop) → Opus review → land |
 | `agents/` | `implementer` (Sonnet; Opus for `[heavy]` steps), `verifier` (Opus, read-only), `runner` (Haiku, long and remote runs) |
 | `hooks/` | Deny list, `./run` enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop |
+| `skills/status`, `nodes`, `dispatch`, `clean` | User-invoked slash commands that run the CLI and summarise it |
 | `skills/` | `directive` (format), `hardware`, `long-jobs`, `data-artifacts` |
 | `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `land`, `release`, `check`, `parse`, `nodes`, `dispatch` |
 
