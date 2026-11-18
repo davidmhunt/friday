@@ -54,6 +54,42 @@ Adjust the path to the plugin folder (`plugin_dir`), then
 `loginctl enable-linger $USER` keeps it running when you are logged out. Logs:
 `journalctl --user -u friday-dash`.
 
+## Running it in Docker
+
+On the master, the dash can run as a Docker Compose service (`deploy/compose.yaml`, image built from
+`deploy/Dockerfile`) instead of a foreground process or a systemd unit:
+
+```
+friday dash up      # docker compose -f <plugin>/deploy/compose.yaml up -d --build
+friday dash down    # docker compose -f <plugin>/deploy/compose.yaml down
+docker compose -f <plugin>/deploy/compose.yaml logs -f friday-dash   # logs
+```
+
+Both commands print the command they ran and fail with a clear message when `docker` is missing.
+`up` passes `GH_TOKEN` from `gh auth token` through the environment (never on the command line or in
+a file); when `gh` is signed out it is left unset with a note and the dash shows no PRs, so run
+`gh auth login` and `friday dash up` again. The service is `restart: unless-stopped`, so it comes
+back with the machine.
+
+The container runs on the host network (so it binds the tailnet IP and sees real peer addresses),
+mounts `~/.config/friday/nodes.toml` and `/var/run/tailscale/tailscaled.sock` read-only, and keeps
+its state in the named volume `dash-state`. The security rules are unchanged: whois sender check,
+bind only to `127.0.0.1` and the tailnet IP.
+
+In the container the dash runs `friday dash --no-self`: it only receives reports and does not take
+the master's own snapshot. The master therefore pushes its snapshot with its push timer like every
+other node. Install the timer once on the master:
+
+```
+friday nodes --setup laptop     # use the master's registry name
+```
+
+A report from localhost is accepted as the master's. Until the timer is installed the master shows
+as missing.
+
+The foreground `friday dash` still works as described under "Starting it" and takes its own master
+snapshot. Do not run it and the container at the same time: they use the same port.
+
 ## Setting up nodes
 
 `friday nodes --setup <node>` sets the skip keys (see fleet.md) and, after the same y/N
