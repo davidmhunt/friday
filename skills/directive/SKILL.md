@@ -75,9 +75,10 @@ Other sections are allowed before `## Log`.
 `## Allowed commands` is optional (at most once, before `## Log`): bullets, each holding one
 backticked command pattern where `*` matches any text. While the directive is active in a
 worktree, the PreToolUse hook allows a Bash command that is one simple command matching a
-pattern, without a prompt. The list is read from the directive as committed on the goal's Base
-(`git show <Base>:docs/directives/<id>.md`), the plan the user approved, so edits on the goal
-branch never widen it. Deny rules, the commit guard, `friday accept <id>` and hardware leases still
+pattern, without a prompt. The list is read from the directive as committed on the goal's Base on
+origin (`git show origin/<Base>:docs/directives/<id>.md`), the plan the user approved, so edits on
+the goal branch never widen it. Base is trusted only when the goal file on `origin/<Base>` names the
+same Base, and never when it is the goal branch or a `friday/*` branch. Deny rules, the commit guard, `friday accept <id>` and hardware leases still
 win. `friday check` errors on a pattern that is only `*`, contains `&&`, `;`, `|` or a backtick
 substitution, starts with `friday accept <id>`, or matches the hook's deny list. `friday parse --json`
 returns it as `allowed`.
