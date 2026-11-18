@@ -1,5 +1,5 @@
 # gate-03: Commands the user pre-approves in a directive run without a prompt during that directive
-Status: approved
+Status: done
 Goal: v1-final
 Node: any
 Deliverable: code
@@ -77,3 +77,25 @@ Blocked: review gaps remain: bin/friday:272,297,309 (cmd_start writes goal_base 
 
 ### 2026-11-18
 Unblocked: was blocked: review gaps remain: bin/friday:272,297,309 (cmd_start writes goal_base from goal['base']) feeding hooks/friday_hook.py:185 (check_preapproved): Commit 72d913d fixed the direct path: the hook now reads Base from the marker, not the working tree. But the hook still trusts Base as written by 'friday start', and 'friday start' takes it from the working-tree 'Base:' header of docs/goals/<goal>.md, found through the working-tree directive's 'Goal:' header. The agent can edit both. 'Bash(friday start *)' is a standing allow rule in .claude/settings.json:9, so an agent on the goal branch can change 'Base:' to the goal branch and run 'friday start <id>' again with no prompt. The marker then gets goal_base set to the goal branch, and the hook allows whatever the agent-edited directive lists. That breaks the Goal's claim that an agent editing files on the goal branch cannot widen the list. Re-running start with Land goal is easy: start is allowed on a running directive, the clean-tree check only applies when switching branches, and _merge_base returns early because the goal branch is its own ancestor. The new test test_editing_goal_base_header_cannot_widen writes the marker by hand with goal_base 'main', so it never covers this path.
+
+### 2026-11-18
+Commits:
+- 4858379 Amend fix-02 step 6 and add gate-03 (pre-approved commands), approved by the user
+- 3d81257 gate-03 step 1: Allowed commands section format, parse and check
+- df39942 gate-03 step 2: hook allows commands pre-approved in the directive on Base
+- aaf98c1 gate-03 step 3: skills document and list Allowed commands
+- c38a06b gate-03 step 4: tests for pre-approved commands
+- dd68ced gate-03 step 5: CHANGELOG entry for pre-approved commands
+- 9e6ff20 gate-03: skill prose names commands with arguments so the surface test sees no bare invocation
+- 72d913d gate-03: pre-approval reads the goal Base from the marker, not editable tracked files
+- e9b542d gate-03 step 2: hook trusts only origin/<Base> whose goal file names the same Base
+- bd52ee2 gate-03 step 3: directive skill names origin/<Base> and the Base trust rule
+- f871daa gate-03 step 5: CHANGELOG names origin/<Base> trust and the push guard
+- 88b4a5c gate-03: push guard in the hook, and step 6 tests through the real friday start
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+Step 1 (format): already implemented in 3d81257 (allowed_pattern_problem, _allowed_items, parse 'allowed', check errors). Verified: pytest tests/test_preapproved.py -k check -> 10 passed. No changes.
+step 4: tests/test_preapproved.py already covers every listed case (28 pass); no change needed.
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_preapproved.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: gaps fixed in second review: 1. hooks/friday_hook.py:214-237 (pretool): Step 5 (the push guard) is not implemented. pretool runs check_deny, check_accept, check_run_only, check_commit, check_preapproved and check_hardware, and nothing else. No check denies 'git push' to a branch other than 'friday/<goal>' (or 'friday/<id>' for Land: pr) while a directive is active. There is no handling of 'cd DIR &&', 'git -C DIR', or a bare push judged by its upstream either. Without the guard, the origin/<Base> trust rule from step 2 can be bypassed. An agent can push a new branch X to origin carrying docs/goals/<goal>.md with 'Base: X' and a directive listing any patterns, then set 'Base: X' locally and re-run 'friday start <id>', which is a standing allow rule. The hook then trusts origin/X. The Goal names this guard as part of the amended requirement. (evidence: 'grep -rn 'refspec|upstream|push guard' hooks lib tests/test_preapproved.py' finds only the existing force-push deny regex at friday_hook.py:34. The only push rules are the pre-existing DENY entries at lines 33-35 (force push and push to main/master). The diffs of e9b542d, bd52ee2 and f871daa add no push logic.) 2. tests/test_preapproved.py (whole file; tests at lines 106-195): The step 6 tests are missing. No test goes through the real 'friday start' with an agent-edited 'Base:' that names the goal branch, a 'friday/*' branch, or a local-only branch. No test covers a pattern committed on local Base but not pushed to origin. No push-guard test exists (deny a push to Base or another branch, allow a push to the goal branch). The only change to this file in this round is one 'update-ref refs/remotes/origin/main' line in make_repo. test_editing_goal_base_header_cannot_widen still writes the marker by hand, which was the exact gap that blocked the previous round. (evidence: 'grep -n 'def test_|cmd_start|'start'' tests/test_preapproved.py' lists 15 tests. None calls 'friday start' and none mentions push apart from the force-push deny-list cases. 'git show e9b542d' shows a one-line change to the tests.) 3. CHANGELOG.md:8-11 (commit f871daa): The CHANGELOG says the push guard exists, but it does not ship. The entry reads 'while a directive is active the hook also denies 'git push' to anything but the goal's own branch ('friday/<id>' for 'Land: pr')'. No code implements it, so the release note is wrong. (evidence: 'git show f871daa' adds this sentence. The hook has no such check (see the first gap).)
