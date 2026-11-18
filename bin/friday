@@ -264,7 +264,7 @@ def cmd_start(a) -> int:
     goal = fc.parse_goal(fc.goal_path(root, gid).read_text())
     ids = [x["id"] for x in goal["directives"]]
     undone = [e for e in ids[:ids.index(a.id)]
-              if (fc.read_directive(root, e) or {}).get("status") != "done"]
+              if (fc.read_directive(root, e) or {}).get("status", "").lower() not in ("done", "awaiting review")]
     if undone:
         sys.exit(f"friday: {a.id} comes after {', '.join(undone)} in goal {gid}, which must be done first")
     branch = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
@@ -505,7 +505,7 @@ def cmd_land(a) -> int:
     Exit 0: done (for pr, last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
     5: pushed, no PR because gh is missing or signed out (last line `COMPARE: <url>`).
     6 (--goal only): a directive's Verify failed on the goal branch; nothing pushed.
-    7 (--goal only): a listed directive is not done (ids printed); nothing run or pushed."""
+    7 (--goal only): a listed directive is not done, e.g. awaiting review (ids printed); nothing run or pushed."""
     import os
     if bool(a.id) == bool(a.goal):
         sys.exit("friday: land takes <id> or --goal <g>")
@@ -622,6 +622,10 @@ def land_goal(gid: str) -> int:
         sys.exit(f"friday: goal {gid} lists {', '.join(missing)} with no directive file")
     if undone:
         print(f"friday: goal {gid} has directives not done: {', '.join(undone)}", file=sys.stderr)
+        waiting = [x for x in undone if x.endswith("(awaiting review)")]
+        if waiting:
+            print("friday: still awaiting review (the user runs `friday accept <id>`): "
+                  + ", ".join(w.split()[0] for w in waiting), file=sys.stderr)
         return 7
     results, failed = {}, []
     for did, d, _ in rows:

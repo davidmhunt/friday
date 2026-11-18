@@ -135,3 +135,20 @@ def test_accept_reject_blocks(repo):
     assert r.returncode == 0, r.stderr
     assert "Status: blocked: wrong colour" in (repo / "docs/directives/core-01.md").read_text()
     assert "Status: blocked: core-01" in (repo / "docs/goals/core.md").read_text()
+
+
+def test_start_continues_past_awaiting_review_and_land_goal_exits_7(repo):
+    finish_first(repo)
+    s = cli(repo, "start", "core-02")
+    assert s.returncode == 0, s.stderr
+    # core-02 is not finished, so it is listed too; core-01 is named as awaiting review
+    cli(repo, "finish", "core-02")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 7
+    assert "core-01" in r.stderr and "awaiting review" in r.stderr
+    assert "core-02" not in r.stderr.split("still awaiting review")[1]
+
+
+def test_start_refuses_after_unfinished_earlier(repo):
+    r = cli(repo, "start", "core-02")
+    assert r.returncode == 1 and "core-01" in r.stderr
