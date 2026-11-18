@@ -75,3 +75,38 @@ def test_setup_writes_node_file(tmp_path):
     assert 'name = "w"' in text and 'repos = "~/code"' in text and 'dash = "http://mhost:' in text
     import friday_fleet as ff
     assert ff.load_node_file(home / ".config" / "friday" / "node.toml")[0] == "w"
+
+
+def test_push_with_no_registry_uses_node_file_url(tmp_path):
+    import json
+    import os
+    import subprocess
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_status_push import _server
+    srv, got = _server()
+    nf = tmp_path / "node.toml"
+    nf.write_text(f'name = "alfred"\ndash = "http://127.0.0.1:{srv.server_port}"\n')
+    env = dict(os.environ, HOME=str(tmp_path), XDG_STATE_HOME=str(tmp_path / "st"),
+               FRIDAY_NODE_FILE=str(nf))
+    env.pop("FRIDAY_NODES", None)
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "bin" / "friday"),
+                        "status", "--push"], env=env, capture_output=True, text=True, cwd=tmp_path)
+    srv.shutdown()
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert got and got[0][1]["node"] == "alfred"
+
+
+def test_status_json_with_bad_node_file_still_prints(tmp_path):
+    import json
+    import os
+    import subprocess
+    nf = tmp_path / "node.toml"
+    nf.write_text("bogus = 1\n")
+    env = dict(os.environ, HOME=str(tmp_path), XDG_STATE_HOME=str(tmp_path / "st"),
+               FRIDAY_NODE_FILE=str(nf))
+    env.pop("FRIDAY_NODES", None)
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "bin" / "friday"),
+                        "status", "--json"], env=env, capture_output=True, text=True, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    snap = json.loads(r.stdout)
+    assert any("node.toml" in e["error"] and "bogus" in e["error"] for e in snap["errors"])
