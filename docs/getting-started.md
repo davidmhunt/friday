@@ -23,7 +23,7 @@ Clone the repo, add the clone as a local marketplace, install the plugin from it
 `friday` on your PATH:
 
 ```bash
-git clone -b v1 https://github.com/davidmhunt/friday ~/src/friday
+git clone https://github.com/davidmhunt/friday ~/src/friday
 ```
 
 ```text
@@ -36,7 +36,7 @@ python3 ~/src/friday/bin/friday install      # once per machine: links ~/.local/
 friday --help                                # make sure ~/.local/bin is on PATH
 ```
 
-Use `-b v1` until 1.0 is on main. To update, run `git pull` in the clone, then
+To update, run `git pull` in the clone, then
 `/plugin marketplace update friday`. `friday uninstall` removes the link again.
 
 Do not edit files in the clone while a session uses it; its hooks run from there.
