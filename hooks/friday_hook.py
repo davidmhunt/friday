@@ -163,6 +163,41 @@ def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     return None
 
 
+def _one_simple_command(cmd: str) -> bool:
+    """True when `cmd` is a single simple command: no chaining, pipes, backgrounding, newlines or
+    substitutions anywhere (quoted or not; conservative)."""
+    c = cmd.strip()
+    if not c or any(x in c for x in ("&", ";", "|", "`", "$(", "<(", ">(", "\n", "\r")):
+        return False
+    return len(fc.split_commands(c)) == 1
+
+
+def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
+    """A command matching `## Allowed commands` of the active directive, as committed on the goal's
+    Base (so a goal-branch edit cannot widen it). None (no decision) on any doubt."""
+    try:
+        marker = fc.read_marker(cwd)
+        root = fc.repo_root(cwd)
+        if not marker or not root or not _one_simple_command(cmd):
+            return None
+        did = marker["id"]
+        _, base = _goal_and_base(cwd, did)
+        if not base:
+            return None
+        r = subprocess.run(["git", "show", f"{base}:docs/directives/{did}.md"], cwd=str(root),
+                           capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            return None
+        c = cmd.strip()
+        for pat in fc.parse_directive_full(r.stdout).get("allowed") or []:
+            rx = ".*".join(re.escape(part) for part in pat.split("*"))
+            if re.fullmatch(rx, c, re.S):
+                return "allow", f"pre-approved in {did} (on {base})"
+    except (OSError, subprocess.SubprocessError, KeyError, ValueError):
+        return None
+    return None
+
+
 def pretool(payload: dict) -> None:
     if payload.get("tool_name") != "Bash":
         return
@@ -179,8 +214,11 @@ def pretool(payload: dict) -> None:
         results.append(("deny", r))
     if (r := check_commit(cmd, cwd)):
         results.append(r)
+    pre = None if any(d == "deny" for d, _ in results) else check_preapproved(cmd, cwd)
     if not any(d == "deny" for d, _ in results) and (r := check_hardware(cmd, cfg, payload.get("session_id", ""))):
-        results.append(r)
+        results.append(("allow", f"{pre[1]}. {r[1]}") if pre and r[0] == "ask" else r)
+    if pre:
+        results.append(pre)
     if results:
         decision = max(results, key=lambda r: DECISION_RANK[r[0]])[0]
         _emit_pretool(decision, " ".join(r for d, r in results if d == decision))
