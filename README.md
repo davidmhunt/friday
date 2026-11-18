@@ -97,6 +97,10 @@ A project adds three things (CPSL_TI_Radar is the worked example):
 - `.claude/friday.json`: the run wrapper, which tools must go through it, and hardware patterns.
 - `docs/directives/`: one file per directive.
 
+- `.claude/settings.json`: the friday allow rules, merged in by `friday init` (the plan skill runs it
+  before the plan commit). They live in the repo because a plugin cannot grant permissions, and
+  without them the auto-mode classifier can stop unattended `friday start` or `friday land`.
+
 Optionally a `./run` wrapper and dev container ([docs/runtime.md](docs/runtime.md)) and project
 skills under `.claude/skills/`.
 

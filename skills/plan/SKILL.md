@@ -35,8 +35,9 @@ user approves the plan.
    approval. Do not show the user files that do not pass.
 4. **Ask for approval.** Show the goal and each directive's goal, steps, Verify and out-of-scope
    list in a few lines, and ask the user to approve, amend or drop each. On approval set the goal
-   and its directives to `Status: approved`, re-run `friday check --goal <goal>`, and commit them
-   (message ends `Directive: <id>`; the plan commit may list several). If this machine does not
+   and its directives to `Status: approved`, re-run `friday check --goal <goal>`, run `friday init`
+   (it merges the friday allow rules into `.claude/settings.json`; it does not commit), and commit
+   the plan, adding `.claude/settings.json` when `friday init` changed it (message ends `Directive: <id>`; the plan commit may list several). If this machine does not
    satisfy the directives' `Node:` lines, offer to run the goal elsewhere with
    `friday dispatch --goal <goal>` (see docs/fleet.md) instead of `/friday:execute` here.
 5. **Hand off.** Tell the user how it runs: `/friday:execute <id>` for each directive, in order

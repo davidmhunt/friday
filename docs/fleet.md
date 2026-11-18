@@ -152,6 +152,14 @@ into the file: other keys stay as they are, the file is written to a temp file a
 previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
 permission rules. Run `friday nodes --check` again afterwards.
 
+### Allow rules live in the repo
+
+A plugin cannot grant permissions, so friday's own commands are allowed by rules in each repo's
+tracked `.claude/settings.json`. `friday init` merges them in (keeping other keys and rules, never
+touching `settings.local.json`) and does not commit; the plan skill runs it before the plan commit.
+A node clones the repo, so the rules reach it through git, and dispatch refuses (exit 27) a source
+ref that lacks them.
+
 ### Setting up the master (learned on the laptop)
 
 The master is a node too, and dispatch reaches it by ssh like any other:
