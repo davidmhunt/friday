@@ -1,5 +1,5 @@
 # deploy: Every machine reports to a dash that runs in Docker, with no hand setup
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
