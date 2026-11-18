@@ -173,8 +173,12 @@ def test_restart_after_amendment_ignores_the_goal_status_flip(grepo2):
     _git(grepo2, "switch", "-q", "main")
     p = grepo2 / "docs/directives/core-01.md"
     p.write_text(p.read_text() + "\namended\n")
-    _git(grepo2, "commit", "--no-verify", "-qam", "amend")
+    # commit only the amendment: friday's uncommitted Status flip stays in the tree, as in real use
+    _git(grepo2, "add", "docs/directives/core-01.md")
+    _git(grepo2, "commit", "--no-verify", "-qm", "amend")
+    assert "docs/goals/core.md" in _git(grepo2, "status", "--porcelain", "--untracked-files=no")
     _git(grepo2, "switch", "-q", "friday/core")
+    assert "docs/goals/core.md" in _git(grepo2, "status", "--porcelain", "--untracked-files=no")
     r = cli(grepo2, "start", "core-01")
     assert r.returncode == 0, r.stderr
     assert "amended" in p.read_text() and "merged main" in r.stdout
