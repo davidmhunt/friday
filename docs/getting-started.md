@@ -19,16 +19,23 @@ Run Claude on a model such as Fable or Opus for the planning session.
 
 ## 2. Install the plugin
 
-Until friday 1.0 is on `main`, clone the `v1` branch:
+Install it from the marketplace:
 
-```bash
-git clone -b v1 https://github.com/davidmhunt/friday ~/src/friday
+```text
+/plugin marketplace add davidmhunt/friday
+/plugin install friday@friday
 ```
 
-Run it with `claude --plugin-dir ~/src/friday` each time you start a session (the checkout has no
-marketplace entry yet, so `/plugin` cannot install it from here). Do not edit files in this checkout while a session uses it; its hooks run from there.
+Or clone it and run it from the checkout, once per session:
 
-Once per machine, put `friday` on your PATH:
+```bash
+git clone https://github.com/davidmhunt/friday ~/src/friday
+claude --plugin-dir ~/src/friday
+```
+
+Do not edit files in a checkout while a session uses it; its hooks run from there.
+
+If you cloned it, put `friday` on your PATH once per machine:
 
 ```bash
 python3 ~/src/friday/bin/friday install     # links ~/.local/bin/friday to the checkout
