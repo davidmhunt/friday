@@ -16,13 +16,18 @@ FRIDAY = ROOT / "bin" / "friday"
 sys.path.insert(0, str(ROOT / "lib"))
 import friday_core as fc  # noqa: E402
 
-def prompted(inv):
-    """Deliberately not in FRIDAY_ALLOW, so the harness prompts: the real (non dry-run) `dispatch`
-    and `nodes --clean` runs the skills make after asking the user, and `release` (frees a lease)."""
-    sub = inv.split()[0]
-    if sub == "release":
-        return True
-    return (sub == "dispatch" or "--clean" in inv.split()) and "--dry-run" not in inv.split()
+PROMPTED = ("dispatch --goal *", "nodes --clean *", "release *")
+
+
+def prompted():
+    """The commands that stay prompted on purpose, not in FRIDAY_ALLOW (they act on other machines or
+    free hardware; amended by the user 2026-11-18): `dispatch --goal <g>`, `nodes --clean <node>` and
+    `release <resource>`. Their dry-runs are allowed by their own rules."""
+    return PROMPTED
+
+
+def is_prompted(inv):
+    return any(fnmatch.fnmatchcase(inv, pat) for pat in prompted()) and not allowed(inv)
 
 
 def build_parser():
@@ -112,11 +117,12 @@ def test_skill_and_workflow_commands_match_allow_rules():
             if sub not in sp.choices:  # prose such as `friday` alone or a placeholder
                 continue
             seen += 1
-            assert allowed(inv) or prompted(inv), f"{path}: `friday {inv}` matches no allow rule"
+            assert allowed(inv) or is_prompted(inv), f"{path}: `friday {inv}` matches no allow rule"
     assert seen >= 10
     for ok in ("nodes", "nodes --check", "nodes --clean n1 --dry-run", "dispatch --goal g --dry-run"):
         assert allowed(ok), ok
-    assert not allowed("nodes --clean n1") and not allowed("dispatch --goal g")
+    for held in ("nodes --clean n1", "dispatch --goal g", "release r1"):
+        assert not allowed(held) and is_prompted(held), held
 
 
 def test_workflow_commands_all_match_allow_rules():
