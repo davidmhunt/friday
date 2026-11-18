@@ -170,4 +170,4 @@ fails open and prints an error rather than blocking a session.
 - **Fleet**: `friday dispatch <id>` starts `/friday:execute` in a fresh Remote Control session on
   the machine that fits the directive's `Node:` line, over Tailscale SSH; sessions report back
   with cross-session messages. Robots stay SSH targets.
-- **Status page**: `friday status --html` collected from every node, served on the tailnet.
+- **Status page**: the dash, collected from every node and served on the tailnet (`friday dash`).
