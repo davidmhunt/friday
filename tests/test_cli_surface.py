@@ -16,6 +16,7 @@ FRIDAY = ROOT / "bin" / "friday"
 sys.path.insert(0, str(ROOT / "lib"))
 import friday_core as fc  # noqa: E402
 
+USER_ONLY = ("accept *",)  # typed by the user; no allow rule, no agent runs it (the hook denies it)
 PROMPTED = ("dispatch --goal *", "nodes --clean *", "release *")
 
 
@@ -24,6 +25,10 @@ def prompted():
     free hardware; amended by the user 2026-11-18): `dispatch --goal <g>`, `nodes --clean <node>` and
     `release <resource>`. Their dry-runs are allowed by their own rules."""
     return PROMPTED
+
+
+def is_user_only(inv):
+    return any(fnmatch.fnmatchcase(inv, pat) for pat in USER_ONLY) and not allowed(inv)
 
 
 def is_prompted(inv):
@@ -117,7 +122,7 @@ def test_skill_and_workflow_commands_match_allow_rules():
             if sub not in sp.choices:  # prose such as `friday` alone or a placeholder
                 continue
             seen += 1
-            assert allowed(inv) or is_prompted(inv), f"{path}: `friday {inv}` matches no allow rule"
+            assert allowed(inv) or is_prompted(inv) or is_user_only(inv), f"{path}: `friday {inv}` matches no allow rule"
     assert seen >= 10
     for ok in ("nodes", "nodes --check", "nodes --clean n1 --dry-run", "dispatch --goal g --dry-run"):
         assert allowed(ok), ok
@@ -209,3 +214,14 @@ def test_resume_kill_line_runs_under_zsh(tmp_path):
                        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"})
     assert r.returncode == 0, r.stderr
     assert r.stdout.split() == ["ARG:kill-session", "ARG:-t", "ARG:=friday-g1"]
+
+
+def test_accept_is_user_only():
+    sp = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)][0]
+    assert "accept" in sp.choices and "friday accept" in help_text()
+    for inv in ("accept core-01", "accept core-01 --note ok", "accept core-01 --reject no"):
+        assert is_user_only(inv) and not allowed(inv) and not is_prompted(inv), inv
+    for path, text in sources():
+        for inv in invocations(text):
+            if inv.split()[0] == "accept":
+                assert path.name != "execute.js", "the workflow must not run friday accept"

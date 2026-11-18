@@ -28,6 +28,10 @@ user approves the plan.
    - For `doc`, `slides` and `external`, write `## Acceptance`: bullets, each a checkable statement
      a reviewer can grade against the deliverable (sections present, figures regenerate, claims
      sourced, audience and length). It is required for those types and needs at least one `- ` bullet.
+   - `Accept: user` (default `auto`) makes the goal wait for the user: the directive ends
+     `awaiting review` and only the user's `friday accept <id>` marks it `done`. Use it where a person
+     must look at the result, always for `external`. It requires `## Review`: bullets saying what to
+     open and what to look for.
    - Tag a step `[heavy]` only when it needs deeper reasoning (a new algorithm, a numerical method,
      an architecture decision), with one line saying why.
    - Set `Node:` when the work needs a particular machine (`tag:gpu`, `tag:<board>`), else `any`.

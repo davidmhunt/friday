@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `Accept: user` directives (default `auto`) need a `## Review` section and end `awaiting review` at
+  `friday finish`; the goal branch is pushed and later directives continue. Only the user's
+  `friday accept <id> [--note TEXT | --reject REASON]` makes one `done` (a hook denies it to agents);
+  `friday land --goal` exits 7 naming directives still awaiting review. `external` directives should use
+  `Accept: user` (a warning). `awaiting review` is its own state in `friday status`, the snapshot and the
+  dash, counted as needing the user; the fleet session reports `review <goal> <ids> PR-pending`.
 - `friday --help` lists every subcommand and flag (`init`, `session-end`, `unblock`, `dispatch --resume/--unblock`,
   `status --node`) and names `friday install`; `tests/test_cli_surface.py` compares the parser with the help text
   and checks that every `friday` command in skills and `workflows/execute.js` matches an allow rule.
