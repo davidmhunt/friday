@@ -39,11 +39,19 @@ user approves the plan.
      open and what to look for.
    - Tag a step `[heavy]` only when it needs deeper reasoning (a new algorithm, a numerical method,
      an architecture decision), with one line saying why.
+   - `## Allowed commands` (optional section, before `## Log`): list every command the directive
+     needs that would otherwise prompt and nobody will be there to answer: `friday dispatch`,
+     `friday nodes --clean`, `friday release`, hardware commands, `ssh <robot> ...`. One bullet
+     per command, the command in backticks, `*` matching any text, e.g. ``- `friday dispatch --goal *` ``.
+     Keep each pattern as narrow as possible. No chained commands (`&&`, `;`, `|`), never
+     `friday accept`; `friday check` rejects those. Omit the section if nothing is needed.
    - Set `Node:` when the work needs a particular machine (`tag:gpu`, `tag:<board>`), else `any`.
 3. **Check the format.** Run `friday check --goal <goal>` and fix every error before asking for
    approval. Do not show the user files that do not pass.
 4. **Ask for approval.** Show the goal and each directive's goal, steps, Verify and out-of-scope
-   list in a few lines, and ask the user to approve, amend or drop each. On approval set the goal
+   list in a few lines. Show each directive's `## Allowed commands` verbatim, since approving the
+   plan approves those commands to run without a prompt while that directive is active; say so
+   explicitly. Then ask the user to approve, amend or drop each. On approval set the goal
    and its directives to `Status: approved`, re-run `friday check --goal <goal>`, run `friday init`
    (it merges the friday allow rules into `.claude/settings.json`; it does not commit), and commit
    the plan, adding `.claude/settings.json` when `friday init` changed it (message ends `Directive: <id>`; the plan commit may list several). If this machine does not

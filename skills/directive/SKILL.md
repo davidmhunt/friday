@@ -72,6 +72,16 @@ and may go anywhere before `## Log`. For `doc`, `slides` and `external` it is re
 least one `- ` bullet (a bullet may continue on indented lines); missing or empty is an error.
 Other sections are allowed before `## Log`.
 
+`## Allowed commands` is optional (at most once, before `## Log`): bullets, each holding one
+backticked command pattern where `*` matches any text. While the directive is active in a
+worktree, the PreToolUse hook allows a Bash command that is one simple command matching a
+pattern, without a prompt. The list is read from the directive as committed on the goal's Base
+(`git show <Base>:docs/directives/<id>.md`), the plan the user approved, so edits on the goal
+branch never widen it. Deny rules, the commit guard, `friday accept` and hardware leases still
+win. `friday check` errors on a pattern that is only `*`, contains `&&`, `;`, `|` or a backtick
+substitution, starts with `friday accept`, or matches the hook's deny list. `friday parse --json`
+returns it as `allowed`.
+
 `## Steps` is a numbered list `1.`, `2.`, ... with no gaps, in order; indented lines continue an item.
 Any other non-blank, unindented line in the section is an error, and so is an empty list. A step
 needing deeper reasoning carries `[heavy]` (a `[heavy]` inside an inline code span is only a
