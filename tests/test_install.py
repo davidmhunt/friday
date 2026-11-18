@@ -85,3 +85,34 @@ def test_uninstall_other_checkout_ok_and_refusals(tmp_path):
     foreign.write_text("x")
     f.symlink_to(foreign)
     assert run(tmp_path, "uninstall").returncode == 1 and f.is_symlink()
+
+
+def _setup(tmp_path, *extra, stdin=subprocess.DEVNULL):
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    root = FRIDAY.parent.parent
+    (tmp_path / "n.toml").write_text(
+        f'[node.laptop]\nrole = "master"\nssh = "me@laptop"\nrepos = "~/r"\nplugin_dir = "{root}"\n')
+    ssh = tmp_path / "fakessh"
+    ssh.write_text('#!/bin/bash\nexec bash -s\n')
+    ssh.chmod(0o755)
+    ctl = tmp_path / "fakectl"
+    ctl.write_text("#!/bin/bash\n")
+    ctl.chmod(0o755)
+    env = {**os.environ, "HOME": str(home), "FRIDAY_NODES": str(tmp_path / "n.toml"),
+           "FRIDAY_SSH": str(ssh), "FRIDAY_SYSTEMCTL": str(ctl)}
+    return subprocess.run([sys.executable, str(FRIDAY), "nodes", "--setup", "laptop", *extra],
+                          capture_output=True, text=True, env=env, stdin=stdin), home
+
+
+def test_setup_runs_remote_install_after_confirmation(tmp_path):
+    r, home = _setup(tmp_path, "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    link = home / ".local" / "bin" / "friday"
+    assert link.is_symlink() and os.readlink(link) == str(FRIDAY)
+
+
+def test_setup_without_confirmation_installs_nothing(tmp_path):
+    r, home = _setup(tmp_path)
+    assert r.returncode == 1
+    assert not (home / ".local" / "bin" / "friday").exists()

@@ -690,6 +690,24 @@ def setup_timer(n) -> int:
     return 1
 
 
+def setup_install(n) -> int:
+    """Run `<plugin_dir>/bin/friday install` on the node so `friday` is on its PATH."""
+    script = f"python3 {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n"
+    argv, stdin = ff.ssh_cmd(n, script)
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"friday: {n.name}: could not run friday install: {e}")
+        return 1
+    for line in r.stdout.splitlines():
+        print(f"{n.name}: {line}")
+    if r.returncode != 0:
+        print(f"friday: {n.name}: friday install failed (exit {r.returncode})"
+              + (f": {r.stderr.strip().splitlines()[-1]}" if r.stderr.strip() else ""))
+        return 1
+    return 0
+
+
 def cmd_nodes_setup(a, reg) -> int:
     n = reg.nodes.get(a.setup)
     if n is None:
@@ -706,6 +724,8 @@ def cmd_nodes_setup(a, reg) -> int:
     print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
           "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
           "every 30 s.")
+    print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which links "
+          "~/.local/bin/friday to that checkout.")
     if not a.yes:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             print("friday: refusing to change settings without a terminal to confirm; "
@@ -723,7 +743,8 @@ def cmd_nodes_setup(a, reg) -> int:
     res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_SETUP ")), "")
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: settings updated; run `friday nodes --check` to confirm")
-        return setup_timer(n)
+        rc = setup_install(n)
+        return setup_timer(n) or rc
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
            "nopython": "python3 is missing on the node",
            "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")

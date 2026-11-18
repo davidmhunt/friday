@@ -21,6 +21,8 @@ FAKE = '#!/bin/bash\necho "$@" >> "$0.argv"\nexec bash -s\n'
 def _run(tmp_path, *args, settings=None, stdin=subprocess.DEVNULL):
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True, exist_ok=True)
+    if not (home / "f").exists():
+        (home / "f").symlink_to(FRIDAY.parent.parent)  # the node's plugin_dir, for the remote install
     cfg = home / ".claude" / "settings.json"
     if settings is not None:
         cfg.write_text(settings)
