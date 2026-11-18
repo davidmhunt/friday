@@ -502,6 +502,7 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
 | `run_wrapper` | the command builds, tests and scripts must go through | `./run` |
 | `run_only` | tool names (`python`, `uv`, `cmake`, ...) that must be run through the wrapper | none |
 | `hardware` | object: resource name -> list of regular expressions matched against a Bash command | none |
+| `hardware_approval` | object: resource name (a key of `hardware`) -> `command` or `session`. `session`: one approved command approves the resource for the rest of the session while it holds the lease. `friday check` errors on another value or an unknown resource; `load_config` ignores such entries | `command` for every resource |
 
 ```json
 {
