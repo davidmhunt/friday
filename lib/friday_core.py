@@ -2,7 +2,7 @@
 
 Concepts
 - Project config: `.claude/friday.json` at the repo root (optional; without it only the
-  deny list applies). Keys: run_wrapper, run_only, hardware, verify.
+  deny list applies). Keys: run_wrapper, run_only, hardware.
 - Directive: `docs/directives/<id>.md`; goal: `docs/goals/<goal>.md`. Both formats are defined
   once, by parse_directive_full / parse_goal and validate_directive / validate_goal below.
   parse_directive is the older header-only reader kept for the hooks, `start` and `verify`.
@@ -382,6 +382,8 @@ def validate_directive(did: str, text: str) -> list[Issue]:
     deliverable_ok = d["deliverable"] in DELIVERABLES
     if "Deliverable" in hl and not deliverable_ok:
         bad("Deliverable", f"Deliverable `{d['deliverable']}` is not one of {' | '.join(DELIVERABLES)}")
+    if "Hardware" in hl and not d["hardware"].strip():
+        bad("Hardware", "Hardware must not be empty (use `none` or a resource name)")
     if "Land" in hl and d["land"] not in DIRECTIVE_LANDS:
         bad("Land", f"Land `{d['land']}` is not one of {' | '.join(DIRECTIVE_LANDS)}")
     if d["deliverable"] == "external":

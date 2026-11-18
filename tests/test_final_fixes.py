@@ -48,3 +48,10 @@ def test_verify_none_skipped_by_stop_gate(repo):
                          capture_output=True, text=True, env={**os.environ})
     assert out.returncode == 0
     assert "block" not in out.stdout and "none, not run" in out.stdout
+
+
+def test_empty_hardware_is_error(repo):
+    _set(repo, ("Hardware: none", "Hardware:"))
+    r = cli(repo, "check", "core-01")
+    assert r.returncode != 0
+    assert "Hardware must not be empty" in r.stdout + r.stderr
