@@ -1,5 +1,5 @@
 # fix-02: Every command and flag is real, documented in `--help` and allowed without a prompt
-Status: approved
+Status: blocked: review gaps remain: commit 3381fb4 (docs/directives/spec-01.md, docs/directives/spec-02.md): The earlier gap is still open, because HEAD has not moved. The only commit in the review range 11db7fc..HEAD is 3381fb4. Its message has no 'Directive: fix-02' line, so it fails the required commit-message check. It is also not fix-02 work: it rewrites the Steps and Acceptance of two other directives (spec-01 and spec-02) to cover gate-03 pre-approved commands, which is outside fix-02's scope (CLI surface, allow rules, help text, registry). fix-02's own commits (f21c7a7..f5932be, 4858379 and 11db7fc) are all before the review base, so this range holds no fix-02 work to review. Retagging the commit as fix-02 would be wrong. The fix is to review 3381fb4 under spec-01/spec-02 and to review fix-02 against a base before f21c7a7, or to record fix-02's review against its earlier range.
 Goal: v1-final
 Node: any
 Deliverable: code
@@ -58,3 +58,16 @@ Blocked: review gaps remain: tests/test_cli_surface.py:19-25 (prompted()) and :1
 
 ### 2026-11-18
 Unblocked: was blocked: review gaps remain: tests/test_cli_surface.py:19-25 (prompted()) and :115; lib/friday_core.py:33-40; skills/dispatch/SKILL.md:16, skills/clean/SKILL.md:16, skills/hardware/SKILL.md:14; docs/directives/fix-02.md Step 6 and Log: This is narrower than before but still open. f5932be adds allow rules for 'friday nodes', 'nodes --check', 'nodes --clean * --dry-run' and 'dispatch --goal * --dry-run', so the read-only nodes skill and both dry-runs no longer prompt. But the skills still run the real 'friday dispatch --goal <goal>' and 'friday nodes --clean <node>', and the hardware skill names 'friday release <resource>'. None of these matches a rule in FRIDAY_ALLOW or .claude/settings.json. The test still lets them through with the 'prompted()' exemption. Step 6 says every 'friday <sub>' in skills/ must match an allow rule, and the Goal says the commands skills run match the rules 'friday init' writes. Leaving these to prompt is a reasonable safety choice, since the user has already confirmed. But it departs from the stated requirement, and the record is only in the CHANGELOG and a code comment. The directive's Step 6 was not amended, and its Log section is empty.
+
+### 2026-11-18
+Commits:
+- 3381fb4 Amend spec-01 and spec-02: document pre-approved commands (gate-03), as the user asked
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+step 1: already implemented in f21c7a7; focused tests re-run, passing.
+step 2: already implemented in e94da8a (bin/friday check_node reports N friday-* sessions per node); no change needed; focused tests pass.
+step 3: already satisfied by 721ed1e; verified help text and test_cli_surface pass; no change
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_cli_surface.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: not recorded
+Blocked: review gaps remain: commit 3381fb4 (docs/directives/spec-01.md, docs/directives/spec-02.md): The earlier gap is still open, because HEAD has not moved. The only commit in the review range 11db7fc..HEAD is 3381fb4. Its message has no 'Directive: fix-02' line, so it fails the required commit-message check. It is also not fix-02 work: it rewrites the Steps and Acceptance of two other directives (spec-01 and spec-02) to cover gate-03 pre-approved commands, which is outside fix-02's scope (CLI surface, allow rules, help text, registry). fix-02's own commits (f21c7a7..f5932be, 4858379 and 11db7fc) are all before the review base, so this range holds no fix-02 work to review. Retagging the commit as fix-02 would be wrong. The fix is to review 3381fb4 under spec-01/spec-02 and to review fix-02 against a base before f21c7a7, or to record fix-02's review against its earlier range.
