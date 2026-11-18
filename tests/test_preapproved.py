@@ -195,3 +195,102 @@ def test_editing_goal_base_header_cannot_widen(tmp_path, monkeypatch):
 def test_marker_without_goal_base_gives_no_decision(repo):
     fc.write_marker(repo, {"id": "core-01"})
     assert pre(repo, "friday nodes --clean")[0] is None
+
+
+BIN = ROOT / "bin" / "friday"
+
+
+def start(r):
+    out = subprocess.run([sys.executable, str(BIN), "start", "core-01"], cwd=r, capture_output=True, text=True,
+                         env=os.environ)
+    assert out.returncode == 0, out.stdout + out.stderr
+    return out
+
+
+def edit_goal_base(r, new):
+    g = r / "docs" / "goals" / "core.md"
+    g.write_text(g.read_text().replace("Base: main", f"Base: {new}"))
+    git(r, "commit", "--no-verify", "-qam", "edit base")
+
+
+@pytest.mark.parametrize("new", ["friday/core", "friday/core-01", "friday/other"])
+def test_start_with_edited_base_on_a_friday_branch_gives_no_decision(tmp_path, monkeypatch, new):
+    r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["friday release *"])
+    if new != "friday/core":
+        git(r, "branch", new, "main")                 # exists, so start accepts the edited Base
+    edit_goal_base(r, new)
+    start(r)
+    assert fc.read_marker(r)["goal_base"] == new
+    assert pre(r, "friday release radar")[0] is None
+
+
+def test_start_with_edited_base_on_local_only_branch_gives_no_decision(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["friday release *"])
+    git(r, "branch", "wip")                           # local only, no origin/wip
+    edit_goal_base(r, "wip")
+    git(r, "checkout", "-q", "wip")
+    git(r, "merge", "--no-verify", "-q", "friday/core")   # wip's goal file names wip and lists the pattern
+    git(r, "checkout", "-q", "friday/core")
+    start(r)
+    assert fc.read_marker(r)["goal_base"] == "wip"
+    assert "friday release *" in subprocess.run(["git", "-C", str(r), "show", "wip:docs/directives/core-01.md"],
+                                                capture_output=True, text=True).stdout
+    assert pre(r, "friday release radar")[0] is None
+
+
+def test_pattern_on_local_base_but_not_pushed_gives_no_decision(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, [])
+    git(r, "checkout", "-q", "main")
+    (r / "docs" / "directives" / "core-01.md").write_text(DIRECTIVE.format(allowed=allowed_section(["friday release *"])))
+    git(r, "commit", "--no-verify", "-qam", "local only")
+    git(r, "checkout", "-q", "friday/core")
+    start(r)
+    assert pre(r, "friday release radar")[0] is None
+
+
+@pytest.mark.parametrize("cmd", [
+    "git push origin main", "git push origin friday/other", "git push origin HEAD:friday/other",
+    "git push origin friday/core", "git push origin friday/core:main", "git push --all",
+    "cd . && git push origin wip", "git -C . push origin wip", "git push origin friday/core-01 wip",
+])
+def test_push_guard_denies(repo, cmd):
+    git(repo, "checkout", "-qb", "friday/core-01")
+    d, why = pre(repo, cmd)
+    assert d == "deny", (cmd, why)
+
+
+@pytest.mark.parametrize("cmd", [
+    "git push origin friday/core-01", "git push -u origin friday/core-01", "git push origin HEAD",
+    "git push origin HEAD:friday/core-01", "git push origin friday/core-01:friday/core-01", "git push origin",
+    "git -C . push origin friday/core-01", "cd . && git push origin friday/core-01", "git push",
+])
+def test_push_guard_allows_the_directive_branch(repo, cmd):
+    git(repo, "checkout", "-qb", "friday/core-01")
+    git(repo, "update-ref", "refs/remotes/origin/friday/core-01", "HEAD")
+    git(repo, "config", "branch.friday/core-01.remote", "origin")
+    git(repo, "config", "branch.friday/core-01.merge", "refs/heads/friday/core-01")
+    assert pre(repo, cmd)[0] != "deny"
+
+
+def test_push_guard_judges_a_bare_push_by_its_upstream(repo):
+    git(repo, "checkout", "-qb", "friday/core-01")
+    git(repo, "config", "remote.origin.url", ".")
+    git(repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "config", "branch.friday/core-01.remote", "origin")
+    git(repo, "config", "branch.friday/core-01.merge", "refs/heads/main")
+    assert pre(repo, "git push")[0] == "deny"
+
+
+def test_push_guard_allows_goal_branch_for_land_goal(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, ALLOWED)
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    p = r / "docs" / "directives" / "core-01.md"
+    p.write_text(p.read_text().replace("Land: pr", "Land: goal"))
+    assert pre(r, "git push origin friday/core")[0] != "deny"
+    assert pre(r, "git push origin friday/core-01")[0] == "deny"
+
+
+def test_push_without_a_directive_is_not_guarded(repo):
+    fc.marker_path(repo).unlink()
+    assert pre(repo, "git push origin wip")[0] is None

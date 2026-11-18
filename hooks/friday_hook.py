@@ -211,6 +211,89 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     return None
 
 
+_PUSH_VALUE_OPTS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--signed", "--recurse-submodules"}
+
+
+def _push_targets(args: list[str], target: Path) -> list[str] | None:
+    """Branch names a `git push` with these args (after `push`) updates; None when not knowable
+    (--all, --mirror, an unreadable current branch or upstream)."""
+    pos, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--all", "--mirror", "--branches"):
+            return None
+        if a in _PUSH_VALUE_OPTS:
+            i += 2
+            continue
+        if a == "--":
+            pos += args[i + 1:]
+            break
+        if not a.startswith("-"):
+            pos.append(a)
+        i += 1
+    cur = fc.current_branch(target)
+    specs = pos[1:]
+    if not specs:
+        if len(pos) == 1:                       # `git push origin`: the current branch
+            return [cur] if cur else None
+        up = fc._git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], target)
+        if not up:
+            return [cur] if cur else None
+        return [up.split("/", 1)[1] if "/" in up else up]
+    out = []
+    for sp in specs:
+        dst = sp.lstrip("+").rsplit(":", 1)[-1]
+        if dst in ("", "HEAD", "@"):
+            if not cur:
+                return None
+            dst = cur
+        out.append(dst[len("refs/heads/"):] if dst.startswith("refs/heads/") else dst)
+    return out
+
+
+def check_push(cmd: str, cwd: Path) -> str | None:
+    """While a directive is active, `git push` may update only the goal's own branch (friday/<id>
+    for `Land: pr`). Judged in the repository the command pushes from (`cd DIR &&`, `git -C DIR`).
+    This keeps origin/<Base> from being edited into a trusted source by the agent."""
+    here = cwd
+    for simple in fc.split_commands(cmd):
+        argv = fc.argv_of(simple)
+        if not argv:
+            continue
+        if argv[0] == "cd":
+            if len(argv) > 1 and argv[1] != "-":
+                here = here / Path(argv[1]).expanduser()
+            continue
+        if len(argv) < 2 or argv[0] != "git":
+            continue
+        rest, target = argv[1:], here
+        while rest and rest[0] in ("-C", "-c") and len(rest) > 1:
+            if rest[0] == "-C":
+                target = target / Path(rest[1]).expanduser()
+            rest = rest[2:]
+        if not rest or rest[0] != "push":
+            continue
+        marker = fc.read_marker(target)
+        if not marker:
+            continue
+        did = marker["id"]
+        goal, _ = _goal_and_base(target, did)
+        ok = {f"friday/{goal}"} if goal else set()
+        try:
+            root = fc.repo_root(target)
+            land = fc.parse_directive_full(fc.directive_path(root, did).read_text()).get("land", "")
+        except (OSError, AttributeError):
+            land = ""
+        if land.strip().lower() == "pr":
+            ok = {f"friday/{did}"}
+        dests = _push_targets(rest[1:], target)
+        if dests is None or not dests or any(d not in ok for d in dests):
+            return (f"While {did} is active, `git push` may only update {' or '.join(sorted(ok)) or 'the goal branch'}"
+                    f" (got {', '.join(dests) if dests else 'an unjudgeable target'}). Push the goal branch explicitly: "
+                    f"git push origin {sorted(ok)[0] if ok else '<goal branch>'}.")
+    return None
+
+
 def pretool(payload: dict) -> None:
     if payload.get("tool_name") != "Bash":
         return
@@ -224,6 +307,8 @@ def pretool(payload: dict) -> None:
     if (r := check_accept(cmd)):
         results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
+        results.append(("deny", r))
+    if (r := check_push(cmd, cwd)):
         results.append(("deny", r))
     if (r := check_commit(cmd, cwd)):
         results.append(r)
