@@ -33,6 +33,12 @@ dispatched sessions run match the allow rules `friday init` writes.
    which stay prompted on purpose (they act on other machines or free hardware; amended by the
    user 2026-11-18) and are named in the test's `prompted()` list; steps 1, 2, 5.
    CHANGELOG entries.
+7. Shell-safe tmux targets: every tmux target friday prints for a person to copy, or builds
+   into a command line, is quoted (`-t '=friday-<g>'`), because zsh expands a bare `=word`; remote
+   scripts keep running under `bash -s` and local ones under `sh -c`. A test in
+   tests/test_cli_surface.py fails on any unquoted `-t =` in bin/ and lib/, and runs the
+   `dispatch --resume` kill line under zsh (skipped when zsh is absent). Amended by the user
+   2026-11-18.
 
 ## Out of scope
 - New commands other than `status --node` (accept, result and unblock belong to other directives).
