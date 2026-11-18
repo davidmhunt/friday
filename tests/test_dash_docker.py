@@ -54,10 +54,10 @@ def test_compose_host_network_and_restart(svc):
 
 def test_compose_mounts(svc):
     doc, s = svc
-    vols = [v.split(":") for v in s["volumes"]]
+    vols = [re.sub(r"\$\{[^}]*\}", lambda m: m.group(0).replace(":", ";"), v).split(":") for v in s["volumes"]]
     by_target = {v[1]: v for v in vols}
     reg = by_target["/home/friday/.config/friday/nodes.toml"]
-    assert reg[0].endswith("/.config/friday/nodes.toml") and reg[2] == "ro"
+    assert reg[0].startswith("${FRIDAY_NODES_FILE;?") and reg[2] == "ro"  # set by `friday dash up`
     sock = by_target["/var/run/tailscale/tailscaled.sock"]
     assert sock[0] == "/var/run/tailscale/tailscaled.sock" and sock[2] == "ro"
     state = by_target["/home/friday/.local/state/friday/dash"]
@@ -83,7 +83,7 @@ def fakes(tmp_path):
     py = sys.executable
     (bin_ / "docker").write_text(f"""#!{py}
 import json, os, sys
-open({str(log)!r}, "a").write(json.dumps({{"argv": sys.argv[1:], "token": os.environ.get("GH_TOKEN")}}) + "\\n")
+open({str(log)!r}, "a").write(json.dumps({{"argv": sys.argv[1:], "token": os.environ.get("GH_TOKEN"), "nodes": os.environ.get("FRIDAY_NODES_FILE")}}) + "\\n")
 """)
     (bin_ / "gh").write_text(f"""#!{py}
 import os, sys
@@ -97,8 +97,11 @@ else:
     return tmp_path
 
 
-def friday(fakes, *args, path=None):
-    env = {k: v for k, v in os.environ.items() if k != "GH_TOKEN"}
+def friday(fakes, *args, path=None, registry=True):
+    env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "FRIDAY_NODES")}
+    if registry:
+        (fakes / "reg.toml").write_text("")
+        env["FRIDAY_NODES"] = str(fakes / "reg.toml")
     env["PATH"] = path if path is not None else f"{fakes / 'bin'}{os.pathsep}{os.path.dirname(sys.executable)}"
     env["HOME"] = str(fakes)
     return subprocess.run([sys.executable, str(FRIDAY), "dash", *args], env=env, capture_output=True, text=True)
@@ -117,6 +120,18 @@ def test_up_argv_and_token_in_env_only(fakes):
     assert TOKEN not in json.dumps(c["argv"])
     assert TOKEN not in r.stdout + r.stderr  # what it says it ran does not leak the token
     assert "docker compose -f" in r.stdout
+
+
+def test_up_mounts_the_resolved_registry(fakes):
+    assert friday(fakes, "up").returncode == 0
+    assert calls(fakes)[0]["nodes"] == str(fakes / "reg.toml")
+
+
+def test_up_without_registry_fails_clearly(fakes):
+    r = friday(fakes, "up", registry=False)
+    assert r.returncode == 1
+    assert "no registry file found" in r.stderr
+    assert not (fakes / "docker.log").exists()
 
 
 def test_down_argv(fakes):
