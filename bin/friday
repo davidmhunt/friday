@@ -549,6 +549,10 @@ def probe_script(node) -> str:
         'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
         'for t in tmux git; do command -v $t >/dev/null 2>&1 && echo "FRIDAY_PROBE $t=ok" || echo "FRIDAY_PROBE $t=missing"; done',
         f'[ -e {plug}/.git ] && echo "FRIDAY_PROBE plugin=ok" || echo "FRIDAY_PROBE plugin=missing"',
+        'f=$(command -v friday 2>/dev/null)',
+        f'if [ -z "$f" ]; then echo "FRIDAY_PROBE friday=missing"',
+        f'elif [ "$(readlink -f "$f")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
+        'else echo "FRIDAY_PROBE friday=$(readlink -f "$f")"; fi',
         "if command -v python3 >/dev/null 2>&1; then",
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
@@ -580,6 +584,11 @@ def check_node(node) -> tuple:
             fixes.append(f"fix: install {t} on {node.name}")
     if got.get("plugin") != "ok":
         fixes.append(f"fix: git clone the friday repo to {node.plugin_dir} on {node.name}")
+    fr = got.get("friday", "missing")
+    if fr == "missing":
+        fixes.append(f"friday on PATH: missing; fix: `friday nodes --setup {node.name}`")
+    elif fr != "ok":
+        fixes.append(f"friday on PATH: points at {fr}; fix: `friday nodes --setup {node.name}`")
     trust = got.get("trust")
     if trust == "unknown":
         fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
@@ -589,7 +598,7 @@ def check_node(node) -> tuple:
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
-               f"plugin_dir {got.get('plugin', '?')}, trust {trust or '?'}")
+               f"plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
     return summary, fixes
 
 

@@ -116,3 +116,32 @@ def test_setup_without_confirmation_installs_nothing(tmp_path):
     r, home = _setup(tmp_path)
     assert r.returncode == 1
     assert not (home / ".local" / "bin" / "friday").exists()
+
+
+def _check(tmp_path):
+    r, home = _setup(tmp_path, stdin=subprocess.DEVNULL)  # also leaves a home; reuse its node file
+    return home
+
+
+def _run_check(tmp_path, home):
+    env = {**os.environ, "HOME": str(home), "FRIDAY_NODES": str(tmp_path / "n.toml"),
+           "FRIDAY_SSH": str(tmp_path / "fakessh"), "PATH": "/usr/bin:/bin"}  # no real friday on PATH
+    return subprocess.run([sys.executable, str(FRIDAY), "nodes", "--check"],
+                          capture_output=True, text=True, env=env)
+
+
+def test_check_reports_ok_missing_and_wrong_target(tmp_path):
+    home = _check(tmp_path)  # without --yes: nothing installed, node file written
+    link = home / ".local" / "bin" / "friday"
+    r = _run_check(tmp_path, home)
+    assert "friday on PATH: missing" in r.stdout and "friday nodes --setup laptop" in r.stdout
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(FRIDAY)
+    r = _run_check(tmp_path, home)
+    assert "friday on PATH: ok" in r.stdout and "friday on PATH: missing" not in r.stdout
+    other = fake_checkout(tmp_path, "other")
+    link.unlink()
+    link.symlink_to(other)
+    r = _run_check(tmp_path, home)
+    assert f"points at {other}" in r.stdout and "friday nodes --setup laptop" in r.stdout
+    assert r.returncode == 1

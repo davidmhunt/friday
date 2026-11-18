@@ -183,7 +183,7 @@ def test_nodes_no_file(tmp_path):
 FAKE = """#!/bin/bash
 echo "$@" >> "$0.argv"; cat >> "$0.stdin"
 case "$*" in
-  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=ok\\nFRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=ok\\n';;
+  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE friday=ok\\nFRIDAY_PROBE trust=ok\\nFRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=ok\\n';;
   *me@alfred*) exit 255;;
   *me@bot*) echo FRIDAY_PROBE reach=ok;;
 esac
@@ -201,7 +201,7 @@ def test_nodes_check_unreachable_worker_fails(tmp_path):
 
 def test_nodes_check_untrusted_and_ready(tmp_path):
     fake = FAKE.replace("*me@alfred*) exit 255;;",
-                        "*me@alfred*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=missing\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=no\\n';;")
+                        "*me@alfred*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=missing\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE friday=ok\\nFRIDAY_PROBE trust=no\\n';;")
     r = _friday(tmp_path, GOOD, "--check", ssh_script=fake)
     assert r.returncode == 1
     assert "accept the trust prompt" in r.stdout and "install Claude Code" in r.stdout
@@ -212,7 +212,7 @@ def test_nodes_check_untrusted_and_ready(tmp_path):
 
 
 def test_nodes_check_reports_missing_settings_prompts(tmp_path):
-    base = "FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=ok\\n"
+    base = "FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE friday=ok\\nFRIDAY_PROBE trust=ok\\n"
     for extra, want, absent in [
             ("FRIDAY_PROBE workflow=no\\nFRIDAY_PROBE auto=no\\n", ["workflow prompt", "auto-mode prompt"], []),
             ("FRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=no\\n", ["auto-mode prompt"], ["workflow prompt"]),
@@ -244,7 +244,7 @@ def test_settings_probe_script_semantics(tmp_path):
 
 def test_nodes_check_ready_unreachable_untrusted_together(tmp_path):
     reg = GOOD + '[node.bert]\nrole = "worker"\nssh = "me@bert"\nrepos = "~/r"\nplugin_dir = "~/f"\n'
-    fake = FAKE.replace("*me@bot*)", "*me@bert*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE trust=no\\n';;\n  *me@bot*)")
+    fake = FAKE.replace("*me@bot*)", "*me@bert*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE friday=ok\\nFRIDAY_PROBE trust=no\\n';;\n  *me@bot*)")
     r = _friday(tmp_path, reg, "--check", ssh_script=fake)
     assert r.returncode == 1
     out = r.stdout
