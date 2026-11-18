@@ -89,7 +89,9 @@ reverifies every directive, marks the goal done and opens the one PR (exit 6: a 
 nothing pushed); `friday unblock <id>` sets a blocked directive back to `approved` (and a blocked goal
 to `running`) in one commit. `friday accept <id> [--note TEXT | --reject REASON]` is typed by the user:
 it turns an `awaiting review` directive (`Accept: user`) into `done` or `blocked: REASON` in one commit. `friday commits <id> [--json]` lists the directive's own commits since
-its Base (exit 3: none, 2: error). A PostToolUse hook runs the format check on every edited goal or directive file and
+its Base (exit 3: none, 2: error). `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` records an expensive run
+once in the tracked `results/<id>.json` (metrics, file sha256 and size, command, HEAD, dirty, node, time).
+A PostToolUse hook runs the format check on every edited goal or directive file and
 sends errors back to the model. Details: [docs/workflow.md](docs/workflow.md).
 
 ## Per project
