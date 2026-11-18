@@ -255,7 +255,8 @@ def test_check_schema_rejects_bad_snapshot(tree):
 
 def run_cli(t, *args):
     env = {**os.environ, "PATH": os.environ["PATH"] + os.pathsep + str(Path(sys.executable).parent),
-           "FRIDAY_NODES": str(t.reg)}
+           "FRIDAY_NODES": str(t.reg),
+           "HOME": str(t.tmp / "home")}  # hermetic: never read the real ~/.config/friday/node.toml
     return subprocess.run([sys.executable, str(CLI), *args], cwd=t.repos / "alpha", capture_output=True,
                           text=True, env=env)
 
