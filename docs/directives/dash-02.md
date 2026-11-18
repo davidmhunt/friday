@@ -1,5 +1,5 @@
 # dash-02: `friday nodes --check` shows each node's dash status; the docs explain registration
-Status: approved
+Status: done
 Goal: deploy
 Node: any
 Deliverable: code
@@ -34,3 +34,12 @@ that node's `repos` folder. tests/test_nodes_check_dash.py proves each line.
 - Acting on goals or nodes from the page.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- f557f40 dash-02: test that the missing-card text ships in the page JS
+- 679247f dash-02: docs/dashboard.md opens with how machines and projects get on the page
+- 435291b dash-02: a missing machine card says to run friday nodes --setup <name> on the master
+- ce265a1 dash-02: friday nodes --check prints each node's dash status line with its fix
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_nodes_check_dash.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
