@@ -146,6 +146,12 @@ must name this goal.
   done and opens the one PR into Base (exit 6 when a Verify fails; nothing is pushed).
 - A Stop hook keeps the active directive from ending until its Verify passes; a PostToolUse hook
   runs the format check after edits to goal and directive files.
+- Amending an approved goal: commit the change on its Base and check it with `friday check`. The
+  next `friday start` merges Base into the goal branch (message `Merge <Base> into friday/<goal>
+  before <id>`, trailer `Directive: <id>`; a conflict aborts the merge and start exits non-zero).
+  An amendment to the running directive takes effect when it restarts. While a directive is active
+  a `commit-msg` git hook installed by `friday init`/`friday start` refuses commits without
+  `Directive: <id>` (`git commit --no-verify` overrides deliberately).
 - Changing scope: anything that alters Goal, Steps, Verify, Acceptance or Out of scope goes back to
   the user, then gets a dated line in the Log.
 

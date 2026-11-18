@@ -4,6 +4,11 @@
 
 Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
 
+- Plan amendments are commits on the goal's Base; `friday start` merges Base into the goal branch
+  before each directive (conflict: abort, non-zero exit). A `commit-msg` git hook installed by
+  `friday init`/`start` refuses commits without `Directive: <id>` while a directive is active; the
+  PreToolUse commit guard judges the repo the command commits in. Skills, docs/workflow.md and
+  docs/fleet.md describe it.
 - Goals in `docs/goals/<goal>.md`; directives gain `Goal`, `Deliverable` (code, doc, slides,
   external), `Land` and `## Acceptance`.
 - `friday check`, `friday parse`, `friday land --goal` (exit code 6: a Verify failed, nothing

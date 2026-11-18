@@ -40,6 +40,10 @@ user approves the plan.
    the plan, adding `.claude/settings.json` when `friday init` changed it (message ends `Directive: <id>`; the plan commit may list several). If this machine does not
    satisfy the directives' `Node:` lines, offer to run the goal elsewhere with
    `friday dispatch --goal <goal>` (see docs/fleet.md) instead of `/friday:execute` here.
+   Amending an approved goal later: make the change as a commit on its Base (not on `friday/<goal>`),
+   check it with `friday check --goal <goal>`, and tell the user. A running goal picks it up at the
+   next `friday start`, which merges Base into the goal branch; an amendment to the running
+   directive takes effect when that directive restarts.
 5. **Hand off.** Tell the user how it runs: `/friday:execute <id>` for each directive, in order
    (a workflow that implements, verifies and reviews on the goal branch; the goal lands as one PR
    with `friday land --goal <goal>`). Start the first if the user said to go ahead.
