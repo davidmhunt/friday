@@ -982,14 +982,50 @@ def resume_checks(root: Path, a) -> dict:
             _refuse("unblock", f"could not reset {u} on {n.name} ({(r.stderr or r.stdout).strip()})",
                     "edit its Status in the worktree by hand")
         print(f"reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
-    return {"node": n, "repo": repo_name, "state": st, "remaining": [i for i, _ in todo]}
+    return {"node": n, "repo": repo_name, "state": st, "remaining": [i for i, _ in todo],
+            "report_to": a.report_to or (rec or {}).get("report_to") or reg.report_to}
+
+
+def resume_restart(root: Path, a) -> int:
+    """`--resume` step 3: after the checks pass, replace the session and record a `resume`."""
+    c = resume_checks(root, a)
+    n, st, gid = c["node"], c["state"], a.goal
+    if not c["remaining"]:
+        _refuse("goal-done", f"goal {gid} has no directive left to run in {st['path']}", "nothing to resume")
+    if not c["report_to"]:
+        _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
+    host = socket.gethostname()
+    launch = ff.launch_line(n, gid, st["path"], host, c["remaining"], c["report_to"])
+    kill = f"tmux kill-session -t =friday-{gid}"
+    if a.dry_run:
+        if st["session"]:
+            print(f"kill: {kill}")
+        print(f"launch: {launch}")
+        print("dry run: nothing changed on any node")
+        return 0
+    if st["session"]:
+        argv, stdin = ff.ssh_cmd(n, kill + "\n")
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"friday: could not stop session friday-{gid} on {n.name}: {r.stderr.strip()}", file=sys.stderr)
+            return 1
+    argv, stdin = ff.ssh_cmd(n, launch + "\n")
+    r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"friday: launch failed on {n.name}: {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    path = ff.record_dispatch({
+        "kind": "resume", "goal": gid, "directives": c["remaining"], "repo": c["repo"], "node": n.name,
+        "tmux_session": f"friday-{gid}", "worktree": st["path"], "branch": f"friday/{gid}",
+        "report_to": c["report_to"], "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+    print(f"resumed {gid} on {n.name}: tmux session friday-{gid}; recorded in {path}")
+    return 0
 
 
 def cmd_dispatch(a) -> int:
     root = _root()
     if a.resume:
-        resume_checks(root, a)
-        return 0
+        return resume_restart(root, a)
     plan = dispatch_preconditions(root, a.goal, a.node)
     n = plan["node"]
     print(f"dispatch {a.goal} -> {n.name} ({n.ssh}); {plan['reason']}; {plan['load']} friday session(s) running")

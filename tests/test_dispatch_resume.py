@@ -44,6 +44,9 @@ def env(tmp_path):
                      f'repos = "{repos}"\nplugin_dir = "~/friday"\n')
     e = {**os.environ, "FRIDAY_SSH": str(ssh), "FRIDAY_NODES": str(nodes), "FAKE_HOME": str(home),
          "XDG_STATE_HOME": str(tmp_path / "state")}
+    fake = home / ".local" / "bin" / "tmux"
+    fake.write_text("#!/bin/bash\ncase \"$1\" in capture-pane|has-session) exit 1;; esac\nexit 0\n")
+    fake.chmod(0o755)
     return type("E", (), {"home": home, "repos": repos, "clone": clone, "proj": proj, "env": e,
                           "tmp": tmp_path})
 
@@ -84,8 +87,7 @@ def directives(e, statuses, goal="g1"):
 def session(e, pane, goal="g1"):
     (e.tmp / f"friday-{goal}.pane").write_text(pane)
     tmux = ["#!/bin/bash", 'sub=$1; shift; t=; while [ $# -gt 0 ]; do [ "$1" = -t ] && t=$2; shift; done',
-            't=${t#=}; t=${t%:}', f'f="{e.tmp}/${{t}}.pane"', '[ -f "$f" ] || exit 1',
-            '[ "$sub" = capture-pane ] && cat "$f"', "exit 0"]
+            't=${t#=}; t=${t%:}', f'f="{e.tmp}/${{t}}.pane"', 'if [ "$sub" = capture-pane ]; then [ -f "$f" ] && cat "$f" || exit 1; fi', "exit 0"]
     p = e.home / ".local" / "bin" / "tmux"
     p.write_text("\n".join(tmux) + "\n")
     p.chmod(0o755)
@@ -100,6 +102,7 @@ def resume(e, *args):
 def test_resume_ok_reports_uncommitted_and_keeps_them(env):
     record(env)
     wt = worktree(env)
+    directives(env, ["approved"])
     (wt / "a.txt").write_text("changed")
     (wt / "new.txt").write_text("x")
     rc, out, err = resume(env)
@@ -113,6 +116,7 @@ def test_resume_ok_reports_uncommitted_and_keeps_them(env):
 def test_resume_clean_worktree_and_idle_session(env):
     record(env)
     worktree(env)
+    directives(env, ["approved"])
     session(env, "done\n\n❯ \n")
     rc, out, err = resume(env)
     assert rc == 0, err
@@ -123,6 +127,7 @@ def test_node_from_latest_record_or_flag(env):
     record(env, node="gone")
     record(env)  # latest wins
     worktree(env)
+    directives(env, ["approved"])
     assert resume(env)[0] == 0
     assert resume(env, "--node", "w")[0] == 0
     rc, _, err = resume(env, "--node", "nope")
@@ -131,6 +136,7 @@ def test_node_from_latest_record_or_flag(env):
 
 def test_no_record_and_no_node_refuses(env):
     worktree(env)
+    directives(env, ["approved"])
     rc, _, err = resume(env)
     assert rc == 21 and "no dispatch record" in err
     assert resume(env, "--node", "w")[0] == 0
@@ -221,3 +227,65 @@ def test_unblock_dry_run_changes_nothing_and_unknown_id_refuses(env):
     assert "blocked: x" in (wt / "docs" / "directives" / "d1.md").read_text()
     rc, _, err = resume(env, "--unblock", "zz")
     assert rc == 26 and "not a directive" in err
+
+
+def logging_tmux(e):
+    """A tmux that logs every call to tmux.log; capture-pane answers from the pane file."""
+    log = e.tmp / "tmux.log"
+    script = ["#!/bin/bash", 'echo "$@" >> "%s"' % log,
+              'f="%s/friday-g1.pane"' % e.tmp,
+              'case "$1" in capture-pane) [ -f "$f" ] && cat "$f" || exit 1;; has-session) [ -f "$f" ] || exit 1;; esac',
+              "exit 0"]
+    p = e.home / ".local" / "bin" / "tmux"
+    p.write_text("\n".join(script) + "\n")
+    p.chmod(0o755)
+    return log
+
+
+def records(e):
+    p = Path(e.env["XDG_STATE_HOME"]) / "friday" / "dispatches.jsonl"
+    return [json.loads(l) for l in p.read_text().splitlines()]
+
+
+def test_restart_kills_idle_session_launches_remaining_and_records(env):
+    record(env, report_to="boss")
+    wt = worktree(env)
+    directives(env, ["done", "approved", "approved"])
+    (env.tmp / "friday-g1.pane").write_text("done\n\n❯ \n")
+    log = logging_tmux(env)
+    rc, out, err = resume(env)
+    assert rc == 0, err
+    calls = log.read_text()
+    k, nw = calls.find("kill-session -t =friday-g1"), calls.find("new -d -s friday-g1")
+    assert 0 <= k < nw
+    launch = calls[nw:]
+    assert f"-c {wt}" in launch and "d2" in launch and "d3" in launch and "d1" not in launch.split("Run the remaining directives", 1)[1]
+    rec = records(env)[-1]
+    assert rec["kind"] == "resume" and rec["goal"] == "g1" and rec["node"] == "w"
+    assert rec["directives"] == ["d2", "d3"] and rec["worktree"] == str(wt)
+
+
+def test_restart_without_session_does_not_kill(env):
+    record(env, report_to="boss")
+    worktree(env)
+    directives(env, ["approved"])
+    log = logging_tmux(env)
+    rc, _, err = resume(env)
+    assert rc == 0, err
+    calls = log.read_text()
+    assert "kill-session" not in calls and "new -d -s friday-g1" in calls
+
+
+def test_restart_dry_run_prints_launch_only(env):
+    record(env, report_to="boss")
+    worktree(env)
+    directives(env, ["done", "approved"])
+    (env.tmp / "friday-g1.pane").write_text("❯ \n")
+    log = logging_tmux(env)
+    n_before = len(records(env))
+    rc, out, err = resume(env, "--dry-run")
+    assert rc == 0, err
+    assert "kill: tmux kill-session -t =friday-g1" in out and "launch: tmux new -d -s friday-g1" in out
+    assert "d2" in out and "remaining directives" in out
+    assert "kill-session" not in log.read_text() and "new -d" not in log.read_text()
+    assert len(records(env)) == n_before
