@@ -27,6 +27,11 @@
 
 Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
 
+- Plan amendments are commits on the goal's Base; `friday start` merges Base into the goal branch
+  before each directive (conflict: abort, non-zero exit). A `commit-msg` git hook installed by
+  `friday init`/`start` refuses commits without `Directive: <id>` while a directive is active; the
+  PreToolUse commit guard judges the repo the command commits in. Skills, docs/workflow.md and
+  docs/fleet.md describe it.
 - Goals in `docs/goals/<goal>.md`; directives gain `Goal`, `Deliverable` (code, doc, slides,
   external), `Land` and `## Acceptance`.
 - `friday check`, `friday parse`, `friday land --goal` (exit code 6: a Verify failed, nothing
@@ -71,6 +76,13 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
 
 ### Fixed
 
+- Review range: v1-final's fix-02 blocked twice, once because its restart after `friday unblock`
+  moved the review base past all of fix-02's work, and once because a plan amendment committed
+  mid-run (other directives' files only) failed the "every commit carries `Directive: fix-02`"
+  check. `friday commits <id> [--json]` now lists the directive's own commits since it left its
+  Base (merge-base), surviving restarts, unblock and merging Base into the goal branch; plan-only
+  commits are ignored and untagged code commits are reported as `untracked`. `friday finish`'s
+  Log and both review prompts use it.
 - `/friday:execute`: a dispatched `friday land` was refused by the auto-mode classifier despite the
   `Bash(friday ...)` allow rules, because the agent chained it (`cd ... && friday land ...; echo $?`)
   and a chained command matches no rule. Workflow prompts now tell the agent to run each friday

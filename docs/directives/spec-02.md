@@ -16,8 +16,9 @@ against a throwaway repo, so the tutorial cannot drift.
 ## Steps
 1. docs/getting-started.md: requirements (Claude Code version, python3, git, `gh auth`, an
    `origin` remote); clone with `-b v1` until 1.0 is on main; install the plugin; `friday install`;
-   `friday init` in the repo; CLAUDE.md, `.claude/friday.json`, `runs/` in `.gitignore`;
-   squash-merge setting; `/friday:plan`; where the plan commit lands and that the user pushes it;
+   `friday init` in the repo (what it writes, including the `commit-msg` hook); CLAUDE.md, `.claude/friday.json`, `runs/` in `.gitignore`;
+   squash-merge setting; `/friday:plan`; where the plan commit lands (Base) and that the user pushes it; that later amendments go on
+   Base too;
    pre-approving commands under `## Allowed commands` before approval (and checking that list in
    the approval summary); `/friday:execute`; reviewing and merging the PR; what to do when it stops (blocked, awaiting
    review). End with pointers to fleet and dashboard.
@@ -29,7 +30,8 @@ against a throwaway repo, so the tutorial cannot drift.
    suite; a hardware test as an attended directive with `Hardware:` set, `Accept: user` and the
    checklist in `## Review`; a dispatched robot directive whose ssh, flashing and hardware
    commands are pre-approved under `## Allowed commands`; `hardware` patterns for ssh-to-robot and flashing commands; what the
-   deny list refuses and how to do those steps yourself; submodule changes land in the
+   deny list refuses even when pre-approved (e.g. `sudo` over ssh) and how to do those steps
+   yourself; submodule changes land in the
    component's own repo first. One complete example goal.
 4. docs/recipes/pcb.md (KiCad): Verify is `kicad-cli sch erc` and `kicad-cli pcb drc` with
    `--exit-code-violations`; layout changes carry `Accept: user` with `## Review` naming the

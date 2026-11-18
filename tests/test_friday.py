@@ -70,7 +70,7 @@ def repo(tmp_path, monkeypatch):
     (r / "docs" / "goals").mkdir(parents=True)
     (r / "docs" / "goals" / "core.md").write_text(GOAL)
     subprocess.run(["git", "-C", str(r), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(r), "commit", "-qm", "init"], check=True)
+    subprocess.run(["git", "-C", str(r), "commit", "--no-verify", "-qm", "init"], check=True)
     subprocess.run(["git", "-C", str(r), "checkout", "-qb", "friday/core-01"], check=True)
     return r
 
@@ -156,15 +156,6 @@ def test_commit_on_main_asks_without_directive(repo):
     assert pre(repo, "git commit -m x")[0] == "ask"
 
 
-def test_active_directive_requires_trailer(repo):
-    assert cli(repo, "start", "core-01").returncode == 0
-    d, reason = pre(repo, "git commit -m 'Add ok.txt'")
-    assert d == "deny" and "Directive: core-01" in reason
-    assert pre(repo, "git commit -m 'Add ok.txt' -m 'Directive: core-01'")[0] is None
-    assert pre(repo, 'git commit -m "Add ok.txt\n\nDirective: core-01"')[0] is None
-    assert pre(repo, "git commit")[0] is None   # editor: can't see the message, don't guess
-
-
 def test_active_directive_never_commits_on_main(repo):
     assert cli(repo, "start", "core-01").returncode == 0
     subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
@@ -243,12 +234,12 @@ def test_finish_records_in_one_commit(repo):
     for n in ("a", "b"):
         (repo / f"{n}.txt").write_text(n)
         _g(repo, "add", f"{n}.txt")      # code only: the goal's running flip stays for finish
-        _g(repo, "commit", "-qm", f"code {n}\n\nDirective: core-01")
+        _g(repo, "commit", "--no-verify", "-qm", f"code {n}\n\nDirective: core-01")
     (repo / "x.txt").write_text("x")
     _g(repo, "add", "x.txt")
     r = cli(repo, "finish", "core-01")
     assert r.returncode == 1 and "x.txt" in r.stderr
-    _g(repo, "commit", "-qm", "x\n\nDirective: core-01")
+    _g(repo, "commit", "--no-verify", "-qm", "x\n\nDirective: core-01")
     n0 = int(_g(repo, "rev-list", "--count", f"{base}..HEAD"))
     r = cli(repo, "finish", "core-01", "--verify", "Verify passed", "--review", "approved")
     assert r.returncode == 0, r.stderr
@@ -287,7 +278,7 @@ def test_start_commits_nothing_and_stores_base(repo):
     assert "runs/" in r.stderr and ".gitignore" in r.stderr
     (repo / ".gitignore").write_text("runs/\n")
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "ignore"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "--no-verify", "-qm", "ignore"], check=True)
     r = cli(repo, "start", "core-01")  # restart keeps the stored base
     assert r.returncode == 0 and fc.read_marker(repo)["base"] == head
     assert f"base {head}" in r.stdout and "gitignored" not in r.stderr
@@ -870,7 +861,7 @@ def grepo2(tmp_path, monkeypatch):
     ds, g = _two("approved", "approved")
     _mk(r, ds, g)
     _git(r, "add", ".")
-    _git(r, "commit", "-qm", "init")
+    _git(r, "commit", "--no-verify", "-qm", "init")
     return r
 
 
@@ -879,14 +870,14 @@ def test_start_creates_goal_branch_from_base(grepo2):
     _git(grepo2, "checkout", "-qb", "other")  # start from elsewhere: the branch must come from Base, not HEAD
     (grepo2 / "unrelated.txt").write_text("x\n")
     _git(grepo2, "add", "unrelated.txt")
-    _git(grepo2, "commit", "-qm", "unrelated")
+    _git(grepo2, "commit", "--no-verify", "-qm", "unrelated")
     r = cli(grepo2, "start", "core-01")
     assert r.returncode == 0, r.stderr
     assert _git(grepo2, "branch", "--show-current") == "friday/core"
     assert _git(grepo2, "rev-parse", "HEAD") == base and not (grepo2 / "unrelated.txt").exists()
     assert "Status: approved" in (grepo2 / "docs/directives/core-01.md").read_text()
     assert "Status: running\n" in (grepo2 / "docs/goals/core.md").read_text()
-    _git(grepo2, "commit", "-qam", "work")
+    _git(grepo2, "commit", "--no-verify", "-qam", "work")
     assert cli(grepo2, "finish", "core-01").returncode == 0
     assert cli(grepo2, "start", "core-02").returncode == 0
     assert _git(grepo2, "branch", "--show-current") == "friday/core"
@@ -908,7 +899,7 @@ def test_start_reuses_existing_goal_branch_and_refuses_dirty_switch(grepo2):
 def test_start_pr_directive_uses_own_branch(grepo2):
     p = grepo2 / "docs/directives/core-01.md"
     p.write_text(p.read_text().replace("Verify:", "Land: pr\nVerify:", 1))
-    _git(grepo2, "commit", "-qam", "pr")
+    _git(grepo2, "commit", "--no-verify", "-qam", "pr")
     assert cli(grepo2, "start", "core-01").returncode == 0
     assert _git(grepo2, "branch", "--show-current") == "friday/core-01"
 
@@ -922,7 +913,7 @@ def test_start_refuses_out_of_order(grepo2):
 def test_start_refuses_invalid_directive(grepo2):
     p = grepo2 / "docs/directives/core-01.md"
     p.write_text(p.read_text().replace("Node: any", "Node: nowhere"))
-    _git(grepo2, "commit", "-qam", "bad")
+    _git(grepo2, "commit", "--no-verify", "-qam", "bad")
     r = cli(grepo2, "start", "core-01")
     assert r.returncode != 0 and "error:" in r.stderr and "Node" in r.stderr
 
@@ -960,7 +951,7 @@ def test_land_goal_pushes_goal_branch_no_pr(grepo2, tmp_path, monkeypatch):
     fake.chmod(0o755)
     monkeypatch.setenv("FRIDAY_GH", str(fake))
     assert cli(grepo2, "start", "core-01").returncode == 0
-    _git(grepo2, "commit", "-qam", "start")
+    _git(grepo2, "commit", "--no-verify", "-qam", "start")
     r = cli(grepo2, "land", "core-01")
     assert r.returncode == 0 and r.stdout.strip().splitlines()[-1] == "pushed friday/core"
     assert "friday/core" in _heads(origin) and not log.exists()
@@ -978,7 +969,7 @@ def test_land_goal_needs_goal_branch_and_clean_tree(grepo2, tmp_path):
 def test_land_goal_push_failure_exits_3(grepo2):
     _git(grepo2, "remote", "add", "origin", str(grepo2 / "nonexistent.git"))
     cli(grepo2, "start", "core-01")
-    _git(grepo2, "commit", "-qam", "start")
+    _git(grepo2, "commit", "--no-verify", "-qam", "start")
     assert cli(grepo2, "land", "core-01").returncode == 3
 
 
@@ -986,7 +977,7 @@ def test_land_none_pushes_nothing(grepo2, tmp_path):
     origin = _land_origin(grepo2, tmp_path)
     p = grepo2 / "docs/directives/core-01.md"
     p.write_text(p.read_text().replace("Hardware: none", "Hardware: none\nLand: none", 1))
-    _git(grepo2, "commit", "-qam", "none")
+    _git(grepo2, "commit", "--no-verify", "-qam", "none")
     r = cli(grepo2, "land", "core-01")
     assert r.returncode == 0 and "nothing is pushed" in r.stdout and _heads(origin) == []
 
@@ -1029,7 +1020,7 @@ def done_goal(grepo2, tmp_path):
         p.write_text(t.rstrip("\n") + f"\n- 2026-11-17: Independent review: old\n  Independent review: {verdict}\n")
     q = grepo2 / "docs/directives/core-02.md"
     q.write_text(q.read_text() + "- Built: out/report.pdf\n")
-    _git(grepo2, "commit", "-qam", "done")
+    _git(grepo2, "commit", "--no-verify", "-qam", "done")
     return grepo2, origin
 
 
@@ -1064,7 +1055,7 @@ def test_land_goal_failing_verify_exits_6(done_goal, tmp_path, monkeypatch):
     repo, origin = done_goal
     p = repo / "docs/directives/core-02.md"
     p.write_text(p.read_text().replace("Verify: true", "Verify: false"))
-    _git(repo, "commit", "-qam", "break")
+    _git(repo, "commit", "--no-verify", "-qam", "break")
     fake, log, _ = _fake_gh(tmp_path)
     monkeypatch.setenv("FRIDAY_GH", str(fake))
     r = cli(repo, "land", "--goal", "core")
@@ -1077,7 +1068,7 @@ def test_land_goal_external_not_run(done_goal, tmp_path, monkeypatch):
     repo, _ = done_goal
     p = repo / "docs/directives/core-02.md"
     p.write_text(p.read_text().replace("Verify: true", "Verify: none").replace("Deliverable: code", "Deliverable: external"))
-    _git(repo, "commit", "-qam", "ext")
+    _git(repo, "commit", "--no-verify", "-qam", "ext")
     fake, _, body = _fake_gh(tmp_path)
     monkeypatch.setenv("FRIDAY_GH", str(fake))
     r = cli(repo, "land", "--goal", "core")
@@ -1089,7 +1080,7 @@ def test_land_goal_refuses_undone_and_wrong_branch(done_goal):
     repo, origin = done_goal
     p = repo / "docs/directives/core-02.md"
     p.write_text(p.read_text().replace("Status: done", "Status: running@h"))
-    _git(repo, "commit", "-qam", "undo")
+    _git(repo, "commit", "--no-verify", "-qam", "undo")
     r = cli(repo, "land", "--goal", "core")
     assert r.returncode == 7 and "core-02" in r.stderr and "core-01" not in r.stderr
     _git(repo, "checkout", "-q", "main")
@@ -1123,7 +1114,7 @@ def test_land_goal_land_none_commits_without_push(done_goal, tmp_path):
     repo, origin = done_goal
     gp = repo / "docs/goals/core.md"
     gp.write_text(gp.read_text().replace("Land: pr", "Land: none"))
-    _git(repo, "commit", "-qam", "none")
+    _git(repo, "commit", "--no-verify", "-qam", "none")
     r = cli(repo, "land", "--goal", "core")
     assert r.returncode == 0 and "nothing is pushed" in r.stdout
     assert "Status: done" in gp.read_text() and "friday/core" not in _heads(origin)
@@ -1156,7 +1147,7 @@ const parse = Object.assign({
 }, scenario.parse || {})
 const defaults = {
   'parse g-02': { exit_code: scenario.parse_exit || 0, stdout: scenario.parse_stdout || JSON.stringify(parse) },
-  'start g-02': { started: true, output: '', review_base: 'abc123' },
+  'start g-02': { started: true, output: '' },
   'step 1/1': { status: 'done', summary: 'ok', commit: 'c1', question: '' },
   'initial verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
   'after review verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
@@ -1222,7 +1213,7 @@ def test_execute_prepare_dispatched_note_instruction(tmp_path):
 @needs_node
 def test_execute_start_refusal_stops(tmp_path):
     out = _run_execute(tmp_path, responses={
-        "start g-02": {"started": False, "output": "g-01 is not done", "review_base": ""}})
+        "start g-02": {"started": False, "output": "g-01 is not done"}})
     assert out["result"] == "g-02 not started: g-01 is not done"
     assert not any(l.startswith("step") for l in out["labels"])
 
@@ -1249,7 +1240,8 @@ def test_execute_unmet_acceptance_triggers_fix_round(tmp_path):
     assert "not met: docs mention it" in fix["prompt"]
     first = next(c for c in out["calls"] if c["label"] == "verifier")
     assert "- docs mention it" in first["prompt"]
-    assert "abc123..HEAD" in first["prompt"]
+    assert "friday commits g-02" in first["prompt"] and "abc123" not in first["prompt"]
+    assert "untracked" in first["prompt"] and "must contain the line" not in first["prompt"]
     assert "done:" in out["result"]
 
 
@@ -1327,7 +1319,7 @@ const agent = async (prompt, opts) => {
   if (L.startsWith('parse')) return { exit_code: 0, stdout: JSON.stringify(parse) }
   if (L.startsWith('start')) {
     const r = friday('start g-01 --no-gate')
-    return { started: r.exit_code === 0, output: r.output, review_base: (r.output.match(/^base (\S+)/m) || [])[1] || '' }
+    return { started: r.exit_code === 0, output: r.output }
   }
   if (L === 'step 1/3') { fs.writeFileSync(repo + '/code.txt', 'x\n'); sh('git add code.txt && git commit -qm "code" -m "Directive: g-01"')
     return { status: 'done', summary: '', commit: '', question: '' } }

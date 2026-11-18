@@ -13,17 +13,21 @@ instead of repeating it, and stale documents are gone. tests/test_spec.py fails 
 the code disagree on commands, header fields, statuses, exit codes or hook rules.
 
 ## Steps
-1. Write docs/spec.md from the code as it stands after gate-03: the model (goal, directive,
+1. Write docs/spec.md from the code as it stands after gate-03 and goal review-range: the model (goal, directive,
    step); both file formats; the status lifecycle including `awaiting review` and `blocked`; who
    may change what (user approves and accepts, commands write Status and Log); pre-approved
    commands (`## Allowed commands`: read from Base, scoped to the active directive, what still
-   prompts or is denied, and that dispatch, nodes --clean and release prompt unless listed); every command with
-   flags and exit codes; the execute workflow's phases; every hook rule with its event; what is
+   prompts or is denied, and that dispatch, nodes --clean and release prompt unless listed); where plan amendments go (commits on
+   Base, merged in by `friday start` before the next directive) and how a directive's change set
+   is found (`friday commits`); every command with
+   flags and exit codes; the execute workflow's phases; every hook rule with its event, including the git `commit-msg` guard friday installs and
+   `--no-verify`; what is
    enforced and what is advice; `.claude/friday.json` with a full example; the fleet and dash in
    brief with links; known limits (deny list matches inside `ssh`, a hardware prompt in a
    dispatched session has nobody to answer it unless its commands are pre-approved, landing is
    GitHub PRs only, the lease is taken when the prompt is shown and expires after 4 h, Verify
-   runs up to 30 minutes).
+   runs up to 30 minutes, friday's git calls time out after 180 s, the deny list wins over
+   pre-approval so `sudo` on a robot over `ssh` stays a step the user does).
 2. tests/test_spec.py: every parser subcommand and option, every header key, section name
    (including `## Allowed commands` and `## Review`) and allowed value from lib/friday_core.py, every `land`/`dispatch` exit code and every deny-list rule label
    appears in docs/spec.md; no doc mentions a `friday <sub>` or flag the parser lacks.
@@ -46,6 +50,7 @@ the code disagree on commands, header fields, statuses, exit codes or hook rules
 - docs/HANDOFF.md is gone and nothing links to it; no doc names `friday dispatch <id>`, `status --html` or a Roadmap of built work.
 - A reader can tell from the spec alone when a goal's PR opens by itself and when they must run `friday land --goal`.
 - CLAUDE.md exists and is under 60 lines.
+- A reader can tell from the spec where to amend a running goal's plan and when the running session sees the change.
 - A reader can tell from the spec, docs/workflow.md or docs/fleet.md how to pre-approve a command for a directive, where the list is read from, and what still prompts or is denied.
 
 ## Out of scope

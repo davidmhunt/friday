@@ -87,7 +87,8 @@ New commands: `friday check [<id> | --goal <g> | --all]` validates the file form
 `friday parse <id> --json` (or `--goal <g>`) prints the parsed file; `friday land --goal <g>`
 reverifies every directive, marks the goal done and opens the one PR (exit 6: a Verify failed,
 nothing pushed); `friday unblock <id>` sets a blocked directive back to `approved` (and a blocked goal
-to `running`) in one commit. A PostToolUse hook runs the format check on every edited goal or directive file and
+to `running`) in one commit. `friday commits <id> [--json]` lists the directive's own commits since
+its Base (exit 3: none, 2: error). A PostToolUse hook runs the format check on every edited goal or directive file and
 sends errors back to the model. Details: [docs/workflow.md](docs/workflow.md).
 
 ## Per project

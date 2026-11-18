@@ -9,7 +9,8 @@ Hardware: none
 
 ## Goal
 A directive may carry `Accept: user` (default `auto`). After Verify and the independent review
-pass it becomes `Status: awaiting review`, the goal branch is pushed, and the run stops. Only
+pass it becomes `Status: awaiting review` and the goal branch is pushed; the run moves on to
+the next directive, and the goal lands only after the user accepts. Only
 `friday accept <id>`, typed by the user, makes it `done`; `friday land --goal` refuses until
 then. No agent can run `friday accept`. tests/test_accept_gate.py proves each of these.
 
@@ -32,11 +33,17 @@ then. No agent can run `friday accept`. tests/test_accept_gate.py proves each of
    user accepts.
 5. workflows/execute.js: after finish, if the directive is awaiting review, push the goal branch
    (`friday land <id>`), skip `land --goal`, and end with the review bullets and the two
-   commands the user runs (`friday accept <id>`, `friday land --goal <g>`). The dispatched
-   session prompt (lib/friday_fleet.py) reports the same to the planner session.
+   commands the user runs (`friday accept <id>`, `friday land --goal <g>`), then continue with the
+   next directive. When the last directive ends and some are awaiting review, the dispatched
+   session (lib/friday_fleet.py) reports once to the planner session:
+   `review <goal> <ids> PR-pending` (alongside the existing `done` and `blocked` messages) and
+   stays open.
 6. `friday status`, the status snapshot and the dash (dash/static/render.mjs) show
    `awaiting review` as its own state, counted on the Overview as needing the user.
-7. tests/test_accept_gate.py and dash/static/render.test.mjs cases; skills/directive/SKILL.md and
+7. tests/test_accept_gate.py and dash/static/render.test.mjs cases, including `friday accept`
+   of an earlier directive while a later one is active in the same worktree (its record commit
+   must pass the commit guard and the commit-msg hook); `friday accept` joins the user-only list
+   in tests/test_cli_surface.py; skills/directive/SKILL.md and
    skills/plan/SKILL.md describe `Accept:` and `## Review`; CHANGELOG.
 
 ## Out of scope
