@@ -1,5 +1,5 @@
 # review-02: The plan changes only on Base, `friday start` merges Base in, and git refuses stray commits during a directive
-Status: approved
+Status: blocked: review gaps remain: /home/david/Documents/claude_temp/friday/tests/test_plan_on_base.py:169-180 (test_restart_after_amendment_ignores_the_goal_status_flip): The regression test added for the earlier gap does not test the fix. It amends main with 'git commit --no-verify -qam amend'. Because '-a' stages every tracked change, it also commits friday's uncommitted 'Status: running' flip of docs/goals/core.md onto main, which 'git switch main' carried over. When the test switches back to friday/core the tree is clean, so '_merge_base' never sees the dirty goal file and the new 'ignore' path in bin/friday:214-218 never runs. The test also commits the goal Status change onto Base, which friday never does. So the restart-after-amendment behaviour (the directive's promise that 'an amendment to the running directive takes effect when it restarts') still has no test that would catch the original bug coming back.
 Goal: review-range
 Node: any
 Deliverable: code
@@ -56,3 +56,15 @@ made on its goal branch mid-run. tests/test_plan_on_base.py proves each of these
 - Changing v1-final's directives; v1-final picks this up through step 1 at its next start.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 3f93eb6 review-02: start's Base merge tolerates friday's own goal Status flip, so a restart picks up amendments
+- 999d30d review-02: test that the Base merge commit is not an untracked line in friday commits
+- e9e31b8 review-02: docs and skills say plan amendments are commits on Base, picked up at the next start
+- 8e91c92 review-02: PreToolUse commit guard judges the repo the command commits in, drops the trailer check
+- cf39532 review-02: commit-msg git guard installed by init/start, removed by uninstall
+- 31df06a review-02: friday start merges the goal's Base into the branch before a directive
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_plan_on_base.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: not recorded
+Blocked: review gaps remain: /home/david/Documents/claude_temp/friday/tests/test_plan_on_base.py:169-180 (test_restart_after_amendment_ignores_the_goal_status_flip): The regression test added for the earlier gap does not test the fix. It amends main with 'git commit --no-verify -qam amend'. Because '-a' stages every tracked change, it also commits friday's uncommitted 'Status: running' flip of docs/goals/core.md onto main, which 'git switch main' carried over. When the test switches back to friday/core the tree is clean, so '_merge_base' never sees the dirty goal file and the new 'ignore' path in bin/friday:214-218 never runs. The test also commits the goal Status change onto Base, which friday never does. So the restart-after-amendment behaviour (the directive's promise that 'an amendment to the running directive takes effect when it restarts') still has no test that would catch the original bug coming back.
