@@ -462,7 +462,37 @@ def test_optional_land_and_extra_sections_allowed():
     t = sub("\n## Steps", "\n## Background\nstuff\n\n## Steps")(GOOD_D)
     t = ACCEPT_SECTION(t)
     assert fc.validate_directive("core-01", t) == []
-    assert fc.validate_directive("core-01", EXTERNAL(ACCEPT_SECTION(GOOD_D))) == []
+    old_external = fc.validate_directive("core-01", EXTERNAL(ACCEPT_SECTION(GOOD_D)))
+    assert [i.level for i in old_external] == ["warning"] and "Accept: user" in old_external[0].message
+
+
+REVIEW = "\n## Review\n- open the page\n- look for the table\n"
+ACCEPT_USER = sub("Hardware: none\n", "Hardware: none\nAccept: user\n")
+
+
+def test_accept_user_format():
+    ok = chain(ACCEPT_USER, sub("\n## Log\n", REVIEW + "\n## Log\n"))(GOOD_D)
+    assert fc.validate_directive("core-01", ok) == []
+    d = fc.parse_directive_full(ok)
+    assert d["accept"] == "user" and d["review"] == ["open the page", "look for the table"]
+    assert fc.parse_directive_full(GOOD_D)["accept"] == "auto"
+    assert fc.parse_directive_full(GOOD_D)["review"] is None
+    ext = chain(EXTERNAL, ACCEPT_SECTION, ACCEPT_USER, sub("\n## Log\n", REVIEW + "\n## Log\n"))(GOOD_D)
+    assert fc.validate_directive("core-01", ext) == []
+    aw = sub("Status: approved", "Status: awaiting review")(ok)
+    assert fc.validate_directive("core-01", aw) == []
+    assert _has(fc.validate_goal("core", sub("Status: approved", "Status: awaiting review")(GOOD_G)), "error", "Status")
+
+
+def test_accept_user_errors():
+    no_review = ACCEPT_USER(GOOD_D)
+    assert _has(fc.validate_directive("core-01", no_review), "error", "`## Review` is required")
+    empty = chain(ACCEPT_USER, sub("\n## Log\n", "\n## Review\nprose\n\n## Log\n"))(GOOD_D)
+    assert _has(fc.validate_directive("core-01", empty), "error", "at least one `- ` bullet")
+    bad = sub("Hardware: none\n", "Hardware: none\nAccept: maybe\n")(GOOD_D)
+    assert _has(fc.validate_directive("core-01", bad), "error", "Accept `maybe`")
+    dup = chain(ACCEPT_USER, sub("\n## Log\n", REVIEW + REVIEW + "\n## Log\n"))(GOOD_D)
+    assert _has(fc.validate_directive("core-01", dup), "error", "duplicate section `## Review`")
 
 
 def test_header_in_code_fence_or_body_not_a_header():

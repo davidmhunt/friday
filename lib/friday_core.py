@@ -200,7 +200,8 @@ def next_id(root: Path, loop: str) -> str:
 # feeds them back); warnings are reported only.
 GOAL_DIR = Path("docs/goals")
 GOAL_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-DIRECTIVE_KEYS = ("Status", "Goal", "Node", "Deliverable", "Land", "Verify", "Hardware")
+DIRECTIVE_KEYS = ("Status", "Goal", "Node", "Deliverable", "Land", "Accept", "Verify", "Hardware")
+ACCEPTS = ("auto", "user")
 GOAL_KEYS = ("Status", "Base", "Land")
 DELIVERABLES = ("code", "doc", "slides", "external")
 DIRECTIVE_LANDS = ("goal", "pr", "none")
@@ -301,8 +302,8 @@ def _bullets(body: list[tuple[int, str]]) -> list[str]:
 
 def parse_directive_full(text: str) -> dict:
     """The parsed shape of a directive file. Keys: id, title, status, goal, node, deliverable,
-    land (default `goal`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
-    (None when there is no `## Acceptance`), headers [(key, value, line)], sections [(name, line)]."""
+    land (default `goal`), accept (default `auto`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
+    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     steps_sec = _section(md, "Steps")
@@ -311,13 +312,16 @@ def parse_directive_full(text: str) -> dict:
         # a `[heavy]` inside an inline code span is a mention of the marker, not the marker
         s["heavy"] = "[heavy]" in re.sub(r"`[^`]*`", "", s["text"])
     acc = _section(md, "Acceptance")
+    rev = _section(md, "Review")
     return {
         "id": md["name"], "title": md["title"],
         **{k.lower(): hm.get(k, "") for k in DIRECTIVE_KEYS},
         "land": hm.get("Land", "goal") or "goal",
+        "accept": hm.get("Accept", "auto") or "auto",
         "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"], "line": s["line"]}
                   for s in steps],
         "acceptance": _bullets(acc["body"]) if acc else None,
+        "review": _bullets(rev["body"]) if rev else None,
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
     }
@@ -366,7 +370,7 @@ def _check_sections(md: dict, required: tuple, path: str, acceptance: bool) -> l
     Other sections are allowed anywhere before the last required one (`## Log`)."""
     issues: list[Issue] = []
     seen: dict[str, int] = {}
-    once = required + (("Acceptance",) if acceptance else ())
+    once = required + (("Acceptance", "Review") if acceptance else ())
     last = required[-1]
     for s in md["sections"]:
         name, ln = s["name"], s["line"]
@@ -419,6 +423,8 @@ def _check_title(md: dict, stem: str, kind: str, name_re: re.Pattern, path: str)
 def _status_ok(status: str, running_host: bool) -> bool:
     if status in ("proposed", "approved", "done"):
         return True
+    if running_host and status == "awaiting review":   # directives only
+        return True
     if running_host:
         if re.match(r"^running@\S+$", status):
             return True
@@ -434,13 +440,13 @@ def validate_directive(did: str, text: str) -> list[Issue]:
     d = parse_directive_full(text)
     hl = {k: ln for k, _, ln in reversed(md["headers"])}   # first line of each key
     issues = _check_title(md, did, "id", ID_RE, path)
-    issues += _check_headers(md, DIRECTIVE_KEYS, ("Land",), path, warn_unknown=True)
+    issues += _check_headers(md, DIRECTIVE_KEYS, ("Land", "Accept"), path, warn_unknown=True)
 
     def bad(key: str, msg: str) -> None:
         issues.append(Issue("error", path, hl.get(key, 1), msg))
 
     if "Status" in hl and not _status_ok(d["status"], running_host=True):
-        bad("Status", f"Status `{d['status']}` is not proposed | approved | running@<host> | done | blocked: <reason>")
+        bad("Status", f"Status `{d['status']}` is not proposed | approved | running@<host> | awaiting review | done | blocked: <reason>")
     if "Goal" in hl and not GOAL_RE.match(d["goal"]):
         bad("Goal", f"Goal `{d['goal']}` is not a goal name ({GOAL_RE.pattern})")
     if "Node" in hl and not re.match(r"^(any|tag:\S+|host:\S+)$", d["node"]):
@@ -450,6 +456,8 @@ def validate_directive(did: str, text: str) -> list[Issue]:
         bad("Deliverable", f"Deliverable `{d['deliverable']}` is not one of {' | '.join(DELIVERABLES)}")
     if "Hardware" in hl and not d["hardware"].strip():
         bad("Hardware", "Hardware must not be empty (use `none` or a resource name)")
+    if "Accept" in hl and d["accept"] not in ACCEPTS:
+        bad("Accept", f"Accept `{d['accept']}` is not one of {' | '.join(ACCEPTS)}")
     if "Land" in hl and d["land"] not in DIRECTIVE_LANDS:
         bad("Land", f"Land `{d['land']}` is not one of {' | '.join(DIRECTIVE_LANDS)}")
     if d["deliverable"] == "external":
@@ -469,6 +477,16 @@ def validate_directive(did: str, text: str) -> list[Issue]:
             issues.append(Issue("error", path, 1, f"`## Acceptance` is required for Deliverable {d['deliverable']}"))
         elif not d["acceptance"]:
             issues.append(Issue("error", path, acc["line"], "`## Acceptance` needs at least one `- ` bullet"))
+
+    rev = _section(md, "Review")
+    if d["accept"] == "user":
+        if rev is None:
+            issues.append(Issue("error", path, hl.get("Accept", 1), "`## Review` is required with `Accept: user`"))
+        elif not d["review"]:
+            issues.append(Issue("error", path, rev["line"], "`## Review` needs at least one `- ` bullet"))
+    elif d["deliverable"] == "external":
+        issues.append(Issue("warning", path, hl.get("Deliverable", 1),
+                            "Deliverable external should use `Accept: user` (with a `## Review` section)"))
 
     steps_sec = _section(md, "Steps")
     if steps_sec:
