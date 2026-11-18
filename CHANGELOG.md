@@ -4,6 +4,9 @@
 
 ### Added
 
+- A session stopped on a permission prompt, dialog or question is recorded by a `Notification` hook and
+  cleared when it moves on. `friday status` and the dash show it as needing the user, with the prompt
+  text and the attach command. Nothing answers the prompt.
 - `friday nodes --waiting`: one line per session waiting on a prompt across the registry (node, goal,
   directive, age, message); exit 0 none, 10 some, 2 a node unreachable. Allowed without a prompt.
 
