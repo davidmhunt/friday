@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A directive may list `## Allowed commands` (bullets of one backticked pattern, `*` matches any text). While that
+  directive is active the PreToolUse hook allows a single simple Bash command matching a pattern, so dispatched
+  and overnight runs need no prompt for `friday dispatch`, `nodes --clean`, `release` or hardware commands. The
+  list is read from the directive on the goal's Base (`git show`), so edits on the goal branch cannot widen it;
+  deny rules, `friday accept`, the commit guard and hardware leases still win (a pre-approved hardware command
+  still takes the lease). `friday check` rejects `*` alone, chained or substituted patterns, `friday accept` and
+  deny-list matches; `friday parse --json` reports `allowed`. The plan, directive and hardware skills describe it.
 - `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` records an expensive
   run once in the tracked `results/<id>.json` (metrics, file sha256 and size, command, HEAD, dirty flag, node,
   time); `friday result check <id> [--require 'K OP V']... [--files]` is the cheap Verify, failing with one line
