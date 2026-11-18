@@ -1,5 +1,5 @@
 # cli-02: Slash commands `/friday:nodes`, `/friday:status`, `/friday:dispatch`, `/friday:clean`
-Status: approved
+Status: done
 Goal: cli-ergonomics
 Node: any
 Deliverable: code
@@ -34,3 +34,14 @@ each names only real CLI commands.
 - Acting on goals from the dashboard (a later goal).
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 4c4d415 cli-02: document /friday:nodes as friday nodes, probing only with --check
+- 596e7f0 cli-02: test slash-command skills (frontmatter, real CLI commands, dry-run-then-ask)
+- fbae258 cli-02: list slash commands in README and fleet.md, CHANGELOG entry
+- c59362b cli-02: add /friday:status, nodes, dispatch and clean slash-command skills
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_slash_commands.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: gaps fixed in second review: 1. README.md:49 and docs/fleet.md:23 (vs skills/nodes/SKILL.md:13-16): Step 2 asks the docs to list each slash command next to its CLI form. Both tables pair '/friday:nodes' with 'friday nodes --check', but the skill does something different. By default it runs plain ''{CLAUDE_PLUGIN_ROOT}/bin/friday nodes', which only lists the registry, and it runs '--check' (the ssh probe) only when the user passes '--check'. So the docs tell users a bare '/friday:nodes' probes every node over ssh, and it does not. (evidence: README.md table row: '| '/friday:nodes' | 'friday nodes --check' |'. docs/fleet.md has the same row. skills/nodes/SKILL.md runs ''{CLAUDE_PLUGIN_ROOT}/bin/friday nodes' and says 'If the user passed '--check', run ... 'friday nodes --check' instead.' Its argument-hint is '[--check]'.)

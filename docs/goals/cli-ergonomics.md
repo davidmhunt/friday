@@ -1,5 +1,5 @@
 # cli-ergonomics: `friday` on PATH everywhere, and slash commands in Claude
-Status: approved
+Status: done
 Base: v1
 Land: pr
 
@@ -16,3 +16,4 @@ finding the CLI hard to locate and call.
 3. cli-03: `friday init` adds the friday allow rules to a repo; dispatch refuses a repo without them
 
 ## Log
+- 2026-11-17: Landed: 3 directive(s) reverified on friday/cli-ergonomics; PR into v1.

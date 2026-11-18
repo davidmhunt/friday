@@ -12,6 +12,17 @@ dispatch to it.
 - **target**: a device driven over SSH by whichever node runs the directive (a rover, a Pi). It never
   runs directives; it is only checked for reachability.
 
+## Slash commands
+
+From any session that loads the plugin (including over Remote Control), these run the CLI for you:
+
+| Slash command | CLI form |
+|---|---|
+| `/friday:status` | `friday status` |
+| `/friday:nodes [--check]` | `friday nodes` (lists the registry; with `--check` it probes each node over ssh) |
+| `/friday:dispatch <goal>` | `friday dispatch --goal <goal>`: runs `--dry-run` first, shows it, runs for real after you say yes |
+| `/friday:clean <node>` | `friday nodes --clean <node>`: runs `--dry-run` first, shows it, runs for real after you say yes |
+
 ## The registry (`nodes.toml`)
 
 `friday` reads the first file that exists, in this order:
@@ -107,7 +118,10 @@ On each worker (and on the master, which is also a node):
 4. `tmux` installed.
 5. The friday clone at `plugin_dir` (`git clone <friday origin> ~/friday`). Dispatch checks out the
    master's plugin commit there.
-6. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
+6. `friday` on PATH: `python3 ~/friday/bin/friday install` once on the node (or let
+   `friday nodes --setup <node>` do it). After that just `friday`; remove it with
+   `ssh <node> friday uninstall`. The `uv run` and `python3` forms still work.
+7. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
    Dispatch refuses (`untrusted`) until `repos` or a parent is trusted in `~/.claude.json`.
 
 Then check from the master:
@@ -137,6 +151,14 @@ terminal. Without a TTY it refuses unless you pass `--yes`. On confirmation it m
 into the file: other keys stay as they are, the file is written to a temp file and renamed, and the
 previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
 permission rules. Run `friday nodes --check` again afterwards.
+
+### Allow rules live in the repo
+
+A plugin cannot grant permissions, so friday's own commands are allowed by rules in each repo's
+tracked `.claude/settings.json`. `friday init` merges them in (keeping other keys and rules, never
+touching `settings.local.json`) and does not commit; the plan skill runs it before the plan commit.
+A node clones the repo, so the rules reach it through git, and dispatch refuses (exit 27) a source
+ref that lacks them.
 
 ### Setting up the master (learned on the laptop)
 
@@ -225,6 +247,7 @@ Each refusal prints one line and a fix on stderr and exits with its own code.
 | node | 18 | `--node` names a missing node or a target |
 | unreachable | 19 | the chosen node did not answer over ssh |
 | report-to | 20 | no `--report-to` and no `report_to` in the registry |
+| settings | 27 | the source ref's `.claude/settings.json` lacks a friday allow rule; run `friday init`, commit and push |
 
 The node itself can also refuse (the dispatch command exits with the node's code):
 

@@ -24,6 +24,8 @@
   friday nodes --clean <node> [--dry-run]   remove finished goals' worktrees on a node
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
+  friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
+  friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
   friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
 """
 from __future__ import annotations
@@ -118,6 +120,38 @@ def cmd_status(a) -> int:
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
         print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min)")
+    return 0
+
+
+def cmd_init(a) -> int:
+    """Merge FRIDAY_ALLOW into the repo's tracked .claude/settings.json (never settings.local.json)."""
+    path = _root() / ".claude" / "settings.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (ValueError, OSError) as e:
+            print(f"friday: cannot parse {path}: {e}", file=sys.stderr)
+            return 1
+        if not isinstance(data, dict):
+            print(f"friday: {path} is not a JSON object", file=sys.stderr)
+            return 1
+    perms = data.setdefault("permissions", {})
+    allow = perms.setdefault("allow", []) if isinstance(perms, dict) else None
+    if not isinstance(allow, list):
+        print(f"friday: {path}: permissions.allow is not a list", file=sys.stderr)
+        return 1
+    missing = [r for r in fc.FRIDAY_ALLOW if r not in allow]
+    if not missing and path.exists():
+        print(f"friday init: {path} already has every friday allow rule; nothing to add")
+        return 0
+    allow.extend(missing)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"friday init: added to {path}:")
+    for r in missing:
+        print(f"  {r}")
+    print("review, then commit it (friday init does not commit)")
     return 0
 
 
@@ -547,6 +581,10 @@ def probe_script(node) -> str:
         'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
         'for t in tmux git; do command -v $t >/dev/null 2>&1 && echo "FRIDAY_PROBE $t=ok" || echo "FRIDAY_PROBE $t=missing"; done',
         f'[ -e {plug}/.git ] && echo "FRIDAY_PROBE plugin=ok" || echo "FRIDAY_PROBE plugin=missing"',
+        'f=$(command -v friday 2>/dev/null)',
+        f'if [ -z "$f" ]; then echo "FRIDAY_PROBE friday=missing"',
+        f'elif [ "$(readlink -f "$f")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
+        'else echo "FRIDAY_PROBE friday=$(readlink -f "$f")"; fi',
         "if command -v python3 >/dev/null 2>&1; then",
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
@@ -578,6 +616,11 @@ def check_node(node) -> tuple:
             fixes.append(f"fix: install {t} on {node.name}")
     if got.get("plugin") != "ok":
         fixes.append(f"fix: git clone the friday repo to {node.plugin_dir} on {node.name}")
+    fr = got.get("friday", "missing")
+    if fr == "missing":
+        fixes.append(f"friday on PATH: missing; fix: `friday nodes --setup {node.name}`")
+    elif fr != "ok":
+        fixes.append(f"friday on PATH: points at {fr}; fix: `friday nodes --setup {node.name}`")
     trust = got.get("trust")
     if trust == "unknown":
         fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
@@ -587,7 +630,7 @@ def check_node(node) -> tuple:
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
-               f"plugin_dir {got.get('plugin', '?')}, trust {trust or '?'}")
+               f"plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
     return summary, fixes
 
 
@@ -688,6 +731,24 @@ def setup_timer(n) -> int:
     return 1
 
 
+def setup_install(n) -> int:
+    """Run `<plugin_dir>/bin/friday install` on the node so `friday` is on its PATH."""
+    script = f"python3 {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n"
+    argv, stdin = ff.ssh_cmd(n, script)
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"friday: {n.name}: could not run friday install: {e}")
+        return 1
+    for line in r.stdout.splitlines():
+        print(f"{n.name}: {line}")
+    if r.returncode != 0:
+        print(f"friday: {n.name}: friday install failed (exit {r.returncode})"
+              + (f": {r.stderr.strip().splitlines()[-1]}" if r.stderr.strip() else ""))
+        return 1
+    return 0
+
+
 def cmd_nodes_setup(a, reg) -> int:
     n = reg.nodes.get(a.setup)
     if n is None:
@@ -704,6 +765,8 @@ def cmd_nodes_setup(a, reg) -> int:
     print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
           "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
           "every 30 s.")
+    print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which links "
+          "~/.local/bin/friday to that checkout.")
     if not a.yes:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             print("friday: refusing to change settings without a terminal to confirm; "
@@ -721,7 +784,8 @@ def cmd_nodes_setup(a, reg) -> int:
     res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_SETUP ")), "")
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: settings updated; run `friday nodes --check` to confirm")
-        return setup_timer(n)
+        rc = setup_install(n)
+        return setup_timer(n) or rc
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
            "nopython": "python3 is missing on the node",
            "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")
@@ -783,7 +847,8 @@ def cmd_nodes(a) -> int:
 # Exit codes of `friday dispatch` refusals (0 = ok). Each has a one-line fix on stderr.
 DISPATCH_EXIT = {"goal": 10, "format": 11, "directives": 12, "land-pr": 13, "unpushed": 14,
                  "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19, "report-to": 20,
-                 "no-record": 21, "no-worktree": 22, "goal-done": 23, "busy": 24, "blocked": 25, "unblock": 26}
+                 "no-record": 21, "no-worktree": 22, "goal-done": 23, "busy": 24, "blocked": 25, "unblock": 26,
+                 "settings": 27}
 
 
 def _refuse(kind: str, msg: str, fix: str):
@@ -847,6 +912,19 @@ def dispatch_preconditions(root: Path, gid: str, node_name: str | None) -> dict:
     if _git_out(["diff", "--quiet", ref, "--", *paths], root)[0] != 0:
         _refuse("unpushed", f"goal or directive files differ from {ref}",
                 f"publish the committed files to {ref.removeprefix('origin/')} on origin")
+
+    # the source ref's tracked settings allow friday's own commands (unattended sessions need them)
+    rc, txt = _git_out(["show", f"{ref}:.claude/settings.json"], root)
+    try:
+        allow = json.loads(txt)["permissions"]["allow"] if rc == 0 else []
+        allow = allow if isinstance(allow, list) else []
+    except (ValueError, KeyError, TypeError):
+        allow = []
+    lacking = [r for r in fc.FRIDAY_ALLOW if r not in allow]
+    if lacking:
+        _refuse("settings", f".claude/settings.json on {ref} lacks {len(lacking)} friday allow rule(s): "
+                + ", ".join(lacking),
+                "run `friday init`, then commit and push .claude/settings.json to " + ref.removeprefix("origin/"))
 
     # the friday plugin's own HEAD is on its origin (the node checks out that commit)
     plug = Path(os.environ.get("FRIDAY_PLUGIN_ROOT") or ff.PLUGIN_ROOT)
@@ -1168,6 +1246,65 @@ def cmd_session_end(a) -> int:
     return 0
 
 
+def _bin_dir(a) -> Path:
+    return Path(os.path.expanduser(a.bin_dir or "~/.local/bin"))
+
+
+def _is_friday_link(link: Path) -> bool:
+    """True when the symlink's target is a friday checkout's bin/friday (a dangling one counts by name)."""
+    t = Path(os.path.abspath(link.parent / os.readlink(link)))
+    if t.name != "friday" or t.parent.name != "bin":
+        return False
+    return (t.parent.parent / "lib" / "friday_core.py").is_file() or not t.exists()
+
+
+def cmd_install(a) -> int:
+    d = _bin_dir(a)
+    link = d / "friday"
+    me = Path(__file__).resolve()
+    if link.is_symlink():
+        old = os.readlink(link)
+        if Path(os.path.abspath(d / old)) == me or link.resolve() == me:
+            print(f"friday: {link} already points at {me}")
+        elif _is_friday_link(link):
+            link.unlink()
+            link.symlink_to(me)
+            print(f"friday: repointed {link}\n  old: {old}\n  new: {me}")
+        else:
+            print(f"friday: {link} is a link to {old}, which is not friday; not touching it", file=sys.stderr)
+            return 1
+    elif link.exists():
+        print(f"friday: {link} is a regular file; not overwriting it", file=sys.stderr)
+        return 1
+    else:
+        d.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(me)
+        print(f"friday: linked {link} -> {me}")
+    on_path = str(d) in [os.path.expanduser(x) for x in os.environ.get("PATH", "").split(":")]
+    if on_path:
+        print(f"{d} is on PATH")
+    else:
+        print(f"{d} is not on PATH; add this line to ~/.profile:\n  export PATH=\"{d}:$PATH\"")
+    return 0
+
+
+def cmd_uninstall(a) -> int:
+    link = _bin_dir(a) / "friday"
+    if link.is_symlink():
+        if _is_friday_link(link):
+            old = os.readlink(link)
+            link.unlink()
+            print(f"friday: removed {link} (was -> {old})")
+            return 0
+        print(f"friday: {link} is a link to {os.readlink(link)}, which is not friday; not removing it", file=sys.stderr)
+        return 1
+    if link.exists():
+        print(f"friday: {link} is a regular file; not removing it", file=sys.stderr)
+        return 1
+    print(f"friday: no link at {link}; nothing to do")
+    return 0
+
+
 def cmd_dash(a) -> int:
     import friday_dash
     return friday_dash.main(a.bind)
@@ -1177,6 +1314,7 @@ def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.set_defaults(f=cmd_status)
+    s = sub.add_parser("init"); s.set_defaults(f=cmd_init)
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
@@ -1190,6 +1328,8 @@ def main() -> int:
     s.add_argument("--clean", metavar="NODE"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.add_argument("--resume", action="store_true"); s.add_argument("--unblock", action="append", metavar="ID"); s.set_defaults(f=cmd_dispatch)
     s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
+    for nm, fn in (("install", cmd_install), ("uninstall", cmd_uninstall)):
+        s = sub.add_parser(nm); s.add_argument("--bin-dir", metavar="DIR"); s.set_defaults(f=fn)
     s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)

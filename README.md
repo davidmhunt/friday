@@ -20,6 +20,16 @@ claude --plugin-dir ~/src/friday                                 # try it in one
 To keep it enabled, add `~/src/friday` as a local marketplace with `/plugin` and install it from
 there. Requires Claude Code with workflows (v2.1.154+) and `python3` on the host.
 
+Once per machine, put `friday` on PATH:
+
+```bash
+python3 ~/src/friday/bin/friday install      # links ~/.local/bin/friday to this checkout
+friday uninstall                             # removes the link again
+```
+
+After that, just `friday ...`. On a node: `ssh <node> friday uninstall`. The `uv run` and
+`python3 <checkout>/bin/friday` forms still work.
+
 ## Use
 
 ```text
@@ -31,6 +41,15 @@ there. Requires Claude Code with workflows (v2.1.154+) and `python3` on the host
 Then review the PR (one per goal). `friday status` in a shell (or ask Claude to run it) lists directives, the one
 active in this worktree, and hardware leases. See [docs/workflow.md](docs/workflow.md).
 
+Slash commands for the same CLI forms, from any session with the plugin loaded (also over Remote Control):
+
+| Slash command | CLI form |
+|---|---|
+| `/friday:status` | `friday status` |
+| `/friday:nodes [--check]` | `friday nodes` (lists the registry; with `--check` it probes each node over ssh) |
+| `/friday:dispatch <goal>` | `friday dispatch --goal <goal>` (shows `--dry-run` first, runs after you say yes) |
+| `/friday:clean <node>` | `friday nodes --clean <node>` (shows `--dry-run` first, runs after you say yes) |
+
 ## What's in it
 
 | Part | What it does |
@@ -39,6 +58,7 @@ active in this worktree, and hardware leases. See [docs/workflow.md](docs/workfl
 | `workflows/execute.js` | Prepare → implement each step → Verify (fix loop) → Opus review → land |
 | `agents/` | `implementer` (Sonnet; Opus for `[heavy]` steps), `verifier` (Opus, read-only), `runner` (Haiku, long and remote runs) |
 | `hooks/` | Deny list, `./run` enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop |
+| `skills/status`, `nodes`, `dispatch`, `clean` | User-invoked slash commands that run the CLI and summarise it |
 | `skills/` | `directive` (format), `hardware`, `long-jobs`, `data-artifacts` |
 | `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `land`, `release`, `check`, `parse`, `nodes`, `dispatch` |
 
@@ -76,6 +96,10 @@ A project adds three things (CPSL_TI_Radar is the worked example):
 - `CLAUDE.md`: facts the model can't infer from the code, under about 60 lines.
 - `.claude/friday.json`: the run wrapper, which tools must go through it, and hardware patterns.
 - `docs/directives/`: one file per directive.
+
+- `.claude/settings.json`: the friday allow rules, merged in by `friday init` (the plan skill runs it
+  before the plan commit). They live in the repo because a plugin cannot grant permissions, and
+  without them the auto-mode classifier can stop unattended `friday start` or `friday land`.
 
 Optionally a `./run` wrapper and dev container ([docs/runtime.md](docs/runtime.md)) and project
 skills under `.claude/skills/`.

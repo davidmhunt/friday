@@ -28,6 +28,14 @@ DIRECTIVE_DIR = Path("docs/directives")
 HEADER_KEYS = ("Status", "Node", "Verify", "Hardware")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*-\d{2,}$")
 
+# Allow rules every friday repo carries in its tracked .claude/settings.json (a plugin cannot
+# grant permissions). Defined once here; `friday init` merges them, `friday dispatch` checks them.
+FRIDAY_ALLOW = [
+    f"Bash(friday {c})"
+    for c in ("status", "status *", "new *", "check *", "parse *", "start *",
+              "verify", "verify *", "finish *", "land *")
+]
+
 
 # ---------------------------------------------------------------- git / paths
 def _git(args: list[str], cwd: Path) -> str | None:
