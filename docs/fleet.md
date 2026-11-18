@@ -216,7 +216,7 @@ After the session sends `done <g> PR <url>` it runs `friday session-end --goal <
 idle Claude is left on the node. After `blocked ...` it does not run it and stays open, so you can
 attach (`tmux attach -t friday-<g>`) or use Remote Control to unblock it.
 
-To close a blocked session by hand, on the node: `tmux kill-session -t =friday-<g>`. The worktree
+To close a blocked session by hand, on the node: `tmux kill-session -t '=friday-<g>'`. The worktree
 and branch stay as they are.
 
 ### Restarting a stopped goal (`--resume`)
