@@ -1,5 +1,5 @@
 # exec-commands: The execute workflow runs friday commands so the allow rules match
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -15,3 +15,4 @@ part of a chained command, and the trailing `echo` matched no rule. Approved by 
 1. exec-01: Workflow prompts run each friday command alone, with no `cd`, chaining or `echo $?`
 
 ## Log
+- 2026-11-17: Landed: 1 directive(s) reverified on friday/exec-commands; PR into v1.
