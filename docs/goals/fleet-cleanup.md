@@ -1,5 +1,5 @@
 # fleet-cleanup: Dispatched work cleans up after itself on the node
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -17,3 +17,4 @@ fleet-hardening runs left two idle sessions, two worktrees and a stray clone on 
 3. fleet-08: `friday dispatch --goal <g> --resume` restarts a stopped goal in its existing worktree
 
 ## Log
+- 2026-11-17: Landed: 3 directive(s) reverified on friday/fleet-cleanup; PR into v1.
