@@ -116,20 +116,21 @@ Goal: status-led
 Node: any
 Deliverable: code
 Accept: user
-Verify: kicad-cli sch erc --exit-code-violations -o reports/erc.rpt board/board.kicad_sch && kicad-cli pcb drc --exit-code-violations -o reports/drc.rpt board/board.kicad_pcb
+Verify: kicad-cli sch erc --exit-code-violations -o reports/erc.rpt board/board.kicad_sch
 Hardware: none
 
 ## Goal
 Sheet `power_io` has LED D5 and its 1k resistor R12 on net `STATUS_LED`, the footprints are placed
-inside the board outline near the edge connector, and ERC and DRC report no violations.
+inside the board outline near the edge connector, and ERC reports no violations. DRC is not in Verify: kicad-cli counts the unrouted net toward its
+exit code, so DRC runs after you route, in `fab-01`.
 
 ## Steps
 1. In `board/power_io.kicad_sch` add D5 (green, 0603) and R12 (1k, 0402) from `STATUS_LED` to GND,
    using the symbols and footprints already in the project libraries.
-2. In `board/board.kicad_pcb` add the two footprints at the positions given in `## Review`
-   without moving any existing footprint. Leave D5 and R12 unrouted. If routing is needed,
-   stop and report; the user routes it.
-3. Run the Verify commands and fix any violation your change caused.
+2. In `board/board.kicad_pcb` add the two footprints within 5 mm of J2 and
+   inside `Edge.Cuts`, without moving any existing footprint. Leave D5 and R12 unrouted; the user
+   routes them in `## Review`.
+3. Run the Verify command and fix any violation your change caused.
 
 ## Review
 - Open sheet `power_io`: D5 and R12 sit between `STATUS_LED` and GND and the values are right.
@@ -151,11 +152,11 @@ Status: proposed
 Goal: status-led
 Node: any
 Deliverable: code
-Verify: friday result check fab-01 --require 'layers == 4' --files
+Verify: kicad-cli pcb drc --exit-code-violations -o reports/drc.rpt board/board.kicad_pcb && friday result check fab-01 --require 'layers == 4' --files
 Hardware: none
 
 ## Goal
-`fab/fab-01.zip` holds the Gerber and drill files exported from the accepted board, and
+DRC on the routed board is clean, `fab/fab-01.zip` holds the Gerber and drill files exported from the accepted board, and
 `results/fab-01.json` records its hash.
 
 ## Steps
@@ -173,5 +174,5 @@ Hardware: none
 
 Plan it with `/friday:plan`, approve it and push Base. Run `/friday:execute`: `led-01` places the
 parts, runs ERC and DRC, and ends `awaiting review`. Open the sheet and layers it names, route
-the net, run DRC in the editor, then `friday accept led-01` yourself. `fab-01` then exports the
+the net, then `friday accept led-01` yourself. `fab-01` then exports the
 files from the board you accepted; the goal lands as a PR, which you merge.

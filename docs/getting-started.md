@@ -25,9 +25,8 @@ Until friday 1.0 is on `main`, clone the `v1` branch:
 git clone -b v1 https://github.com/davidmhunt/friday ~/src/friday
 ```
 
-Try it in one session with `claude --plugin-dir ~/src/friday`, or keep it enabled: in Claude Code
-run `/plugin`, add `~/src/friday` as a local marketplace and install friday from it. Then reload
-plugins. Do not edit files in this checkout while a session uses it; its hooks run from there.
+Run it with `claude --plugin-dir ~/src/friday` each time you start a session (the checkout has no
+marketplace entry yet, so `/plugin` cannot install it from here). Do not edit files in this checkout while a session uses it; its hooks run from there.
 
 Once per machine, put `friday` on your PATH:
 

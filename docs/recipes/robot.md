@@ -1,21 +1,24 @@
 # Recipe: a robot software repo
 
-A ROS 2 workspace with a Docker `run.sh`, component submodules and a hardware test checklist per
-platform, with the same model as [getting-started.md](../getting-started.md): a goal, its
+A ROS 2 workspace with component submodules and a hardware test checklist per platform, with the same model as [getting-started.md](../getting-started.md): a goal, its
 directives, one `Verify:` each, one PR. Read that page first. This one only adds what robot work
-needs. It is shaped on cpsl-research/console: a ROS 2 repo whose builds and tests run inside
-Docker through `run.sh`, whose components (drivers, perception, control) are git submodules, and
-whose docs hold a hardware test checklist for each robot platform.
+needs. It is shaped on cpsl-research/console: a ROS 2 repo whose `run.sh` only starts the
+console container (`docker compose up --build console`), whose tests are `uv run pytest -q` (no ROS
+or hardware needed), whose components are git submodules (`components/CPSL_ROS2_Create3`,
+`_Sensors`, `_ArduPilot`, `_Nav`, `_Rover`, `_PX4`), and whose `docs/HARDWARE_TESTS.md` is a
+hardware test checklist ticked per platform (Create 3, Rover Pro, Aurelia X6) and per version.
 
 ## The shape of a robot goal
 
 Three kinds of work, three kinds of directive:
 
 - **Software, verified by the test suite.** Code in a component or the workspace is
-  `Deliverable: code` with `Accept: auto` and a `Verify:` that runs the tests through the wrapper,
-  for example `./run.sh colcon test`. These run anywhere the Docker image does, with no robot.
+  `Deliverable: code` with `Accept: auto` and a `Verify:` that runs the repo's test suite, for example
+  `uv run pytest -q`. These run anywhere, with no robot. Do not use `run.sh` as Verify in
+  console: it starts the GUI container.
 - **A hardware test you attend.** Whether the robot behaves is a judgement a test suite cannot
-  make. Make it `Accept: user`, set `Hardware:` to the robot, and put the checklist in `## Review`.
+  make. Make it `Accept: user`, set `Hardware:` to the robot, and put the checklist in `## Review`
+  (in console, point at the platform's section of `docs/HARDWARE_TESTS.md`).
   The directive ends `awaiting review`; you run the checklist and `friday accept` it.
 - **A dispatched robot step.** Deploying to the robot (ssh, flashing) can run with nobody at a
   prompt when its exact commands are pre-approved under `## Allowed commands`.
@@ -27,13 +30,10 @@ until you resume it. Pre-approve only the exact commands a directive needs.
 
 ## Configure `.claude/friday.json`
 
-Point friday at the wrapper and name the commands that touch the robot, so they take a lease and
-ask:
+Name the commands that touch the robot, so they take a lease and ask:
 
 ```json
 {
-  "run_wrapper": "./run.sh",
-  "run_only": ["colcon", "ros2", "cmake", "python3"],
   "hardware": {
     "rover": ["\\bssh\\b.*\\brover\\b", "\\bscp\\b.*\\brover\\b", "\\brsync\\b.*\\brover\\b"],
     "rover-flash": ["\\bopenocd\\b", "\\bdfu-util\\b", "\\bst-flash\\b", "/dev/ttyACM\\d", "\\./flash\\.sh\\b"]
@@ -55,7 +55,7 @@ Use the repo's own test command as `Verify:`. It stays cheap and repeatable, bec
 re-runs it in fix rounds and again at landing:
 
 ```text
-Verify: ./run.sh colcon build --packages-select rover_nav && ./run.sh colcon test --packages-select rover_nav
+Verify: uv run pytest -q tests/test_limiter.py
 ```
 
 Do not make `Verify:` something that matches a `hardware` pattern. `friday check` warns when it
@@ -69,7 +69,7 @@ workspace only records which commit it points at. So:
 
 1. Make the component change in the component's own repo, on its own branch and PR, and merge it
    there. A directive in the workspace repo does not push to another repo.
-2. Then a directive in the workspace repo bumps the submodule pointer (`git add components/nav`)
+2. Then a directive in the workspace repo bumps the submodule pointer (`git add components/CPSL_ROS2_Nav`)
    and verifies against the pointed-to commit.
 
 A step that edits files inside a submodule and commits in the workspace repo records nothing
@@ -88,8 +88,8 @@ check it in the approval summary.
 
 ```markdown
 ## Allowed commands
-- `ssh rover ./run.sh ros2 topic list`
-- `ssh rover ./run.sh ros2 topic echo --once /rover/status`
+- `ssh rover ros2 topic list`
+- `ssh rover ros2 topic echo --once /rover/status`
 - `./flash.sh rover firmware/rover.bin`
 ```
 
@@ -146,7 +146,7 @@ Status: proposed
 Goal: rover-nav
 Node: any
 Deliverable: code
-Verify: ./run.sh colcon build --packages-select rover_nav && ./run.sh colcon test --packages-select rover_nav
+Verify: uv run pytest -q tests/test_limiter.py
 Hardware: none
 
 ## Goal
@@ -154,8 +154,8 @@ Hardware: none
 shows a 2.0 m/s request leaving as 1.0.
 
 ## Steps
-1. Add the clamp in `src/rover_nav/src/limiter.cpp` and a parameter `max_speed` defaulting to 1.0.
-2. Add `test_limiter.cpp` covering below, at and above the limit, and register it in CMake.
+1. Add the clamp in `rover_nav/limiter.py` and a parameter `max_speed` defaulting to 1.0.
+2. Add `tests/test_limiter.py` covering below, at and above the limit.
 
 ## Out of scope
 - Any submodule pointer, the firmware, and the real robot.
@@ -180,7 +180,7 @@ rover reported the firmware it runs, and the recorded firmware file is unchanged
 
 ## Steps
 1. Flash once: `./flash.sh rover firmware/rover.bin`. Stop and report if it exits non-zero.
-2. Read back the status: `ssh rover ./run.sh ros2 topic echo --once /rover/status`. The
+2. Read back the status: `ssh rover ros2 topic echo --once /rover/status`. The
    `firmware` field must match `firmware/VERSION`.
 3. Record it with `friday result write flash-01 --metric flashed=1 --file firmware/rover.bin
    --cmd "./flash.sh rover firmware/rover.bin"` and commit `results/flash-01.json`.
@@ -191,7 +191,7 @@ rover reported the firmware it runs, and the recorded firmware file is unchanged
 
 ## Allowed commands
 - `./flash.sh rover firmware/rover.bin`
-- `ssh rover ./run.sh ros2 topic echo --once /rover/status`
+- `ssh rover ros2 topic echo --once /rover/status`
 
 ## Log
 ```
@@ -213,15 +213,15 @@ The rover, flashed by `flash-01`, has its topics listed and its status read on t
 `results/hwtest-01.json` records the log, so a person can review the checklist against it.
 
 ## Steps
-1. Run `ssh rover ./run.sh ros2 topic list` and save the output to `logs/hwtest-01-topics.txt`.
-2. Run `ssh rover ./run.sh ros2 topic echo --once /rover/status` and append it to
+1. Run `ssh rover ros2 topic list` and save the output to `logs/hwtest-01-topics.txt`.
+2. Run `ssh rover ros2 topic echo --once /rover/status` and append it to
    `logs/hwtest-01-topics.txt`.
 3. Record it with `friday result write hwtest-01 --metric topics_checked=1 --file
    logs/hwtest-01-topics.txt` and commit `results/hwtest-01.json` and the log. The metric means
    the topic checks ran; the drive itself is the user's review below.
 
 ## Review
-- Platform checklist for the rover: robot on blocks, e-stop reachable, battery above 80 percent.
+- Platform checklist for the rover: the Rover Pro section of `docs/HARDWARE_TESTS.md`, ticked for this version. At least: robot on blocks, e-stop reachable, battery above 80 percent.
 - Open `logs/hwtest-01-topics.txt`: `/rover/status` reports the firmware from `firmware/VERSION`.
 - Drive the rover at full stick: the speed stays at or below 1.0 m/s.
 - Press the e-stop: the wheels stop within one second.
