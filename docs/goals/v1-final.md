@@ -1,5 +1,5 @@
 # v1-final: A finished spec, a from-zero tutorial and a 1.0 release that fits research, robot and PCB repos
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -29,3 +29,4 @@ hardware commands in a dispatched session run only when pre-approved, GitHub-onl
 8. rel-01: Release 1.0.0
 
 ## Log
+- 2026-11-18: Landed: 8 directive(s) reverified on friday/v1-final; PR into v1.
