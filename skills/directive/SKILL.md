@@ -152,7 +152,8 @@ must name this goal.
   branch is pushed; later directives still run (`start` treats awaiting review as finished for order).
   `friday accept <id> [--note TEXT | --reject REASON]` (the user only; a hook denies it for agents)
   appends `Accepted by user: <date> <note>` and sets `done` (or `blocked: <reason>`) in one commit on
-  the goal branch. `friday land --goal` exits 7 naming directives still awaiting review.
+  the goal branch. It exits 8, changing nothing, while tracked files are uncommitted (it prints the
+  `git commit -am` to run first). `friday land --goal` exits 7 naming directives still awaiting review.
 - A directive adds exactly one bookkeeping commit: the finish record. Steps commit only when they
   changed tracked files (code, docs, data, configs); a step that only reproduces, measures or
   inspects appends findings to the untracked `runs/<id>/notes.md` and commits nothing.
