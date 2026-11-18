@@ -641,6 +641,8 @@ def probe_script(node) -> str:
         "echo FRIDAY_PROBE reach=ok",
         'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
         'for t in tmux git; do command -v $t >/dev/null 2>&1 && echo "FRIDAY_PROBE $t=ok" || echo "FRIDAY_PROBE $t=missing"; done',
+        "n=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c '^friday-'); "
+        'echo "FRIDAY_PROBE sessions=${n:-0}"',
         f'[ -e {plug}/.git ] && echo "FRIDAY_PROBE plugin=ok" || echo "FRIDAY_PROBE plugin=missing"',
         'f=$(command -v friday 2>/dev/null)',
         f'if [ -z "$f" ]; then echo "FRIDAY_PROBE friday=missing"',
@@ -691,7 +693,7 @@ def check_node(node) -> tuple:
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
-               f"plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
+               f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
     return summary, fixes
 
 
