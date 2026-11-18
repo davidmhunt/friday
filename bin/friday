@@ -11,6 +11,7 @@
   friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
                                     append the Log entry, Status -> done (blocked: R; awaiting review with Accept: user), one commit, clear the marker
   friday accept <id> [--note TEXT | --reject REASON]
+                                    exit 8 while tracked files are uncommitted (prints the commit command)
                                     the user accepts an `awaiting review` directive (done) or rejects it (blocked: REASON)
   friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
   friday session-end --goal <g>     close this dispatched session's own tmux session once its goal is done
@@ -420,6 +421,16 @@ def cmd_accept(a) -> int:
     want = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
     if br != want:
         sys.exit(f"friday: accept runs on branch {want}, not {br}")
+    dirty = [l[3:] for l in _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines() if l.strip()]
+    if dirty:
+        print(f"friday: tracked files are uncommitted; commit them as {a.id}'s work first (nothing changed):", file=sys.stderr)
+        for pth in dirty:
+            print(f"  {pth}", file=sys.stderr)
+        again = f"friday accept {a.id}" + (f" --reject {shlex.quote(a.reject)}" if a.reject else "")
+        print("Then run:", file=sys.stderr)
+        print(f'  git commit -am "{a.id}: review changes" -m "Directive: {a.id}"', file=sys.stderr)
+        print(f"  {again}", file=sys.stderr)
+        return 8
     today = time.strftime("%Y-%m-%d")
     if a.reject:
         line, status, sub = f"Rejected by user: {today} {a.reject}", f"blocked: {a.reject}", "blocked"
