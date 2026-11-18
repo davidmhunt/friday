@@ -414,7 +414,7 @@ beats `allow`.
 
 | Rule | Effect |
 |---|---|
-| Deny list | deny the commands listed in the next table. The rules in this table judge what a command runs, not text it passes as data: the body of a heredoc whose delimiter is quoted and a plain word (`<<'EOF'`, `<<"EOF"`, `<<-'EOF'`) with an exact closing line is not scanned; every other heredoc form, and any `<<` inside `$[`, `${`, `$((` or `((`, is scanned in full (fail closed), so an unquoted heredoc's `$(...)` and backticks are judged because the shell runs them |
+| Deny list | deny the commands listed in the next table. Every heredoc body is scanned like any other text, so text that names a guarded command (a PR body that mentions the accept command or `sudo`) is refused even in a quoted heredoc; put such text in a file and pass it with `--body-file` or `-F` instead |
 | `friday accept` guard | deny `friday accept` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
 | Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`), including `--all`, `--mirror` and an unjudgeable target |
@@ -558,3 +558,6 @@ the user. How machines and projects appear, the API and the Docker deployment:
 - **A PR's Base branch must exist on origin**, or `friday land` exits 4.
 - **`--no-verify` skips the commit guard**; `friday commits` shows the commit as `untracked`.
 - **A hook failure fails open.**
+- **Heredoc text is scanned in full.** The hooks do not parse heredocs, so a body that names a guarded
+  command is refused even when the delimiter is quoted. Put such text (a PR or commit message) in a file
+  and pass it with `--body-file` or `-F`.

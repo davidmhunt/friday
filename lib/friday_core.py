@@ -766,112 +766,13 @@ def clear_marker(cwd: Path | str) -> None:
 _SEPARATORS = ("&&", "||", ";", "|", "\n", "&")
 
 
-# Only a quoted, plain-word delimiter is recognised; everything else is scanned in full.
-_HEREDOC = re.compile(r"<<(-?)(?:'([A-Za-z_][A-Za-z0-9_]*)'|\"([A-Za-z_][A-Za-z0-9_]*)\")(?=[ \t\n;|&])")
 _SUBST = r"\$\(([^()]*)\)|`([^`]*)`"
-
-
-def _in_expansion(line: str, end: int) -> bool:
-    """True when line[end] sits inside an open $[ , ${ , $(( or (( (where << is not a heredoc)."""
-    stack, quote, i = [], None, 0
-    while i < end:
-        c = line[i]
-        if quote == "'":
-            quote = None if c == "'" else quote
-        elif c == "\\":
-            i += 1
-        elif c == quote:
-            quote = None
-        elif c in "'\"" and quote is None:
-            quote = c
-        elif line.startswith("((", i):
-            stack.append("))"); i += 1
-        elif line.startswith("$[", i):
-            stack.append("]"); i += 1
-        elif line.startswith("${", i):
-            stack.append("}"); i += 1
-        elif stack and line.startswith(stack[-1], i):
-            i += len(stack.pop()) - 1
-        i += 1
-    return bool(stack)
-
-
-def _heredoc_at(line: str, i: int) -> tuple[int, int, int] | None:
-    """If line[i:] opens a quoted plain-word heredoc whose body can be skipped safely, return
-    (end of the opener, index of the newline that starts the body, index after the closing line)."""
-    m = _HEREDOC.match(line, i)
-    if not m or _in_expansion(line, i):
-        return None
-    if "<<" in line[line.rfind("\n", 0, i) + 1:i]:  # an earlier opener's body starts at the same newline
-        return None
-    delim = m.group(2) or m.group(3)
-    nl = line.find("\n", m.end())
-    if nl < 0:
-        return None
-    rest = line[m.end():nl]
-    if "<<" in rest or "`" in rest or "$(" in rest or rest.endswith("\\"):
-        return None
-    quote = None
-    for c in rest:  # quotes on the opener line must close before the body starts
-        quote = None if c == quote else (c if quote is None and c in "'\"" else quote)
-    if quote:
-        return None
-    j = nl + 1
-    while j <= len(line):
-        k = line.find("\n", j)
-        k = len(line) if k < 0 else k
-        text = line[j:k]
-        if (text.lstrip("\t") if m.group(1) else text) == delim:
-            return m.end(), nl, k
-        if k >= len(line):
-            return None
-        j = k + 1
-    return None
-
-
-def _strip_heredocs(line: str) -> str:
-    """Cut the body of a quoted heredoc out of a shell line (it is data, never run). Fails closed:
-    anything that is not clearly such a heredoc is left in place and scanned."""
-    out, skip, quote, i = [], None, None, 0
-    while i < len(line):
-        c = line[i]
-        if quote:
-            out.append(c)
-            if c == quote:
-                quote = None
-            elif c == "\\" and quote == '"' and i + 1 < len(line):
-                out.append(line[i + 1]); i += 1
-            i += 1
-            continue
-        if c in "'\"":
-            quote = c; out.append(c); i += 1
-            continue
-        if c == "\\" and i + 1 < len(line):
-            out.append(line[i:i + 2]); i += 2
-            continue
-        if c == "\n" and skip and i == skip[0]:
-            out.append(c); i = skip[1]; skip = None
-            continue
-        if c == "#" and (i == 0 or line[i - 1] in " \t\n;&|()"):
-            j = line.find("\n", i)
-            j = len(line) if j < 0 else j
-            out.append(line[i:j]); i = j
-            continue
-        if line.startswith("<<", i) and not line.startswith("<<<", i) and skip is None:
-            h = _heredoc_at(line, i)
-            if h:
-                out.append(line[i:h[0]]); i = h[0]
-                skip = (h[1], h[2])
-                continue
-        out.append(c); i += 1
-    return "".join(out)
 
 
 def split_commands(line: str) -> list[str]:
     """Split a shell line into simple commands on && || ; | & and newlines, outside quotes.
     Command substitutions $(...) and backticks are returned as extra commands too.
-    The body of a quoted heredoc (<<'EOF') is data and dropped; every other heredoc is scanned."""
-    line = _strip_heredocs(line)
+    Heredoc bodies are scanned like any other text (fail closed)."""
     parts, buf, quote, i = [], [], None, 0
     subs = re.findall(_SUBST, line)
     while i < len(line):

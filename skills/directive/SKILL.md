@@ -40,6 +40,9 @@ One or two sentences: the result, and how a reader can tell it holds.
 ## Out of scope
 - ...
 
+Text that names a guarded command (a PR body mentioning the accept command) goes in a file passed with
+`--body-file`/`-F`, never a heredoc: the hooks scan heredoc bodies in full.
+
 ## Log
 (execution appends here: commits, Verify results, verifier verdict, PR link, blockers)
 ```
