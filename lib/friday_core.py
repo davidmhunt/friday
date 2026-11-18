@@ -887,10 +887,13 @@ def lease_holder(resource: str, now: float | None = None) -> dict | None:
     return lease
 
 
-def take_lease(resource: str, session: str, note: str = "") -> None:
+def take_lease(resource: str, session: str, note: str = "", approved: bool = False) -> None:
     p = lease_dir() / f"{resource}.json"
-    p.write_text(json.dumps({"resource": resource, "session": session, "host": socket.gethostname(),
-                             "time": time.time(), "note": note[:200]}))
+    lease = {"resource": resource, "session": session, "host": socket.gethostname(),
+             "time": time.time(), "note": note[:200]}
+    if approved:
+        lease["approved"] = True
+    p.write_text(json.dumps(lease))
 
 
 def release_leases(session: str | None = None, resource: str | None = None) -> list[str]:

@@ -444,6 +444,7 @@ The deny list, each rule traced to an incident or a hard rule:
 
 | Event | Matcher | Effect |
 |---|---|---|
+| PostToolUse | `Bash` | a command that matched a `session` resource of `hardware_approval` has run (so the user allowed it): record `approved: true` on that resource's lease for this session. The next matching command from the same session gets `allow` (`<resource> approved for this session`) unless a deny rule or another session's lease applies. The approval ends with the lease (`friday release`, TTL, session end). Hook input carries the same `session_id` in subagents (plus `agent_id`), so a subagent's commands share the approval |
 | PostToolUse | `Write`, `Edit`, `MultiEdit` | validate the edited goal or directive file under `docs/goals/` or `docs/directives/` (not `README.md`, `TEMPLATE.md`); its own format errors go back to the model (exit 2); warnings and clean files are silent |
 | Stop | all | the Verify gate: while a directive is active here with the gate on (no `--no-gate`) and no background task is running, run its `Verify` (up to 30 minutes). On failure block the stop with the output tail, up to 3 times, then stop for the user. `Verify: none` is reported, not run |
 | SessionEnd | all | release this session's hardware leases |

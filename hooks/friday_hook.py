@@ -6,7 +6,7 @@
   session-end  SessionEnd: release this session's hardware leases
   notification Notification: a friday session stopped on a prompt; record it for status and the dash
   waiting-clear PreToolUse/PostToolUse/UserPromptSubmit: the session moved on; drop that record
-  posttool     PostToolUse on Write|Edit|MultiEdit: a goal/directive file's own format errors go
+  posttool     PostToolUse on Bash: record session approval of a hardware resource; on Write|Edit|MultiEdit: a goal/directive file's own format errors go
                back to the model (stderr, exit 2); warnings and clean files are silent
 
 Every decision is deterministic and explained in its reason, so the agent learns the fix from
@@ -152,6 +152,26 @@ def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
     return None
 
 
+def _session_approved(cfg: dict, resource: str) -> bool:
+    return (cfg.get("hardware_approval") or {}).get(resource) == "session"
+
+
+def record_session_approval(payload: dict) -> None:
+    """PostToolUse on Bash: the command ran, so the user allowed it. For each `session` resource it
+    matched whose lease this session holds, mark the lease approved (it ends with the lease)."""
+    session = payload.get("session_id") or ""
+    cmd = (payload.get("tool_input") or {}).get("command") or ""
+    if not session or not cmd:
+        return
+    cfg = fc.load_config(fc.repo_root(Path(payload.get("cwd") or ".")))
+    for resource, patterns in (cfg.get("hardware") or {}).items():
+        if not _session_approved(cfg, resource) or not any(re.search(p, cmd) for p in patterns):
+            continue
+        holder = fc.lease_holder(resource)
+        if holder and holder.get("session") == session and not holder.get("approved"):
+            fc.take_lease(resource, session, holder.get("note", ""), approved=True)
+
+
 def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     hw = cfg.get("hardware") or {}
     for resource, patterns in hw.items():
@@ -163,6 +183,9 @@ def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
             return "deny", (f"Hardware `{resource}` is held by another session on {holder.get('host')} "
                             f"({age} min ago: {holder.get('note', '')}). Wait, or ask the user to run "
                             f"`friday release {resource}`.")
+        if holder and session and holder.get("approved") and _session_approved(cfg, resource):
+            fc.take_lease(resource, session, cmd, approved=True)   # refresh the TTL, keep the approval
+            return "allow", f"{resource} approved for this session"
         fc.take_lease(resource, session, cmd)
         reason = (f"Hardware `{resource}`: this command touches a physical device. Lease taken and "
                   f"held for this session; this approval covers this command only.")
@@ -455,6 +478,9 @@ def waiting_clear(payload: dict) -> None:
 # ------------------------------------------------------------------ posttool
 def posttool(payload: dict) -> int:
     """Validate one edited goal/directive file (no cross-checks). Returns the exit code."""
+    if payload.get("tool_name") == "Bash":
+        record_session_approval(payload)
+        return 0
     fp = (payload.get("tool_input") or {}).get("file_path")
     if payload.get("tool_name") not in ("Write", "Edit", "MultiEdit") or not fp:
         return 0
