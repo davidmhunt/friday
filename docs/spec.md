@@ -414,7 +414,7 @@ beats `allow`.
 
 | Rule | Effect |
 |---|---|
-| Deny list | deny the commands listed in the next table. The rules in this table judge what a command runs, not text it passes as data: the body of a quoted heredoc (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) is not scanned; an unquoted heredoc's `$(...)` and backticks still are, because the shell runs them |
+| Deny list | deny the commands listed in the next table. The rules in this table judge what a command runs, not text it passes as data: the body of a heredoc whose delimiter is quoted and a plain word (`<<'EOF'`, `<<"EOF"`, `<<-'EOF'`) with an exact closing line is not scanned; every other heredoc form, and any `<<` inside `$[`, `${`, `$((` or `((`, is scanned in full (fail closed), so an unquoted heredoc's `$(...)` and backticks are judged because the shell runs them |
 | `friday accept` guard | deny `friday accept` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
 | Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`), including `--all`, `--mirror` and an unjudgeable target |

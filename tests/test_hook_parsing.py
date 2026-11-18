@@ -153,3 +153,17 @@ def test_non_heredoc_double_angle_does_not_hide_commands():
     for cmd in cases:
         assert "friday accept hook-01" in fc.split_commands(cmd), cmd
         assert refused(cmd), cmd
+
+
+def test_fail_closed_heredoc_cases_are_still_scanned():
+    cases = [
+        "cat <<EOF+\nx\nEOF+\nfriday accept hook-01",
+        "cat <<EOF@\nbody\nfriday accept hook-01\nEOF@",
+        "cat <<'EOF'+\nfriday accept hook-01\nEOF+",
+        "cat <<EOF$x\nfriday accept hook-01\nEOF",
+        "echo $[1<<EOF]\nfriday accept hook-01\nEOF",
+        "echo ${x:-<<EOF}\nfriday accept hook-01\nEOF",
+        "cat <<'EOF'\nfriday accept hook-01",  # missing closing line
+    ]
+    for cmd in cases:
+        assert refused(cmd), cmd

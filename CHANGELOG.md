@@ -16,9 +16,10 @@
 
 ### Changed
 
-- The PreToolUse checks ignore the body of a quoted heredoc (`<<'EOF'`, `<<"EOF"`, `<<\EOF`), so a PR body
-  that names the accept command or `sudo` is no longer refused. `$(...)` and backticks in an unquoted heredoc
-  are still scanned.
+- The PreToolUse checks ignore the body of a heredoc whose delimiter is quoted and a plain word (`<<'EOF'`,
+  `<<"EOF"`, `<<-'EOF'`) and has an exact closing line, so a PR body that names the accept command or `sudo` is
+  no longer refused. Every other heredoc form is scanned in full, including `$(...)` and backticks in an
+  unquoted one.
 - `friday accept <id>` and `--reject` exit 8 and change nothing while tracked files are modified or staged
   (untracked files do not count); they list the files and print the `git commit -am` command that commits
   them as the directive's work, then the accept command to rerun.
