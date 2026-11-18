@@ -26,7 +26,10 @@
                                     check preconditions, pick a node (refusals have their own exit codes)
   friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
   friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
-  friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
+  friday dash [--bind ADDR]... [--no-self]
+                                    serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port);
+                                    --no-self: do not collect the master's own snapshot (it pushes it)
+  friday dash up | down             start / stop the dash as a Docker Compose service (deploy/compose.yaml)
 """
 from __future__ import annotations
 
@@ -1368,8 +1371,37 @@ def cmd_uninstall(a) -> int:
 
 
 def cmd_dash(a) -> int:
+    if a.action:
+        return dash_compose(a.action)
     import friday_dash
-    return friday_dash.main(a.bind)
+    return friday_dash.main(a.bind, no_self=a.no_self)
+
+
+def dash_compose(action: str) -> int:
+    """`friday dash up|down`: drive deploy/compose.yaml. The token goes in the environment, never argv."""
+    import shutil
+    if shutil.which("docker") is None:
+        print("friday dash: docker is not installed or not on PATH; install Docker to use `friday dash up`", file=sys.stderr)
+        return 1
+    compose = ff.PLUGIN_ROOT / "deploy" / "compose.yaml"
+    argv = ["docker", "compose", "-f", str(compose)] + (["up", "-d", "--build"] if action == "up" else ["down"])
+    env = dict(os.environ)
+    if action == "up":
+        token = ""
+        if shutil.which("gh"):
+            r = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+            token = r.stdout.strip() if r.returncode == 0 else ""
+        if token:
+            env["GH_TOKEN"] = token
+        else:
+            env.pop("GH_TOKEN", None)
+            print("friday dash: gh is not signed in; GH_TOKEN left unset, so the dash will show no open PRs "
+                  "(run `gh auth login`, then `friday dash up` again)")
+    print("friday dash: running " + shlex.join(argv) + (" (GH_TOKEN set from gh auth token)" if env.get("GH_TOKEN") and action == "up" else ""), flush=True)
+    rc = subprocess.run(argv, env=env).returncode
+    if rc != 0:
+        print(f"friday dash: docker compose {action} failed (exit {rc})", file=sys.stderr)
+    return rc
 
 
 def main() -> int:
@@ -1392,7 +1424,7 @@ def main() -> int:
     s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
     for nm, fn in (("install", cmd_install), ("uninstall", cmd_uninstall)):
         s = sub.add_parser(nm); s.add_argument("--bin-dir", metavar="DIR"); s.set_defaults(f=fn)
-    s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
+    s = sub.add_parser("dash"); s.add_argument("action", nargs="?", choices=["up", "down"]); s.add_argument("--bind", action="append", metavar="ADDR"); s.add_argument("--no-self", action="store_true"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)
 

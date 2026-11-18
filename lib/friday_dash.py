@@ -160,7 +160,8 @@ class Dash:
     """The server's state and route logic, separate from the HTTP plumbing so tests can drive it."""
 
     def __init__(self, registry=None, port: int = ff.DASH_PORT, binds=(), static_dir: Path = STATIC_DIR,
-                 clock=time.time, run=subprocess.run, state_path: Path | None = None, collect=None):
+                 clock=time.time, run=subprocess.run, state_path: Path | None = None, collect=None, no_self: bool = False):
+        self.no_self = no_self  # container mode: the master pushes its own snapshot like any node
         self.run = run
         self.collect = collect or fs.collect
         self.state_path = Path(state_path) if state_path is not None else state_dir()
@@ -292,7 +293,8 @@ class Dash:
                     sys.stderr.write(f"friday dash: {fn.__name__} failed: {type(e).__name__}: {e}\n")
                 if self._stop.wait(every):
                     return
-        for fn, every in ((self.refresh_master, MASTER_EVERY), (self.refresh_prs, PRS_EVERY)):
+        jobs = ((self.refresh_master, MASTER_EVERY), (self.refresh_prs, PRS_EVERY))
+        for fn, every in (jobs[1:] if self.no_self else jobs):
             threading.Thread(target=loop, args=(fn, every), name=f"dash-{fn.__name__}", daemon=True).start()
 
     def close(self) -> None:
@@ -522,13 +524,13 @@ def stop(servers) -> None:
         s.server_close()
 
 
-def main(binds_requested=None, registry_path=None) -> int:
-    """`friday dash [--bind ADDR]...`: serve until interrupted."""
+def main(binds_requested=None, registry_path=None, no_self: bool = False) -> int:
+    """`friday dash [--bind ADDR]... [--no-self]`: serve until interrupted."""
     try:
         reg, port = load_registry(registry_path)
         tip = tailnet_ipv4()
         binds = resolve_binds(binds_requested, tip)
-        app = Dash(reg, port, binds)
+        app = Dash(reg, port, binds, no_self=no_self)
         servers = serve(app, binds, port)
         app.start()
     except DashError as e:
