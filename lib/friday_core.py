@@ -766,11 +766,69 @@ def clear_marker(cwd: Path | str) -> None:
 _SEPARATORS = ("&&", "||", ";", "|", "\n", "&")
 
 
+_HEREDOC = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|\\([A-Za-z0-9_]+)|([A-Za-z0-9_]+))")
+_SUBST = r"\$\(([^()]*)\)|`([^`]*)`"
+
+
+def _strip_heredocs(line: str) -> tuple[str, list[str]]:
+    """Cut heredoc bodies out of a shell line. Returns the line without them and the bodies of
+    unquoted heredocs (the shell expands $(...) and backticks there; a quoted body is plain data)."""
+    out, live, pending, quote, i = [], [], [], None, 0
+    while i < len(line):
+        c = line[i]
+        if quote:
+            out.append(c)
+            if c == quote:
+                quote = None
+            elif c == "\\" and quote == '"' and i + 1 < len(line):
+                out.append(line[i + 1]); i += 1
+            i += 1
+            continue
+        if c in "'\"":
+            quote = c; out.append(c); i += 1
+            continue
+        if c == "\\" and i + 1 < len(line):
+            out.append(line[i:i + 2]); i += 2
+            continue
+        if c == "\n" and pending:
+            out.append(c); i += 1
+            for dash, delim, quoted in pending:
+                body = []
+                while i < len(line):
+                    j = line.find("\n", i)
+                    j = len(line) if j < 0 else j
+                    text = line[i:j]
+                    i = min(j + 1, len(line))
+                    if (text.lstrip("\t") if dash else text) == delim:
+                        break
+                    body.append(text)
+                if not quoted:
+                    live.append("\n".join(body))
+            pending = []
+            continue
+        if line.startswith("<<", i) and not line.startswith("<<<", i):
+            m = _HEREDOC.match(line, i)
+            if m:
+                delim = next(g for g in m.groups()[1:] if g is not None)
+                pending.append((bool(m.group(1)), delim, m.group(5) is None))
+                out.append(m.group(0)); i = m.end()
+                continue
+            out.append("<<"); i += 2
+            continue
+        out.append(c); i += 1
+    return "".join(out), live
+
+
 def split_commands(line: str) -> list[str]:
     """Split a shell line into simple commands on && || ; | & and newlines, outside quotes.
-    Command substitutions $(...) and backticks are returned as extra commands too."""
+    Command substitutions $(...) and backticks are returned as extra commands too.
+    Heredoc bodies are not commands: a quoted one is dropped, an unquoted one is scanned
+    for substitutions only."""
+    line, bodies = _strip_heredocs(line)
     parts, buf, quote, i = [], [], None, 0
-    subs = re.findall(r"\$\(([^()]*)\)|`([^`]*)`", line)
+    subs = re.findall(_SUBST, line)
+    for b in bodies:
+        subs += re.findall(_SUBST, b)
     while i < len(line):
         c = line[i]
         if quote:
