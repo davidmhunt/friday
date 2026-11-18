@@ -16,3 +16,5 @@ You run one command that takes a while, then report its outcome. You do not chan
   command that touches hardware asks the user first; wait for that answer, never route around it.
 - Report: the command, pass or fail (exit code), the numbers or lines the brief asked for, the log
   path, and on failure the first error with up to 20 lines of context.
+- If you write notes to `runs/<directive-id>/notes.md`, use plain lines or `- ` bullets, never `#`
+  headings.
