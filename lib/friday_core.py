@@ -300,10 +300,22 @@ def _bullets(body: list[tuple[int, str]]) -> list[str]:
     return out
 
 
+def _allowed_items(sec: dict | None) -> list[tuple[int, str, str | None]]:
+    """`## Allowed commands` bullets as (line, bullet text, pattern or None when the bullet does
+    not hold exactly one backticked span)."""
+    out: list[tuple[int, str, str | None]] = []
+    for i, line in (sec["body"] if sec else []):
+        if line.startswith("- "):
+            spans = re.findall(r"`([^`]*)`", line[2:])
+            ok = len(spans) == 1 and line[2:].count("`") == 2 and spans[0].strip()
+            out.append((i, line[2:].strip(), spans[0].strip() if ok else None))
+    return out
+
+
 def parse_directive_full(text: str) -> dict:
     """The parsed shape of a directive file. Keys: id, title, status, goal, node, deliverable,
     land (default `goal`), accept (default `auto`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
-    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), headers [(key, value, line)], sections [(name, line)]."""
+    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), allowed [str] (patterns in `## Allowed commands`, [] when absent), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     steps_sec = _section(md, "Steps")
@@ -322,6 +334,7 @@ def parse_directive_full(text: str) -> dict:
                   for s in steps],
         "acceptance": _bullets(acc["body"]) if acc else None,
         "review": _bullets(rev["body"]) if rev else None,
+        "allowed": [p for _, _, p in _allowed_items(_section(md, "Allowed commands")) if p],
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
     }
@@ -433,6 +446,31 @@ def _status_ok(status: str, running_host: bool) -> bool:
     return bool(re.match(r"^blocked:\s*\S", status))
 
 
+def _hook_deny(cmd: str) -> str | None:
+    """The PreToolUse hook's deny list (hooks/friday_hook.py), loaded by path."""
+    import importlib.util
+    hp = Path(__file__).resolve().parent.parent / "hooks" / "friday_hook.py"
+    spec = importlib.util.spec_from_file_location("friday_hook_deny", hp)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.check_deny(cmd)
+
+
+def allowed_pattern_problem(pat: str) -> str | None:
+    """Why an `## Allowed commands` pattern is not acceptable, or None."""
+    if not pat.replace("*", "").strip():
+        return "pattern matches everything; name a command"
+    for bad in ("&&", ";", "|", "`", "$("):
+        if bad in pat:
+            return f"pattern contains `{bad}`; a pattern is one simple command"
+    if re.match(r"^friday\s+accept\b", pat):
+        return "`friday accept` can never be pre-approved"
+    for probe in (pat, pat.replace("*", "x")):
+        if (r := _hook_deny(probe)):
+            return f"pattern matches the hook deny list ({r})"
+    return None
+
+
 def validate_directive(did: str, text: str) -> list[Issue]:
     """This one directive file's own rules (no cross-checks against goal files)."""
     path = str(DIRECTIVE_DIR / f"{did}.md")
@@ -487,6 +525,12 @@ def validate_directive(did: str, text: str) -> list[Issue]:
     elif d["deliverable"] == "external":
         issues.append(Issue("warning", path, hl.get("Deliverable", 1),
                             "Deliverable external should use `Accept: user` (with a `## Review` section)"))
+
+    for ln, text, pat in _allowed_items(_section(md, "Allowed commands")):
+        if pat is None:
+            issues.append(Issue("error", path, ln, f"Allowed commands bullet needs exactly one backticked pattern: {text}"))
+        elif (why := allowed_pattern_problem(pat)):
+            issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
 
     steps_sec = _section(md, "Steps")
     if steps_sec:
