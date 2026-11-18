@@ -150,6 +150,11 @@ def cmd_status(a) -> int:
             age = f" ({fs.fmt_age(ws['waiting_age'])})" if ws["waiting_age"] is not None else ""
             print(f"\nwaiting on you: {ws['goal'] or ws['name']}{age}: \"{ws['waiting_line']}\"  "
                   f"-> tmux attach -t '={ws['name']}'")
+    merged = _merged_origin_branches(root)
+    if merged:
+        print("\nmerged branches left on origin (friday deletes nothing):")
+        for b in merged:
+            print(f"  git push origin --delete {b}")
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
@@ -166,9 +171,58 @@ def _install_hook(root: Path) -> None:
               "guard not installed", file=sys.stderr)
 
 
+def _gh_slug(root: Path) -> tuple[str, str] | None:
+    """(gh command, owner/repo) when origin is a GitHub repo and gh is installed and signed in; else None."""
+    import re
+    gh = os.environ.get("FRIDAY_GH", "gh")
+    url = _run(["git", "remote", "get-url", "origin"], root)
+    if url.returncode != 0:
+        return None
+    m = re.match(r"^(?:git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+?)(?:\.git)?/?$",
+                 url.stdout.strip())
+    if not m or _run([gh, "auth", "status"], root).returncode != 0:
+        return None
+    return gh, m.group(1)
+
+
+def _report_delete_branch_on_merge(root: Path) -> None:
+    """friday init: say whether GitHub deletes head branches on merge; print the command to turn it on."""
+    found = _gh_slug(root)
+    if not found:
+        return
+    gh, slug = found
+    r = _run([gh, "api", f"repos/{slug}", "--jq", ".delete_branch_on_merge"], root)
+    if r.returncode != 0:
+        return
+    if r.stdout.strip() == "true":
+        print(f"friday init: {slug} deletes head branches on merge")
+    elif r.stdout.strip() == "false":
+        print(f"friday init: {slug} keeps head branches after merge; to delete them automatically run:\n"
+              f"  gh api -X PATCH repos/{slug} -F delete_branch_on_merge=true")
+
+
+def _merged_origin_branches(root: Path) -> list[str]:
+    """origin/friday/* branches (as of the last fetch) whose PR is merged. Empty when gh is unavailable."""
+    found = _gh_slug(root)
+    if not found:
+        return []
+    gh, slug = found
+    refs = _run(["git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/friday/"], root)
+    out = []
+    for ref in refs.stdout.split():
+        branch = ref.removeprefix("origin/")
+        r = _run([gh, "pr", "list", "-R", slug, "--state", "merged", "--head", branch,
+                  "--json", "number", "--jq", "length"], root)
+        if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
+            out.append(branch)
+    return out
+
+
 def cmd_init(a) -> int:
     _install_hook(_root())
-    return _init_settings(a)
+    rc = _init_settings(a)
+    _report_delete_branch_on_merge(_root())
+    return rc
 
 
 def _init_settings(a) -> int:
