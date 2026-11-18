@@ -18,7 +18,8 @@ against a throwaway repo, so the tutorial cannot drift.
    `origin` remote); clone with `-b v1` until 1.0 is on main; install the plugin; `friday install`;
    `friday init` in the repo; CLAUDE.md, `.claude/friday.json`, `runs/` in `.gitignore`;
    squash-merge setting; `/friday:plan`; where the plan commit lands and that the user pushes it;
-   `/friday:execute`; reviewing and merging the PR; what to do when it stops (blocked, awaiting
+   pre-approving commands under `## Allowed commands` before approval (and checking that list in
+   the approval summary); `/friday:execute`; reviewing and merging the PR; what to do when it stops (blocked, awaiting
    review). End with pointers to fleet and dashboard.
 2. docs/recipes/research.md: experiments and long GPU runs with `friday result`, datasets and
    provenance, `Node: tag:gpu` and dispatch, a paper or report as `Deliverable: doc` with
@@ -26,7 +27,8 @@ against a throwaway repo, so the tutorial cannot drift.
 3. docs/recipes/robot.md, shaped on cpsl-research/console (ROS 2, Docker `run.sh`, component
    submodules, a per-platform hardware test checklist): software directives verified by the test
    suite; a hardware test as an attended directive with `Hardware:` set, `Accept: user` and the
-   checklist in `## Review`; `hardware` patterns for ssh-to-robot and flashing commands; what the
+   checklist in `## Review`; a dispatched robot directive whose ssh, flashing and hardware
+   commands are pre-approved under `## Allowed commands`; `hardware` patterns for ssh-to-robot and flashing commands; what the
    deny list refuses and how to do those steps yourself; submodule changes land in the
    component's own repo first. One complete example goal.
 4. docs/recipes/pcb.md (KiCad): Verify is `kicad-cli sch erc` and `kicad-cli pcb drc` with
@@ -38,16 +40,17 @@ against a throwaway repo, so the tutorial cannot drift.
    `friday check --all`; move the "Migrating a directive to a goal" section here from
    docs/workflow.md. README.md links the tutorial first, then the recipes.
 6. tests/test_tutorial.py: in a temp repo run the tutorial's shell commands in order (init, a
-   hand-written one-directive goal copied from the tutorial, check, start, finish, a goal with
+   hand-written one-directive goal copied from the tutorial, one with `## Allowed commands`, check, start, finish, a goal with
    `Accept: user` reaching `awaiting review`, accept); assert every example goal and directive
    in the tutorial and recipes passes `friday check`.
 
 ## Acceptance
 - Following docs/getting-started.md needs no other document until the first goal has landed.
 - Each recipe contains a complete goal file and directive files that pass `friday check`.
-- The robot recipe names console's real structure (submodules, `run.sh`, the hardware test checklist) and states that hardware directives run attended, not dispatched.
+- The robot recipe names console's real structure (submodules, `run.sh`, the hardware test checklist) and states that a hardware directive runs attended unless its commands are pre-approved under `## Allowed commands`, and shows one that is.
 - The PCB recipe's Verify commands are real `kicad-cli` invocations and it says which work stays with the user.
 - No recipe tells the reader to edit a Status line by hand.
+- The tutorial shows where to pre-approve a command and says those commands otherwise prompt.
 
 ## Out of scope
 - Changing CPSL_TI_Radar, console or any KiCad repo. Adopting 1.0 there is separate work in those repos.
