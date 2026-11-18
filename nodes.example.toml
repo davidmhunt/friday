@@ -14,6 +14,9 @@
 role = "master"
 # ssh: how to reach the node (user@host or an ssh config alias); must be unique per node.
 ssh = "david@laptop-ts"
+# tailnet: tailnet device name, only when it differs from the host in ssh (the dash uses it to
+# recognise this node's pushes and to build the master's dash URL).
+# tailnet = "laptop"
 # runtime: native (default) or container.
 # runtime = "native"
 # tags: labels that `Node: tag:<x>` routes on.

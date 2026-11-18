@@ -72,6 +72,7 @@ Keys of `report_to` and `[dash]` (top level) and of each `[node.<name>]` table:
 | `report_to` | name of the master's session that workers message; optional |
 | `role` | `master`, `worker` or `target`; required |
 | `ssh` | `user@host` or an ssh config alias; required and unique per node |
+| `tailnet` | tailnet device name, only when it differs from the host in `ssh`; the dash matches pushes and builds the master's URL with it; optional |
 | `runtime` | `native` (default) or `container`; passed to the worker as `FRIDAY_RUNTIME` |
 | `tags` | list of labels that `Node: tag:<x>` routes on |
 | `repos` | directory holding the node's repos (`~` allowed); required for master and worker |

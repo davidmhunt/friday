@@ -1451,8 +1451,15 @@ def dash_compose(action: str) -> int:
         print("friday dash: docker is not installed or not on PATH; install Docker to use `friday dash up`", file=sys.stderr)
         return 1
     compose = ff.PLUGIN_ROOT / "deploy" / "compose.yaml"
+    reg = ff.find_nodes_file()
+    if reg is None and action == "up":
+        print("friday dash: no registry file found (looked for $FRIDAY_NODES, <plugin root>/nodes.toml, "
+              "~/.config/friday/nodes.toml); copy nodes.example.toml to one of them and edit it, then run `friday dash up` again",
+              file=sys.stderr)
+        return 1
     argv = ["docker", "compose", "-f", str(compose)] + (["up", "-d", "--build"] if action == "up" else ["down"])
     env = dict(os.environ)
+    env["FRIDAY_NODES_FILE"] = str(Path(reg).resolve()) if reg else "/dev/null"  # mounted by compose.yaml
     if action == "up":
         token = ""
         if shutil.which("gh"):

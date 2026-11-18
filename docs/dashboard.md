@@ -96,7 +96,7 @@ a file); when `gh` is signed out it is left unset with a note and the dash shows
 back with the machine.
 
 The container runs on the host network (so it binds the tailnet IP and sees real peer addresses),
-mounts `~/.config/friday/nodes.toml` and `/var/run/tailscale/tailscaled.sock` read-only, and keeps
+mounts the registry file the CLI resolved (`$FRIDAY_NODES`, the plugin root `nodes.toml`, or `~/.config/friday/nodes.toml`) and `/var/run/tailscale/tailscaled.sock` read-only, and keeps
 its state in the named volume `dash-state`. The security rules are unchanged: whois sender check,
 bind only to `127.0.0.1` and the tailnet IP.
 
