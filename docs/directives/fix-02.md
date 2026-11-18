@@ -1,5 +1,5 @@
 # fix-02: Every command and flag is real, documented in `--help` and allowed without a prompt
-Status: approved
+Status: blocked: review gaps remain: tests/test_cli_surface.py:19-25 (prompted()) and :115; lib/friday_core.py:33-40; skills/dispatch/SKILL.md:16, skills/clean/SKILL.md:16, skills/hardware/SKILL.md:14; docs/directives/fix-02.md Step 6 and Log: This is narrower than before but still open. f5932be adds allow rules for 'friday nodes', 'nodes --check', 'nodes --clean * --dry-run' and 'dispatch --goal * --dry-run', so the read-only nodes skill and both dry-runs no longer prompt. But the skills still run the real 'friday dispatch --goal <goal>' and 'friday nodes --clean <node>', and the hardware skill names 'friday release <resource>'. None of these matches a rule in FRIDAY_ALLOW or .claude/settings.json. The test still lets them through with the 'prompted()' exemption. Step 6 says every 'friday <sub>' in skills/ must match an allow rule, and the Goal says the commands skills run match the rules 'friday init' writes. Leaving these to prompt is a reasonable safety choice, since the user has already confirmed. But it departs from the stated requirement, and the record is only in the CHANGELOG and a code comment. The directive's Step 6 was not amended, and its Log section is empty.
 Goal: v1-final
 Node: any
 Deliverable: code
@@ -35,3 +35,19 @@ dispatched sessions run match the allow rules `friday init` writes.
 - New commands other than `status --node` (accept, result and unblock belong to other directives).
 
 ## Log
+
+### 2026-11-18
+Commits:
+- f5932be fix-02: allow read-only nodes and dry-runs; surface test exempts only the real dispatch/clean runs
+- 5a4db14 fix-02 step 6: CLI surface test (help vs parser, allow rules vs skills/workflow) and CHANGELOG
+- 097f677 fix-02 step 5: update dash docker tests for the resolved registry mount
+- 2b91d9b fix-02 step 5: tailnet key in registry docs; friday dash up mounts the resolved registry file
+- 9d31758 fix-02 step 4: allow friday init and session-end; skills call plain friday and point to friday install
+- 721ed1e friday docstring: add init, session-end, unblock, dispatch --resume/--unblock, status --node; name friday install
+- e94da8a friday nodes --check: report the number of friday-* tmux sessions per node
+- f21c7a7 friday status --node NAME: pass the name to collect for --json and --push
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_cli_surface.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: not recorded
+Blocked: review gaps remain: tests/test_cli_surface.py:19-25 (prompted()) and :115; lib/friday_core.py:33-40; skills/dispatch/SKILL.md:16, skills/clean/SKILL.md:16, skills/hardware/SKILL.md:14; docs/directives/fix-02.md Step 6 and Log: This is narrower than before but still open. f5932be adds allow rules for 'friday nodes', 'nodes --check', 'nodes --clean * --dry-run' and 'dispatch --goal * --dry-run', so the read-only nodes skill and both dry-runs no longer prompt. But the skills still run the real 'friday dispatch --goal <goal>' and 'friday nodes --clean <node>', and the hardware skill names 'friday release <resource>'. None of these matches a rule in FRIDAY_ALLOW or .claude/settings.json. The test still lets them through with the 'prompted()' exemption. Step 6 says every 'friday <sub>' in skills/ must match an allow rule, and the Goal says the commands skills run match the rules 'friday init' writes. Leaving these to prompt is a reasonable safety choice, since the user has already confirmed. But it departs from the stated requirement, and the record is only in the CHANGELOG and a code comment. The directive's Step 6 was not amended, and its Log section is empty.
