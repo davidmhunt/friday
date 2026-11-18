@@ -547,6 +547,29 @@ def _stems(folder: Path) -> list[str]:
     return sorted(f.stem for f in folder.glob("*.md") if f.name not in _SKIP)
 
 
+def hardware_verify_warnings(root: Path, rel: str, d: dict) -> list[Issue]:
+    """Warn when Verify matches a `hardware` pattern in .claude/friday.json: Verify is re-run
+    unattended (fix rounds, landing) without the hardware prompt."""
+    verify = d.get("verify") or ""
+    if not verify:
+        return []
+    ln = next((n for k, _, n in reversed(d["headers"]) if k == "Verify"), 1)
+    out = []
+    for resource, patterns in (load_config(root).get("hardware") or {}).items():
+        for pat in patterns:
+            try:
+                hit = re.search(pat, verify)
+            except re.error:
+                continue
+            if hit:
+                out.append(Issue("warning", rel, ln,
+                                 f"Verify matches hardware pattern `{pat}` ({resource}) but is re-run unattended "
+                                 "without the hardware prompt; run the device step once, record it with "
+                                 "`friday result write`, and make Verify a `friday result check`"))
+                break
+    return out
+
+
 def check_repo(root: Path | str, directive: str | None = None, goal: str | None = None) -> list[Issue]:
     """Issues for one directive, one goal (its file, its listed directives' files and the
     cross-checks), or (both None) every goal and directive file. README.md and TEMPLATE.md are
@@ -584,7 +607,9 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
             add([Issue("error", rel, 1, f"directive file {rel} does not exist")])
             return None
         add(validate_directive(did, t))
-        return parse_directive_full(t)
+        d = parse_directive_full(t)
+        add(hardware_verify_warnings(root, rel, d))
+        return d
 
     def own_goal(gid: str) -> dict | None:
         rel = str(GOAL_DIR / f"{gid}.md")

@@ -94,3 +94,18 @@ def test_check_unrelated_commit(repo):
     git(repo, "commit", "-qm", "other", "--allow-empty")
     r = friday(repo, "result", "check", "t-01")
     assert r.returncode == 1 and "not an ancestor of HEAD" in r.stdout
+
+
+def test_check_warns_when_verify_matches_hardware(repo):
+    (repo / "docs" / "directives").mkdir(parents=True)
+    (repo / "docs" / "goals").mkdir(parents=True)
+    (repo / ".claude").mkdir()
+    (repo / ".claude" / "friday.json").write_text(json.dumps({"hardware": {"gpu": ["train\\.py"]}}))
+    (repo / "docs" / "goals" / "g.md").write_text("# g: goal\nStatus: approved\n\n## Directives\n- t-01\n")
+    body = ("# t-01: x\nStatus: approved\nGoal: g\nNode: any\nDeliverable: code\nLand: goal\n"
+            "Verify: python train.py --epochs 3\nHardware: none\n\n## Goal\nx\n\n## Steps\n1. a\n\n## Out of scope\n- b\n\n## Log\n")
+    (repo / "docs" / "directives" / "t-01.md").write_text(body)
+    r = friday(repo, "check", "t-01")
+    assert "warning" in r.stdout and "matches hardware pattern `train\\.py`" in r.stdout and "friday result" in r.stdout
+    (repo / "docs" / "directives" / "t-01.md").write_text(body.replace("python train.py --epochs 3", "friday result check t-01"))
+    assert "hardware pattern" not in friday(repo, "check", "t-01").stdout
