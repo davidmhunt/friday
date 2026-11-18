@@ -86,7 +86,8 @@ flowchart LR
 New commands: `friday check [<id> | --goal <g> | --all]` validates the file formats;
 `friday parse <id> --json` (or `--goal <g>`) prints the parsed file; `friday land --goal <g>`
 reverifies every directive, marks the goal done and opens the one PR (exit 6: a Verify failed,
-nothing pushed). A PostToolUse hook runs the format check on every edited goal or directive file and
+nothing pushed); `friday unblock <id>` sets a blocked directive back to `approved` (and a blocked goal
+to `running`) in one commit. A PostToolUse hook runs the format check on every edited goal or directive file and
 sends errors back to the model. Details: [docs/workflow.md](docs/workflow.md).
 
 ## Per project

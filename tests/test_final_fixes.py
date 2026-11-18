@@ -75,3 +75,39 @@ def test_commit_guard_protects_goal_base(repo):
     assert "deny" in out and "friday/core" in out and "develop" in out
     git("checkout", "-q", "friday/core-01")
     assert "deny" not in _pre(repo, "git commit -m x -m 'Directive: core-01'")
+
+
+def _git(repo, *a):
+    return subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
+
+
+
+
+def test_finish_blocked_blocks_goal_and_unblock_resets_both(repo):
+    base = cli(repo, "start", "core-01").stdout.split("base ")[1].split()[0]
+    r = cli(repo, "finish", "core-01", "--blocked", "needs a key", "--base", base)
+    assert r.returncode == 0, r.stderr
+    assert "Status: blocked: needs a key" in (repo / "docs/directives/core-01.md").read_text()
+    assert "Status: blocked: core-01" in (repo / "docs/goals/core.md").read_text()
+    n = _git(repo, "rev-list", "--count", "HEAD").strip()
+    (repo / "wip.txt").write_text("x")
+    _git(repo, "add", "wip.txt")
+    r = cli(repo, "unblock", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert "Status: approved" in (repo / "docs/directives/core-01.md").read_text()
+    assert "Unblocked: was blocked: needs a key" in (repo / "docs/directives/core-01.md").read_text()
+    assert "Status: running" in (repo / "docs/goals/core.md").read_text()
+    assert int(_git(repo, "rev-list", "--count", "HEAD")) == int(n) + 1
+    assert "Directive: core-01" in _git(repo, "log", "-1", "--format=%B")
+    assert "wip.txt" not in _git(repo, "show", "--name-only", "--format=", "HEAD")
+    assert cli(repo, "check").returncode == 0
+
+
+def test_unblock_refuses_when_not_blocked_or_off_goal_branch(repo):
+    r = cli(repo, "unblock", "core-01")
+    assert r.returncode != 0 and "not blocked" in r.stderr
+    _git(repo, "checkout", "-q", "main")
+    p = repo / "docs/directives/core-01.md"
+    p.write_text(p.read_text().replace("Status: approved", "Status: blocked: x"))
+    r = cli(repo, "unblock", "core-01")
+    assert r.returncode != 0 and "unblock runs on branch" in r.stderr

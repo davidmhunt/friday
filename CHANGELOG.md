@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `friday unblock <id>`: a blocked directive goes back to `approved` with a Log line, in one commit on
+  the goal branch; `friday finish --blocked` sets the goal to `blocked: <id>` and `unblock` sets it back to
+  `running`. `dispatch --resume --unblock` now runs it on the node (one commit, not an uncommitted edit).
+
 Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
 
 - Goals in `docs/goals/<goal>.md`; directives gain `Goal`, `Deliverable` (code, doc, slides,

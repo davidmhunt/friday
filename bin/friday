@@ -8,6 +8,7 @@
   friday verify [<id>]              run the directive's Verify command (default: the active one)
   friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
                                     append the Log entry, Status -> done (or blocked: R), one commit, clear the marker
+  friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
   friday land <id> [--base <branch>]
                                     by the directive's Land: pr -> push friday/<id> and open its PR (gh);
                                     goal -> push friday/<goal>, no PR; none -> push nothing
@@ -294,7 +295,10 @@ def cmd_finish(a) -> int:
     status = f"blocked: {a.blocked}" if a.blocked else "done"
     fc.set_status(root, a.id, status)
     add = [str(dp)]
-    if gp is not None and str(gp.relative_to(root)) in dirty:
+    if a.blocked and gp is not None and gp.exists():
+        _set_goal_status(gp, f"blocked: {a.id}")
+        add.append(str(gp))
+    elif gp is not None and str(gp.relative_to(root)) in dirty:
         add.append(str(gp))
     r = _run(["git", "add", *add], root)
     if r.returncode == 0:
@@ -304,6 +308,51 @@ def cmd_finish(a) -> int:
         sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
     if m and m.get("id") == a.id:
         fc.clear_marker(Path.cwd())
+    print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
+    return 0
+
+
+def _set_goal_status(gp: Path, status: str) -> None:
+    import re
+    gp.write_text(re.sub(r"(?m)^Status:.*$", f"Status: {status}", gp.read_text(), count=1))
+
+
+def cmd_unblock(a) -> int:
+    """Set a `blocked:` directive back to approved (a Log line, one commit) and its goal back to running."""
+    import re
+    root = _root()
+    d = _need(root, a.id)
+    if not d["status"].lower().startswith("blocked"):
+        sys.exit(f"friday: {a.id} is '{d['status']}', not blocked")
+    dp = fc.directive_path(root, a.id)
+    parsed = fc.parse_directive_full(dp.read_text())
+    gid = parsed["goal"]
+    gp = fc.goal_path(root, gid) if gid and fc.GOAL_RE.match(gid) else None
+    br = fc.current_branch(root)
+    want = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
+    if br != want:
+        sys.exit(f"friday: unblock runs on branch {want}, not {br}")
+    was = d["status"]
+    text = dp.read_text()
+    line = f"### {time.strftime('%Y-%m-%d')}\nUnblocked: was {was}\n"
+    mm = re.search(r"(?m)^## Log[ \t]*$", text)
+    if mm is None:
+        text = text.rstrip("\n") + "\n\n## Log\n\n" + line
+    else:
+        nxt = re.search(r"(?m)^## ", text[mm.end():])
+        end = mm.end() + nxt.start() if nxt else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + line + ("\n" + text[end:] if nxt else "")
+    dp.write_text(text)
+    fc.set_status(root, a.id, "approved")
+    add = [str(dp.relative_to(root))]
+    if gp is not None and gp.exists() and fc.parse_goal(gp.read_text())["status"].lower().startswith("blocked"):
+        _set_goal_status(gp, "running")
+        add.append(str(gp.relative_to(root)))
+    r = _run(["git", "add", "--", *add], root)
+    if r.returncode == 0:
+        r = _run(["git", "commit", "-q", "-m", f"{a.id}: unblock\n\nDirective: {a.id}", "--", *add], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
     print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
     return 0
 
@@ -1128,14 +1177,14 @@ def resume_checks(root: Path, a) -> dict:
         print(f"  {i}{note}" if note else f"  {i}  [{s}]")
     for u in unblock:
         if a.dry_run:
-            print(f"would reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
+            print(f"would reset {u} to approved in the worktree (one commit)")
             continue
         argv, stdin = ff.ssh_cmd(n, ff.unblock_script(n, gid, repo_name, u))
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
         if r.returncode != 0 or f"FRIDAY_UNBLOCKED {u}" not in r.stdout:
             _refuse("unblock", f"could not reset {u} on {n.name} ({(r.stderr or r.stdout).strip()})",
                     "edit its Status in the worktree by hand")
-        print(f"reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
+        print(f"reset {u} to approved in the worktree (one commit)")
     return {"node": n, "repo": repo_name, "state": st, "remaining": [i for i, _ in todo],
             "report_to": a.report_to or (rec or {}).get("report_to") or reg.report_to}
 
@@ -1424,6 +1473,7 @@ def main() -> int:
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("unblock"); s.add_argument("id"); s.set_defaults(f=cmd_unblock)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)

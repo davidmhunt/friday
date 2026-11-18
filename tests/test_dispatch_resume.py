@@ -29,6 +29,7 @@ def env(tmp_path):
     clone = repos / "proj"
     clone.mkdir(parents=True)
     git(clone, "init", "-q", "-b", "main")
+    git(clone, "config", "user.name", "t"); git(clone, "config", "user.email", "t@t")
     (clone / "a.txt").write_text("a")
     git(clone, "add", ".")
     git(clone, "commit", "-qm", "init")
@@ -44,6 +45,7 @@ def env(tmp_path):
                      f'repos = "{repos}"\nplugin_dir = "~/friday"\n')
     e = {**os.environ, "FRIDAY_SSH": str(ssh), "FRIDAY_NODES": str(nodes), "FAKE_HOME": str(home),
          "XDG_STATE_HOME": str(tmp_path / "state")}
+    (home / ".local" / "bin" / "friday").symlink_to(FRIDAY)
     fake = home / ".local" / "bin" / "tmux"
     fake.write_text("#!/bin/bash\ncase \"$1\" in capture-pane|has-session) exit 1;; esac\nexit 0\n")
     fake.chmod(0o755)
@@ -204,7 +206,7 @@ def test_blocked_directive_refuses_without_unblock(env):
     assert "blocked: needs a key" in (wt / "docs" / "directives" / "d2.md").read_text()
 
 
-def test_unblock_resets_status_uncommitted(env):
+def test_unblock_resets_status_in_one_commit(env):
     record(env)
     wt = worktree(env)
     directives(env, ["done", "blocked: needs a key", "approved"])
@@ -214,7 +216,8 @@ def test_unblock_resets_status_uncommitted(env):
     assert "reset d2 to approved" in out and "d2" in out.split("remaining directives", 1)[1]
     assert "Status: approved" in (wt / "docs" / "directives" / "d2.md").read_text()
     st = subprocess.run(["git", "status", "--porcelain"], cwd=wt, capture_output=True, text=True).stdout
-    assert " M docs/directives/d2.md" in st and (wt / "a.txt").read_text() == "wip"
+    assert " M a.txt" in st and "d2.md" not in st and (wt / "a.txt").read_text() == "wip"
+    assert "d2: unblock" in subprocess.run(["git", "log", "-1", "--format=%s"], cwd=wt, capture_output=True, text=True).stdout
     assert "Status: approved" in (wt / "docs" / "directives" / "d3.md").read_text()
 
 

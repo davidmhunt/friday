@@ -511,7 +511,7 @@ git -C "$wt" status --porcelain -- . ':(exclude)runs' 2>/dev/null | sed 's/^/FRI
 
 def unblock_script(node, goal: str, repo_name: str, did: str) -> str:
     """Remote script for `dispatch --resume --unblock <did>`: in the worktree's own copy of the directive,
-    reset a `blocked: ...` Status to `approved` (an uncommitted edit). Prints `FRIDAY_UNBLOCKED <id>`, or
+    run `friday unblock` there (blocked -> approved, one commit). Prints `FRIDAY_UNBLOCKED <id>`, or
     `FRIDAY_NOT_BLOCKED <id> <status>` and changes nothing."""
     import shlex
     wt = remote_path(worktree_path(node, repo_name, goal))
@@ -524,7 +524,10 @@ case "$st" in
   blocked:*) ;;
   *) echo "FRIDAY_NOT_BLOCKED {did} ${{st:-?}}"; exit 0 ;;
 esac
-awk 'BEGIN{{d=0}} !d && /^Status:/ {{print "Status: approved"; d=1; next}} {{print}}' "$f" > "$f.tmp.$$" && cat "$f.tmp.$$" > "$f" && rm -f "$f.tmp.$$"
+cd "$wt" || exit 1
+fr=$(command -v friday || true)
+[ -n "$fr" ] || fr={remote_path(node.plugin_dir)}/bin/friday
+"$fr" unblock {did} >&2 || {{ echo "FRIDAY_UNBLOCK_FAILED {did}"; exit 0; }}
 echo "FRIDAY_UNBLOCKED {did}"
 """
 

@@ -234,8 +234,9 @@ appends a `resume` record to `dispatches.jsonl`. `--dry-run` prints the checks a
 and changes nothing, including `--unblock`.
 
 A directive marked `blocked: <reason>` is listed with its reason and is not resumed on its own.
-Fix the cause, then pass `--unblock <id>`: it resets that directive's Status to `approved` in the
-worktree as an uncommitted edit, and the directive's `friday finish` commit carries it.
+Fix the cause, then pass `--unblock <id>`: it runs `friday unblock <id>` in the
+worktree: the directive's Status goes back to `approved` with a Log line, in one commit (other
+uncommitted files are left alone).
 
 | kind | exit | cause |
 |---|---|---|
