@@ -60,6 +60,69 @@ def current_branch(cwd: Path | str) -> str | None:
     return _git(["symbolic-ref", "--quiet", "--short", "HEAD"], Path(cwd))
 
 
+def _ref_exists(root: Path, ref: str) -> bool:
+    return _git(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], root) is not None
+
+
+def directive_commits(root: Path | str, did: str) -> dict:
+    """The directive's own change set: {"base", "commits": [(sha, subject)], "untracked":
+    [(sha, subject, files)]}. Base is the merge-base of the goal's Base (local branch, else
+    origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
+    `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
+    record commits. `untracked` are non-merge commits with no `Directive:` line that touch
+    anything outside docs/goals/ and docs/directives/. Raises ValueError when it cannot say."""
+    root = Path(root)
+    try:
+        parsed = parse_directive_full(directive_path(root, did).read_text())
+    except OSError as e:
+        raise ValueError(f"cannot read directive {did}: {e}")
+    gid = parsed["goal"]
+    try:
+        base_name = parse_goal(goal_path(root, gid).read_text())["base"]
+    except OSError as e:
+        raise ValueError(f"cannot read goal {gid!r} of {did}: {e}")
+    if not base_name:
+        raise ValueError(f"goal {gid} has no Base")
+    for ref in (base_name, f"origin/{base_name}"):
+        if _ref_exists(root, ref):
+            base_ref = ref
+            break
+    else:
+        raise ValueError(f"base branch '{base_name}' exists neither locally nor as origin/{base_name}")
+    tip = "HEAD"
+    if parsed["land"] == "pr" and _ref_exists(root, f"friday/{did}"):
+        tip = f"friday/{did}"
+    base = _git(["merge-base", base_ref, tip], root)
+    if not base:
+        raise ValueError(f"no merge-base of {base_ref} and {tip}")
+    log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", f"{base}..{tip}"], root)
+    if log is None:
+        raise ValueError(f"git log {base}..{tip} failed")
+    records = {f"{did}: {w}" for w in ("blocked", "unblock", "record results", "accepted")}
+    trailer = re.compile(rf"(?m)^Directive:\s*{re.escape(did)}\s*$")
+    anytrailer = re.compile(r"(?m)^Directive:\s*\S")
+    commits: list[tuple[str, str]] = []
+    untracked: list[tuple[str, str, list[str]]] = []
+    for rec in log.split("\x01"):
+        rec = rec.strip("\n")
+        if not rec:
+            continue
+        sha, _, msg = rec.partition("\x00")
+        subject = msg.strip().splitlines()[0] if msg.strip() else ""
+        if subject in records:
+            continue
+        if trailer.search(msg):
+            commits.append((sha, subject))
+        elif not anytrailer.search(msg):
+            files = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha], root)
+            if files is None:
+                raise ValueError(f"git diff-tree {sha} failed")
+            fl = files.splitlines()
+            if not all(f.startswith(("docs/goals/", "docs/directives/")) for f in fl):
+                untracked.append((sha, subject, fl))
+    return {"base": base, "commits": commits, "untracked": untracked}
+
+
 # ---------------------------------------------------------------- config
 def load_config(root: Path | None) -> dict:
     if root is None:
