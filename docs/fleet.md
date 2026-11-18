@@ -107,7 +107,10 @@ On each worker (and on the master, which is also a node):
 4. `tmux` installed.
 5. The friday clone at `plugin_dir` (`git clone <friday origin> ~/friday`). Dispatch checks out the
    master's plugin commit there.
-6. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
+6. `friday` on PATH: `python3 ~/friday/bin/friday install` once on the node (or let
+   `friday nodes --setup <node>` do it). After that just `friday`; remove it with
+   `ssh <node> friday uninstall`. The `uv run` and `python3` forms still work.
+7. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
    Dispatch refuses (`untrusted`) until `repos` or a parent is trusted in `~/.claude.json`.
 
 Then check from the master:

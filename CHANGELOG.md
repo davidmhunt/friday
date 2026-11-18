@@ -18,6 +18,8 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
 - Fleet: `friday nodes [--check]` and `friday dispatch --goal <g>` run a goal on another machine
   over Tailscale SSH; `/friday:plan` offers it when this machine doesn't satisfy `Node:`;
   docs/fleet.md.
+- `friday install` / `friday uninstall` link `friday` into `~/.local/bin` (or `--bin-dir`);
+  `friday nodes --setup` does it on the node and `--check` reports `friday on PATH`.
 - Fleet: `friday nodes --check` reports the workflow and auto-mode prompts per node;
   `friday nodes --setup <node>` sets their skip keys after confirmation; docs/fleet.md covers both
   and the master's ssh setup.

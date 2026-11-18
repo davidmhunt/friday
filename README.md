@@ -20,6 +20,16 @@ claude --plugin-dir ~/src/friday                                 # try it in one
 To keep it enabled, add `~/src/friday` as a local marketplace with `/plugin` and install it from
 there. Requires Claude Code with workflows (v2.1.154+) and `python3` on the host.
 
+Once per machine, put `friday` on PATH:
+
+```bash
+python3 ~/src/friday/bin/friday install      # links ~/.local/bin/friday to this checkout
+friday uninstall                             # removes the link again
+```
+
+After that, just `friday ...`. On a node: `ssh <node> friday uninstall`. The `uv run` and
+`python3 <checkout>/bin/friday` forms still work.
+
 ## Use
 
 ```text
