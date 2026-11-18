@@ -35,7 +35,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*-\d{2,}$")
 FRIDAY_ALLOW = [
     f"Bash(friday {c})"
     for c in ("status", "status *", "new *", "check *", "parse *", "start *",
-              "verify", "verify *", "finish *", "commits *", "land *", "init", "session-end", "session-end *",
+              "verify", "verify *", "finish *", "commits *", "result *", "land *", "init", "session-end", "session-end *",
               "nodes", "nodes --check", "nodes --clean * --dry-run", "dispatch --goal * --dry-run")
 ]
 

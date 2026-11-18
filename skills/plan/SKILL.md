@@ -22,6 +22,11 @@ user approves the plan.
    - `Verify:` must be a command that exits 0 only when the directive's goal holds. Prefer the
      project's standard check plus a targeted test you name in the steps. A check that can only be
      done by a person at the bench is not a Verify command: set `Hardware:` and say so.
+   - For an expensive or hardware run (training, sweep, bench test), do not put the run in `Verify:`:
+     it is re-run unattended at every fix round and at landing, without the hardware prompt, and
+     `friday check` warns when it matches a `hardware` pattern. Make the run a step that ends with
+     `friday result write <id> ...`, and set `Verify:` to `friday result check <id> --require 'K OP V' --files`
+     plus the project's cheap tests.
    - Pick `Deliverable:` per directive: `code` (build + tests), `doc` (LaTeX or markdown report),
      `slides` (source in the repo, built PDF) or `external` (Google Slides, Claude Docs: use
      `Verify: none` and `Land: none`).

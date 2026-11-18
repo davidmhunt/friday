@@ -11,6 +11,7 @@
       "Bash(friday verify *)",
       "Bash(friday finish *)",
       "Bash(friday commits *)",
+      "Bash(friday result *)",
       "Bash(friday land *)",
       "Bash(friday init)",
       "Bash(friday session-end)",
