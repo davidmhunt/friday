@@ -1,5 +1,5 @@
 # exec-commands: The execute workflow runs friday commands so the allow rules match
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
