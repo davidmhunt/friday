@@ -1,0 +1,25 @@
+# friday dash as a service on the master. `friday dash up` runs this with GH_TOKEN set from
+# `gh auth token` and FRIDAY_NODES_FILE set to the registry file the CLI resolved; `friday dash down` stops it.
+#
+#   FRIDAY_NODES_FILE=/path/to/nodes.toml GH_TOKEN=... docker compose -f deploy/compose.yaml up -d --build
+#
+# network_mode: host so the dash can bind the host's tailnet IP and sees real peer addresses
+# (the whois sender check depends on that). No secret lives in this file: GH_TOKEN is passed
+# through from the environment, and the registry and tailscaled socket are mounted read-only.
+services:
+  friday-dash:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: friday-dash:local
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - GH_TOKEN
+    volumes:
+      - ${FRIDAY_NODES_FILE:?run through `friday dash up`}:/home/friday/.config/friday/nodes.toml:ro
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
+      - dash-state:/home/friday/.local/state/friday/dash
+
+volumes:
+  dash-state:

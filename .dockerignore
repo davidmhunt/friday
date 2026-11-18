@@ -1,0 +1,8 @@
+# Build context for deploy/Dockerfile: only bin/, lib/ and dash/ are copied; keep everything
+# else (and anything local or secret, like nodes.toml) out of the context.
+*
+!bin/
+!lib/
+!dash/
+**/__pycache__
+**/*.pyc

@@ -1,9 +1,138 @@
 # Changelog
 
-<!-- Maintainer reminder: bump VERSION in the same commit as the entry
-     below it documents. VERSION drifted for several releases (stuck at
-     0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
-     atomic step. -->
+## Unreleased
+
+## 1.0.0 - 2026-11-18
+
+First stable release of friday as a Claude Code plugin: plan with the user, then execute approved
+directives behind deterministic gates (Verify commands, deny list, `./run`, hardware leases).
+Since 1.0.0-alpha.1 it adds allowed-command lists, `friday result`, user-accepted directives,
+`friday commits`, a complete `--help`, and many fixes.
+
+- A directive may list `## Allowed commands` (bullets of one backticked pattern, `*` matches any text). While that
+  directive is active the PreToolUse hook allows a single simple Bash command matching a pattern, so dispatched
+  and overnight runs need no prompt for `friday dispatch`, `nodes --clean`, `release` or hardware commands. The
+  list is read from the directive as committed on `origin/<Base>` (`git show`), and Base is trusted only when the
+  goal file on `origin/<Base>` names it (never the goal branch or a `friday/*` branch), so edits on the goal
+  branch, including its `Base:` line, cannot widen it; while a directive is active the hook also denies
+  `git push` to anything but the goal's own branch (`friday/<id>` for `Land: pr`);
+  deny rules, `friday accept`, the commit guard and hardware leases still win (a pre-approved hardware command
+  still takes the lease). `friday check` rejects `*` alone, chained or substituted patterns, `friday accept` and
+  deny-list matches; `friday parse --json` reports `allowed`. The plan, directive and hardware skills describe it.
+- `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` records an expensive
+  run once in the tracked `results/<id>.json` (metrics, file sha256 and size, command, HEAD, dirty flag, node,
+  time); `friday result check <id> [--require 'K OP V']... [--files]` is the cheap Verify, failing with one line
+  per unmet condition (no record, commit not an ancestor of HEAD, requirement, changed file). `friday check`
+  warns when a Verify matches a `hardware` pattern. Allow rule `friday result *`; the long-jobs,
+  data-artifacts and plan skills describe the run-once, record, cheap-check pattern (advice, no hook enforces it).
+- `Accept: user` directives (default `auto`) need a `## Review` section and end `awaiting review` at
+  `friday finish`; the goal branch is pushed and later directives continue. Only the user's
+  `friday accept <id> [--note TEXT | --reject REASON]` makes one `done` (a hook denies it to agents);
+  `friday land --goal` exits 7 naming directives still awaiting review. `external` directives should use
+  `Accept: user` (a warning). `awaiting review` is its own state in `friday status`, the snapshot and the
+  dash, counted as needing the user; the fleet session reports `review <goal> <ids> PR-pending`.
+- `friday --help` lists every subcommand and flag (`init`, `session-end`, `unblock`, `dispatch --resume/--unblock`,
+  `status --node`) and names `friday install`; `tests/test_cli_surface.py` compares the parser with the help text
+  and checks that every `friday` command in skills and `workflows/execute.js` matches an allow rule.
+- Allow rules gain `friday init` and `friday session-end` (never `friday accept`); the status, nodes, dispatch and
+  clean skills call plain `friday ...` and say to run `friday install` when it is not on PATH.
+- Allow rules also cover `friday nodes`, `nodes --check` and the dry-runs of `nodes --clean` and `dispatch --goal`;
+  `dispatch --goal <g>`, `nodes --clean <node>` and `release <resource>` stay prompted on purpose (amended by the
+  user 2026-11-18); the surface test names them in its `prompted()` list and exempts only those.
+- `friday nodes --check` reports the number of `friday-*` tmux sessions per node.
+- `tailnet` is in `nodes.example.toml` and the docs/fleet.md key table; `friday dash up` mounts the registry file
+  the CLI resolved and fails clearly when there is none.
+- `friday status --node NAME` (with `--json`/`--push`) names the snapshot's node, ahead of the registry,
+  `node.toml` and the hostname.
+- `friday land --goal` refuses (exit 7, naming the ids) unless every directive is `done`, and
+  re-runs Verify for every directive whose Verify is not `none`.
+- `Verify: none` is accepted by `friday check` only for `Deliverable: external`; `friday verify` and the
+  Stop gate skip it and say so. An empty `Hardware:` value is an error; the unread `verify` config key
+  is gone.
+- The commit guard also refuses commits on the goal's `Base`, and names `friday/<goal>`.
+
+- `friday unblock <id>`: a blocked directive goes back to `approved` with a Log line, in one commit on
+  the goal branch; `friday finish --blocked` sets the goal to `blocked: <id>` and `unblock` sets it back to
+  `running`. `dispatch --resume --unblock` now runs it on the node (one commit, not an uncommitted edit).
+
+Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
+
+- Plan amendments are commits on the goal's Base; `friday start` merges Base into the goal branch
+  before each directive (conflict: abort, non-zero exit). A `commit-msg` git hook installed by
+  `friday init`/`start` refuses commits without `Directive: <id>` while a directive is active; the
+  PreToolUse commit guard judges the repo the command commits in. Skills, docs/workflow.md and
+  docs/fleet.md describe it.
+- Goals in `docs/goals/<goal>.md`; directives gain `Goal`, `Deliverable` (code, doc, slides,
+  external), `Land` and `## Acceptance`.
+- `friday check`, `friday parse`, `friday land --goal` (exit code 6: a Verify failed, nothing
+  pushed); `start` works on the goal branch and enforces order.
+- PostToolUse hook returns format errors of an edited goal or directive file to the model.
+- `/friday:execute` is driven by the parsed directive and reviews against Acceptance.
+- Skills `plan` and `directive` document the formats and the deliverable table.
+- Lean bookkeeping: `friday start` commits nothing and prints `base <sha>`; `friday finish`
+  writes the record in one commit. `/friday:execute` steps commit only tracked-file changes
+  (measure-only steps write `runs/<id>/notes.md`), pass Verify and review results to one
+  `friday finish`, and label progress `step n/total`, `fix n/max`.
+- Fleet: `friday nodes [--check]` and `friday dispatch --goal <g>` run a goal on another machine
+  over Tailscale SSH; `/friday:plan` offers it when this machine doesn't satisfy `Node:`;
+  docs/fleet.md.
+- Slash commands `/friday:status`, `/friday:nodes`, `/friday:dispatch <goal>` and `/friday:clean <node>`
+  run the CLI and summarise it; dispatch and clean show `--dry-run` and ask before the real run;
+  README, docs/fleet.md.
+- `friday install` / `friday uninstall` link `friday` into `~/.local/bin` (or `--bin-dir`);
+  `friday nodes --setup` does it on the node and `--check` reports `friday on PATH`.
+- `friday init` merges the friday allow rules into the repo's `.claude/settings.json`;
+  `friday dispatch` refuses (exit 27) a source ref without them; the plan skill runs `friday init`
+  and commits the settings file with the plan. The rules live in the repo because a plugin cannot
+  grant permissions.
+- Fleet: `friday nodes --check` reports the workflow and auto-mode prompts per node;
+  `friday nodes --setup <node>` sets their skip keys after confirmation; docs/fleet.md covers both
+  and the master's ssh setup.
+- `friday dash` on the master collects node status pushed over the tailnet (`friday status --push`,
+  `friday-push.timer` installed by `friday nodes --setup`), read-only `/api/state` and `/api/health`;
+  docs/dashboard.md.
+- Fleet: a dispatched session that lands its goal runs `friday session-end --goal <g>` and its tmux
+  session closes ten seconds later; a blocked session stays open; docs/fleet.md.
+- Fleet: `friday nodes --clean <node> [--dry-run]` removes finished goals' worktrees, branches, trust
+  entries and idle sessions on a node and keeps unmerged, dirty or busy ones with a reason;
+  `friday dispatch` runs it first (a failure does not block); stray clones are reported, remove them
+  by hand; docs/fleet.md.
+- Fleet: `friday dispatch --goal <g> --resume [--unblock <id>]` restarts a stopped goal in its existing
+  worktree on the same node: replaces an idle session, keeps uncommitted work, runs the remaining
+  directives, records a `resume`; refuses a busy session, missing worktree, done goal or blocked
+  directive; `--dry-run` changes nothing; docs/fleet.md.
+- Docs: commit rules; recommendation to make squash-merge the default on GitHub
+  (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
+
+### Fixed
+
+- Review range: v1-final's fix-02 blocked twice, once because its restart after `friday unblock`
+  moved the review base past all of fix-02's work, and once because a plan amendment committed
+  mid-run (other directives' files only) failed the "every commit carries `Directive: fix-02`"
+  check. `friday commits <id> [--json]` now lists the directive's own commits since it left its
+  Base (merge-base), surviving restarts, unblock and merging Base into the goal branch; plan-only
+  commits are ignored and untagged code commits are reported as `untracked`. `friday finish`'s
+  Log and both review prompts use it.
+- `/friday:execute`: a dispatched `friday land` was refused by the auto-mode classifier despite the
+  `Bash(friday ...)` allow rules, because the agent chained it (`cd ... && friday land ...; echo $?`)
+  and a chained command matches no rule. Workflow prompts now tell the agent to run each friday
+  command alone from the current directory, with no `cd`, `&&`, `;`, `|` or `echo $?`.
+
+## v1.0.0-alpha.1 (2026-11-17)
+
+friday becomes a Claude Code plugin built for Fable/Opus-level orchestrators. The v0.20 harness
+(nine roles, tier table, symlink installer, gitignored state, Antigravity adapter) is retired;
+tag `v0.20.0` keeps it.
+
+- `/friday:plan` skill and `/friday:execute` workflow; directives in tracked `docs/directives/`
+  with an executable `Verify:` line.
+- Agents: `implementer`, `verifier`, `runner`.
+- Hooks: deny list (ported from `command_guard.py`, now active in Claude Code), `./run`
+  enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop, lease release on
+  SessionEnd. 45 tests in `tests/`.
+- Skills: `directive`, `hardware`, `long-jobs`, `data-artifacts` (v0.20 rules 1, 5-7, 9, 11, 15, 18).
+- `bin/friday`: status, new, start, verify, finish, release.
+- Docs: workflow, runtime (`./run` + dev container), migrating from v0.
 
 ## v0.20.0
 

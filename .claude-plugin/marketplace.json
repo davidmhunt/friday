@@ -1,0 +1,13 @@
+{
+  "name": "friday",
+  "description": "Plan with the user, then execute approved directives behind deterministic gates.",
+  "owner": { "name": "David Hunt", "url": "https://github.com/davidmhunt" },
+  "plugins": [
+    {
+      "name": "friday",
+      "source": "./",
+      "description": "Plan with the user, then execute approved directives behind deterministic gates: Verify commands, a deny list, ./run, hardware leases.",
+      "version": "1.0.0"
+    }
+  ]
+}
