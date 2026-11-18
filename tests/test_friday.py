@@ -1076,13 +1076,13 @@ def test_land_goal_failing_verify_exits_6(done_goal, tmp_path, monkeypatch):
 def test_land_goal_external_not_run(done_goal, tmp_path, monkeypatch):
     repo, _ = done_goal
     p = repo / "docs/directives/core-02.md"
-    p.write_text(p.read_text().replace("Verify: true", "Verify: false").replace("Deliverable: code", "Deliverable: external"))
+    p.write_text(p.read_text().replace("Verify: true", "Verify: none").replace("Deliverable: code", "Deliverable: external"))
     _git(repo, "commit", "-qam", "ext")
     fake, _, body = _fake_gh(tmp_path)
     monkeypatch.setenv("FRIDAY_GH", str(fake))
     r = cli(repo, "land", "--goal", "core")
     assert r.returncode == 0, r.stdout
-    assert "| core-02 | Make the thing | external | n/a (external) | gaps: minor |" in body.read_text()
+    assert "| core-02 | Make the thing | external | n/a (none) | gaps: minor |" in body.read_text()
 
 
 def test_land_goal_refuses_undone_and_wrong_branch(done_goal):
@@ -1091,7 +1091,7 @@ def test_land_goal_refuses_undone_and_wrong_branch(done_goal):
     p.write_text(p.read_text().replace("Status: done", "Status: running@h"))
     _git(repo, "commit", "-qam", "undo")
     r = cli(repo, "land", "--goal", "core")
-    assert r.returncode not in (0, 6) and "core-02" in r.stderr and "core-01" not in r.stderr
+    assert r.returncode == 7 and "core-02" in r.stderr and "core-01" not in r.stderr
     _git(repo, "checkout", "-q", "main")
     r = cli(repo, "land", "--goal", "core")
     assert r.returncode != 0 and "friday/core" in r.stderr
@@ -1383,3 +1383,12 @@ def test_execute_prompts_for_start_and_step_briefs(tmp_path):
     step = next(c for c in out["calls"] if c["label"] == "step 1/1")
     assert "Commit only if you changed tracked files" in step["prompt"]
     assert "runs/g-02/notes.md" in step["prompt"]
+
+
+def test_land_goal_refuses_undone_any_land_and_reverifies_all(done_goal):
+    repo, _ = done_goal
+    p = repo / "docs/directives/core-02.md"
+    p.write_text(p.read_text().replace("Status: done", "Status: approved").replace("Land: goal", "Land: none"))
+    _git(repo, "commit", "-qam", "undo")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 7 and "core-02" in r.stderr
