@@ -143,6 +143,11 @@ def cmd_status(a) -> int:
     waiting = [i for i, d in ds.items() if d["status"].lower() == "awaiting review"]
     if waiting:
         print(f"\nawaiting review (needs you): {', '.join(waiting)}  -> friday accept <id>")
+    for ws in fs.collect_sessions([]):
+        if ws["waiting"]:
+            age = f" ({fs.fmt_age(ws['waiting_age'])})" if ws["waiting_age"] is not None else ""
+            print(f"\nwaiting on you: {ws['goal'] or ws['name']}{age}: \"{ws['waiting_line']}\"  "
+                  f"-> tmux attach -t '={ws['name']}'")
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)

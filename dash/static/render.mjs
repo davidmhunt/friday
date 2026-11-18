@@ -71,7 +71,12 @@ export function prsFor(state, project) {
 export function needsYou(state) {
   const items = [];
   for (const s of allSessions(state))
-    if (s.waiting) items.push({ kind: "waiting", where: s.node + " / " + s.name, text: s.waiting_line || "waiting for input" });
+    if (s.waiting) {
+      const goal = s.goal || String(s.name || "").replace(/^friday-/, "");
+      items.push({ kind: "waiting", where: s.node + " " + goal + ":",
+        text: 'waiting on "' + (s.waiting_line || "waiting for input") + '"' + (s.waiting_age == null ? "" : " (" + ago(s.waiting_age) + ")"),
+        attach: "ssh " + s.node + " -t tmux attach -t '=friday-" + goal + "'" });
+    }
   for (const p of projects(state))
     for (const g of p.goals)
       for (const d of g.directives || [])
@@ -97,7 +102,8 @@ export function renderNeeds(state) {
   return h("div", { cls: "needs" }, h("h2", {}, "Needs you (" + items.length + ")"),
     h("ul", {}, items.map((i) => h("li", { cls: "need " + i.kind },
       h("span", { cls: "kind" }, i.kind), h("strong", {}, i.where),
-      i.href ? h("a", { href: i.href, rel: "noopener" }, i.text) : h("span", { cls: "line" }, i.text)))));
+      i.href ? h("a", { href: i.href, rel: "noopener" }, i.text) : h("span", { cls: "line" }, i.text),
+      i.attach ? h("code", { cls: "attach" }, i.attach) : null))));
 }
 
 export function machineCard(n) {
