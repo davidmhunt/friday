@@ -23,6 +23,14 @@
         ]
       }
     ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" notification", "timeout": 20 }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
