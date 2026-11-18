@@ -1,5 +1,5 @@
 # exec-01: Workflow prompts run each friday command alone, with no `cd`, chaining or `echo $?`
-Status: approved
+Status: done
 Goal: exec-commands
 Node: any
 Deliverable: code
@@ -33,3 +33,12 @@ an echoed exit code.
 - The Verify command itself and agents' non-friday commands.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- ccd7973 execute: put the run-alone instruction before the final 'Commit nothing.' in the start prompt
+- 258d368 CHANGELOG: dispatched friday land refused by the classifier when chained
+- 291128f Test that every workflow prompt running a friday command carries the run-alone instruction
+- e1dbf57 execute: tell agents to run each friday command alone, no cd or chaining
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_execute_prompts.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

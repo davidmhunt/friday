@@ -93,6 +93,10 @@ const LAND = {
 // ---------------------------------------------------------------- helpers
 const directive = `docs/directives/${id}.md`
 
+// Appended to every prompt that runs a friday command. The repo's allow rules are `Bash(friday ...)`
+// patterns, and a chained or prefixed command does not match them, so the classifier refuses it.
+const ALONE = 'Run each friday command as its own single Bash call. The session\'s current directory is already the repo root, so no `cd` is needed. Do not use `cd`, `&&`, `;` or `|`, and do not add `echo $?` or any other echo: chained commands do not match the repo\'s `Bash(friday ...)` allow rules, and the Bash tool result already carries the exit code.'
+
 // Verify/review state known so far, recorded by `friday finish --blocked`.
 const state = { verify: '', review: '' }
 const q = t => String(t).replace(/\s+/g, ' ').replace(/[`"$\\]/g, "'").trim()
@@ -104,7 +108,7 @@ async function block(reason) {
   if (state.review) args.push(`--review "${q(state.review)}"`)
   const cmd = `friday finish ${id} ${args.join(' ')}`
   await agent(
-    `Directive ${id} has to stop for the user. Run exactly \`${cmd}\` from the repo root and return its exit code and output verbatim. Write no Log text yourself and make no commit yourself (friday finish does). Do not push.`,
+    `Directive ${id} has to stop for the user. Run exactly \`${cmd}\` (the session's current directory is the repo root) and return its exit code and output verbatim. Write no Log text yourself and make no commit yourself (friday finish does). Do not push. ${ALONE}`,
     { agentType: 'friday:implementer', schema: LAND, label: 'record block', phase: 'Land' },
   )
   return `${id} is blocked and needs you: ${reason}`
@@ -148,7 +152,7 @@ async function verifyLoop(d, label) {
 // ---------------------------------------------------------------- prepare
 phase('Prepare')
 const parsed = await agent(
-  `Run \`friday parse ${id} --json\` from the repo root. Return its exit code and its stdout verbatim (do not summarise or reformat). Change nothing.`,
+  `Run \`friday parse ${id} --json\` (the session's current directory is the repo root). Return its exit code and its stdout verbatim (do not summarise or reformat). Change nothing. ${ALONE}`,
   { agentType: 'friday:runner', schema: PARSE, label: `parse ${id}`, phase: 'Prepare' },
 )
 if (!parsed) return `${id} not started: the parse step returned nothing`
@@ -168,7 +172,7 @@ if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
 }
 
 const st = await agent(
-  `Start friday directive ${id}. From the repo root:\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Return the sha from the \`base <sha>\` line of its output as review_base.\n3. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\nCommit nothing.`,
+  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Return the sha from the \`base <sha>\` line of its output as review_base.\n3. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n${ALONE}\nCommit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
@@ -248,13 +252,13 @@ const landCmd = landMode === 'pr' ? `friday land ${id} --base ${d.base}` : `frid
 
 const finishCmd = `friday finish ${id} --verify "${q(state.verify || verifyLine)}" --review "${q(reviewVerdict)}"`
 const finish = await agent(
-  `Close out friday directive ${id} from the repo root, on branch ${branch}. Run exactly \`${finishCmd}\` and return its exit code and its output verbatim. Write no Log text yourself and make no commit yourself (friday finish does both). Do not push.`,
+  `Close out friday directive ${id} on branch ${branch} (the session's current directory is the repo root). Run exactly \`${finishCmd}\` and return its exit code and its output verbatim. Write no Log text yourself and make no commit yourself (friday finish does both). Do not push. ${ALONE}`,
   { agentType: 'friday:implementer', schema: LAND, label: 'finish', phase: 'Land' },
 )
 if (!finish || finish.exit_code !== 0) return await block(`could not finish: ${finish ? lastLinesOf(finish.output) : 'the agent returned nothing'}`)
 
 const runLand = (cmd, label) => agent(
-  `Run exactly \`${cmd}\` from the repo root, on branch ${branch} (it pushes and may open a PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it. Return its exit code and its output verbatim.`,
+  `Run exactly \`${cmd}\` on branch ${branch} (the session's current directory is the repo root; it pushes and may open a PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it. Return its exit code and its output verbatim. ${ALONE}`,
   { agentType: 'friday:implementer', schema: LAND, label, phase: 'Land' },
 )
 const lastLines = o => String(o || '').trim().split('\n').slice(-3).join(' | ')
