@@ -28,7 +28,10 @@ dispatched sessions run match the allow rules `friday init` writes.
    `friday dash up` mounts the registry file the CLI actually resolved (plugin root or
    `~/.config/friday/nodes.toml`) and fails clearly when there is none.
 6. tests/test_cli_surface.py: every parser subcommand and option string appears in the help text;
-   every `friday <sub>` in skills/ and workflows/execute.js matches an allow rule; steps 1, 2, 5.
+   every `friday <sub>` in skills/ and workflows/execute.js matches an allow rule, except
+   `friday dispatch --goal <g>`, `friday nodes --clean <node>` and `friday release <resource>`,
+   which stay prompted on purpose (they act on other machines or free hardware; amended by the
+   user 2026-11-18) and are named in the test's `prompted()` list; steps 1, 2, 5.
    CHANGELOG entries.
 
 ## Out of scope
