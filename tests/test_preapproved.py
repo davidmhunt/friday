@@ -87,7 +87,7 @@ def make_repo(tmp_path, monkeypatch, base_allowed, branch_allowed=None):
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     r = make_repo(tmp_path, monkeypatch, ALLOWED)
-    fc.write_marker(r, {"id": "core-01"})
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
     return r
 
 
@@ -111,14 +111,14 @@ def test_matching_command_allowed(repo):
 
 def test_pattern_only_in_goal_branch_copy_gives_no_decision(tmp_path, monkeypatch):
     r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["friday release *"])
-    fc.write_marker(r, {"id": "core-01"})
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
     assert "friday release *" in (r / "docs" / "directives" / "core-01.md").read_text()
     assert pre(r, "friday release radar")[0] is None
 
 
 def test_base_without_a_copy_gives_no_decision(tmp_path, monkeypatch):
     r = make_repo(tmp_path, monkeypatch, ALLOWED)
-    fc.write_marker(r, {"id": "core-09"})
+    fc.write_marker(r, {"id": "core-09", "goal_base": "main"})
     assert pre(r, "friday nodes --clean")[0] is None
 
 
@@ -137,7 +137,7 @@ def test_deny_list_beats_a_pattern(repo):
 
 def test_friday_accept_never_allowed(tmp_path, monkeypatch):
     r = make_repo(tmp_path, monkeypatch, ["friday *"])
-    fc.write_marker(r, {"id": "core-01"})
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
     assert pre(r, "friday status")[0] == "allow"
     assert pre(r, "friday accept core-01")[0] == "deny"
 
@@ -181,3 +181,16 @@ def test_hardware_lease_held_elsewhere_denies(repo):
     fc.take_lease("radar", "other", "x")
     d, why = pre(repo, "./flash_radar --go", session="s1")
     assert d == "deny" and "held by another session" in why
+
+
+def test_editing_goal_base_header_cannot_widen(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["friday release *"])
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    g = r / "docs" / "goals" / "core.md"
+    g.write_text(g.read_text().replace("Base: main", "Base: friday/core"))
+    assert pre(r, "friday release radar")[0] is None
+
+
+def test_marker_without_goal_base_gives_no_decision(repo):
+    fc.write_marker(repo, {"id": "core-01"})
+    assert pre(repo, "friday nodes --clean")[0] is None

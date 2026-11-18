@@ -306,7 +306,7 @@ def cmd_start(a) -> int:
             _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
     _install_hook(root)
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
-                                 "gate": not a.no_gate, "base": base})
+                                 "gate": not a.no_gate, "base": base, "goal_base": goal["base"]})
     print(f"base {base}")
     if _run(["git", "check-ignore", "-q", f"runs/{a.id}/notes.md"], root).returncode != 0:
         print("friday: warning: runs/ is not gitignored; add the line `runs/` to .gitignore "

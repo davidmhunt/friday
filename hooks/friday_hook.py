@@ -174,14 +174,15 @@ def _one_simple_command(cmd: str) -> bool:
 
 def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     """A command matching `## Allowed commands` of the active directive, as committed on the goal's
-    Base (so a goal-branch edit cannot widen it). None (no decision) on any doubt."""
+    Base (so a goal-branch edit cannot widen it). Base comes from the marker in
+    the git dir, never from tracked files an agent can edit. None (no decision) on any doubt."""
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
         if not marker or not root or not _one_simple_command(cmd):
             return None
         did = marker["id"]
-        _, base = _goal_and_base(cwd, did)
+        base = str(marker.get("goal_base") or "").strip()   # written by `friday start`, outside the working tree
         if not base:
             return None
         r = subprocess.run(["git", "show", f"{base}:docs/directives/{did}.md"], cwd=str(root),
