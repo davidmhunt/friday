@@ -194,6 +194,7 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
     fetch (a failed or timed-out fetch warns and uses the local branch). Conflicts abort the merge."""
     if not base:
         return
+    fetched = False
     if _run(["git", "remote", "get-url", "origin"], root).returncode == 0:
         try:
             r = subprocess.run(["git", "fetch", "-q", "origin", base], cwd=root, capture_output=True,
@@ -201,9 +202,16 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
             if r.returncode != 0:
                 print(f"friday: warning: fetch of origin/{base} failed ({r.stderr.strip()}); using local {base}",
                       file=sys.stderr)
+            else:
+                fetched = True
         except subprocess.TimeoutExpired:
             print(f"friday: warning: fetch of origin/{base} timed out; using local {base}", file=sys.stderr)
-    if _branch_exists(root, f"refs/remotes/origin/{base}"):
+    # a failed fetch leaves origin/<base> stale: prefer the local Base then
+    if fetched or not _branch_exists(root, f"refs/heads/{base}"):
+        remote = _branch_exists(root, f"refs/remotes/origin/{base}")
+    else:
+        remote = False
+    if remote:
         ref = f"origin/{base}"
     elif _branch_exists(root, f"refs/heads/{base}"):
         ref = base

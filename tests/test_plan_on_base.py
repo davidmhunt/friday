@@ -182,3 +182,17 @@ def test_restart_after_amendment_ignores_the_goal_status_flip(grepo2):
     r = cli(grepo2, "start", "core-01")
     assert r.returncode == 0, r.stderr
     assert "amended" in p.read_text() and "merged main" in r.stdout
+
+
+def test_failed_fetch_ignores_stale_origin_ref(repo, tmp_path):
+    bare = tmp_path / "bare.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    _g(repo, "remote", "add", "origin", str(bare))
+    _g(repo, "push", "-q", "origin", "main")
+    _g(repo, "fetch", "-q", "origin")
+    _commit_on(repo, "main", "plan.txt", "amend", "amend plan")
+    _g(repo, "remote", "set-url", "origin", str(tmp_path / "gone"))
+    _g(repo, "switch", "-q", "friday/core-01")
+    r = cli(repo, "start", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert "using local main" in r.stderr and "merged main" in r.stdout and (repo / "plan.txt").exists()
