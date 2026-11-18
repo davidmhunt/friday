@@ -20,6 +20,10 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
 
 ### Fixed
 
+- Hardware prompts say the lease lasts the session but the approval covers this command only; a resource set to
+  `"session"` under `hardware_approval` in `.claude/friday.json` is approved once per session (#15). Agents are told
+  to write one simple command per hardware query so pre-approval applies.
+
 - `/friday:execute` runs `friday start` (which merges Base) before `friday parse`, so a directive added or
   amended on Base runs from its current text (#18). The parse prompt carries the post-merge HEAD sha, so a
   resumed run reuses a cached parse only when the goal branch has not moved; a parse failure runs

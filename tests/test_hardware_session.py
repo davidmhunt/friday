@@ -68,3 +68,28 @@ def test_release_ends_approval(repo):
     run("posttool", repo, "flash", "s1")
     fc.release_leases(resource="radar")
     assert run("pretool", repo, "flash", "s1")["permissionDecision"] == "ask"
+
+
+def test_default_resource_asks_every_time_with_new_wording(repo):
+    for _ in range(2):
+        run("pretool", repo, "train x", "s1")
+        run("posttool", repo, "train x", "s1")
+        d = run("pretool", repo, "train x", "s1")
+        assert d["permissionDecision"] == "ask"
+        r = d["permissionDecisionReason"]
+        assert "held for this session" in r and "covers this command only" in r
+        assert "rest of the session" not in r
+
+
+def test_session_resource_wording_offers_session_approval(repo):
+    r = run("pretool", repo, "flash", "s1")["permissionDecisionReason"]
+    assert "covers this command only" in r and "rest of the session" in r
+
+
+def test_bad_hardware_approval_fails_friday_check(repo):
+    (repo / ".claude" / "friday.json").write_text(json.dumps(
+        {"hardware": {"radar": ["flash"]}, "hardware_approval": {"radar": "always"}}))
+    out = subprocess.run([sys.executable, str(ROOT / "bin" / "friday"), "check", "--all"], cwd=str(repo),
+                         capture_output=True, text=True)
+    assert out.returncode != 0
+    assert "hardware_approval" in out.stdout + out.stderr
