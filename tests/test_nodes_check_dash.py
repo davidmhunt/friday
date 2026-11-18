@@ -80,3 +80,10 @@ def test_not_running_is_one_line_and_other_checks_run(tmp_path):
     for name in ("laptop", "alfred", "pi"):
         assert name in r.stdout
     assert "unreachable" in r.stdout  # the ssh probes still ran
+
+
+def test_missing_card_text_is_in_the_page_js():
+    static = FRIDAY.parent.parent / "dash" / "static"
+    js = "".join(p.read_text() for p in static.glob("*.js")) + "".join(p.read_text() for p in static.glob("*.mjs") if ".test." not in p.name)
+    assert "never reported: run `friday nodes --setup " in js
+    assert "` on the master" in js
