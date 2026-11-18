@@ -30,11 +30,10 @@ const PARSE = {
 }
 const START = {
   type: 'object',
-  required: ['started', 'output', 'review_base'],
+  required: ['started', 'output'],
   properties: {
     started: { type: 'boolean', description: 'false if friday start refused' },
     output: { type: 'string', description: 'friday start output verbatim when it refused, else empty' },
-    review_base: { type: 'string', description: 'the sha from the `base <sha>` line of friday start' },
   },
 }
 const STEP = {
@@ -172,12 +171,11 @@ if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
 }
 
 const st = await agent(
-  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. Return the sha from the \`base <sha>\` line of its output as review_base.\n3. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n${ALONE}\nCommit nothing.`,
+  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n${ALONE}\nCommit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
 if (!st.started) return `${id} not started: ${st.output}`
-d.reviewBase = st.review_base
 log(`${id}: ${d.steps.map(s => `${s.n}. ${s.text.slice(0, 60)}`).join(' | ')}`)
 
 // ---------------------------------------------------------------- implement
@@ -213,7 +211,7 @@ const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'It
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change: \`git diff ${d.reviewBase}..HEAD\` and \`git log --oneline ${d.reviewBase}..HEAD\`. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements. Every commit message must contain the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
+  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 let reviewVerdict = 'no gaps'
@@ -229,7 +227,7 @@ if (review && allGaps(review).length) {
     if (!v.ok) return await block(v.why)
   }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive} and \`git diff ${d.reviewBase}..HEAD\`. Report only gaps that still affect correctness or the stated requirements. Every commit message must contain the line \`Directive: ${id}\`, before or after a Co-Authored-By trailer (not necessarily last).\n\n${accept}`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && allGaps(review).length) {

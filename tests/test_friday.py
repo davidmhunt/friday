@@ -1156,7 +1156,7 @@ const parse = Object.assign({
 }, scenario.parse || {})
 const defaults = {
   'parse g-02': { exit_code: scenario.parse_exit || 0, stdout: scenario.parse_stdout || JSON.stringify(parse) },
-  'start g-02': { started: true, output: '', review_base: 'abc123' },
+  'start g-02': { started: true, output: '' },
   'step 1/1': { status: 'done', summary: 'ok', commit: 'c1', question: '' },
   'initial verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
   'after review verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
@@ -1222,7 +1222,7 @@ def test_execute_prepare_dispatched_note_instruction(tmp_path):
 @needs_node
 def test_execute_start_refusal_stops(tmp_path):
     out = _run_execute(tmp_path, responses={
-        "start g-02": {"started": False, "output": "g-01 is not done", "review_base": ""}})
+        "start g-02": {"started": False, "output": "g-01 is not done"}})
     assert out["result"] == "g-02 not started: g-01 is not done"
     assert not any(l.startswith("step") for l in out["labels"])
 
@@ -1249,7 +1249,8 @@ def test_execute_unmet_acceptance_triggers_fix_round(tmp_path):
     assert "not met: docs mention it" in fix["prompt"]
     first = next(c for c in out["calls"] if c["label"] == "verifier")
     assert "- docs mention it" in first["prompt"]
-    assert "abc123..HEAD" in first["prompt"]
+    assert "friday commits g-02" in first["prompt"] and "abc123" not in first["prompt"]
+    assert "untracked" in first["prompt"] and "must contain the line" not in first["prompt"]
     assert "done:" in out["result"]
 
 
@@ -1327,7 +1328,7 @@ const agent = async (prompt, opts) => {
   if (L.startsWith('parse')) return { exit_code: 0, stdout: JSON.stringify(parse) }
   if (L.startsWith('start')) {
     const r = friday('start g-01 --no-gate')
-    return { started: r.exit_code === 0, output: r.output, review_base: (r.output.match(/^base (\S+)/m) || [])[1] || '' }
+    return { started: r.exit_code === 0, output: r.output }
   }
   if (L === 'step 1/3') { fs.writeFileSync(repo + '/code.txt', 'x\n'); sh('git add code.txt && git commit -qm "code" -m "Directive: g-01"')
     return { status: 'done', summary: '', commit: '', question: '' } }

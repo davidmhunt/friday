@@ -21,8 +21,8 @@ Check:
    list (`item`, `met`, `evidence`). An unmet bullet is a gap. For a doc or slides deliverable,
    open the built output named in the directive's Log (the file, not just its source) and check
    the bullet against it. For an external deliverable Verify was skipped; Acceptance is the check.
-6. Every commit message contains the line `Directive: <id>`, before or after a `Co-Authored-By`
-   trailer (not necessarily last).
+6. Review the commits `friday commits <id>` lists (`git show <sha>` and the current state of the
+   files they touch). Any `untracked` line is a gap.
 
 You may run read-only commands and the project's checks (through `./run` where the project uses it).
 Do not edit files.
