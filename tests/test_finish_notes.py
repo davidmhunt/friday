@@ -39,3 +39,17 @@ def test_headed_notes_keep_directive_valid(repo, args):
     assert cli(repo, "check", "core-01").returncode == 0
     r = cli(repo, "parse", "core-01", "--json")
     assert r.returncode == 0, r.stderr
+
+
+def test_unblock_and_second_finish_stay_outside_fence(repo):
+    _run(repo, "--blocked", "needs a board")
+    r = cli(repo, "unblock", "core-01")
+    assert r.returncode == 0, r.stderr
+    r = cli(repo, "finish", "core-01")
+    assert r.returncode == 0, r.stderr
+    text = (repo / "docs" / "directives" / "core-01.md").read_text()
+    assert "```\n## not a heading\n# nor this\n```" in text
+    assert "Unblocked:" in text
+    assert text.index("Unblocked:") > text.index("# nor this\n```")
+    assert cli(repo, "check", "core-01").returncode == 0
+    assert cli(repo, "parse", "core-01", "--json").returncode == 0

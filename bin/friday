@@ -412,6 +412,23 @@ def _demote_note_headings(text: str) -> str:
     return "\n".join(out)
 
 
+def _next_h2(text: str, start: int):
+    """Offset of the next `## ` line at or after start that is outside a fenced block, else None."""
+    fence, pos = None, start
+    for ln in text[start:].splitlines(keepends=True):
+        m = re.match(r"^ {0,3}(`{3,}|~{3,})", ln)
+        if m:
+            mark = m.group(1)
+            if fence is None:
+                fence = mark
+            elif mark[0] == fence[0] and len(mark) >= len(fence):
+                fence = None
+        elif fence is None and ln.startswith("## "):
+            return pos
+        pos += len(ln)
+    return None
+
+
 def cmd_finish(a) -> int:
     """Write the record: one Log entry, the Status, and exactly one commit carrying the directive
     file and (if modified) its goal file. Refuses when other tracked files are uncommitted."""
@@ -459,9 +476,9 @@ def cmd_finish(a) -> int:
     if mm is None:
         text = text.rstrip("\n") + "\n\n## Log\n\n" + block
     else:
-        nxt = re.search(r"(?m)^## ", text[mm.end():])
-        end = mm.end() + nxt.start() if nxt else len(text)
-        text = text[:end].rstrip("\n") + "\n\n" + block + ("\n" + text[end:] if nxt else "")
+        nxt = _next_h2(text, mm.end())
+        end = nxt if nxt is not None else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + block + ("\n" + text[end:] if nxt is not None else "")
     dp.write_text(text)
     status = f"blocked: {a.blocked}" if a.blocked else "awaiting review" if review else "done"
     fc.set_status(root, a.id, status)
@@ -524,9 +541,9 @@ def cmd_accept(a) -> int:
     if mm is None:
         text = text.rstrip("\n") + "\n\n## Log\n\n" + line + "\n"
     else:
-        nxt = re.search(r"(?m)^## ", text[mm.end():])
-        end = mm.end() + nxt.start() if nxt else len(text)
-        text = text[:end].rstrip("\n") + "\n\n" + line + "\n" + ("\n" + text[end:] if nxt else "")
+        nxt = _next_h2(text, mm.end())
+        end = nxt if nxt is not None else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + line + "\n" + ("\n" + text[end:] if nxt is not None else "")
     dp.write_text(text)
     fc.set_status(root, a.id, status)
     add = [str(dp.relative_to(root))]
@@ -569,9 +586,9 @@ def cmd_unblock(a) -> int:
     if mm is None:
         text = text.rstrip("\n") + "\n\n## Log\n\n" + line
     else:
-        nxt = re.search(r"(?m)^## ", text[mm.end():])
-        end = mm.end() + nxt.start() if nxt else len(text)
-        text = text[:end].rstrip("\n") + "\n\n" + line + ("\n" + text[end:] if nxt else "")
+        nxt = _next_h2(text, mm.end())
+        end = nxt if nxt is not None else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + line + ("\n" + text[end:] if nxt is not None else "")
     dp.write_text(text)
     fc.set_status(root, a.id, "approved")
     add = [str(dp.relative_to(root))]
