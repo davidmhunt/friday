@@ -1,6 +1,7 @@
 """CLI surface: --help lists every subcommand and option the parser accepts; every `friday <sub>` that
 skills and the execute workflow run matches an allow rule (or is a user-invoked command that asks)."""
 import argparse
+import fnmatch
 import importlib.machinery
 import importlib.util
 import json
@@ -15,9 +16,13 @@ FRIDAY = ROOT / "bin" / "friday"
 sys.path.insert(0, str(ROOT / "lib"))
 import friday_core as fc  # noqa: E402
 
-# Deliberately not in FRIDAY_ALLOW, so the harness prompts: /friday:dispatch, /friday:nodes and
-# /friday:clean (user-invoked, dry-run then ask) and `release` (frees a hardware lease).
-PROMPTED = {"dispatch", "nodes", "release"}
+def prompted(inv):
+    """Deliberately not in FRIDAY_ALLOW, so the harness prompts: the real (non dry-run) `dispatch`
+    and `nodes --clean` runs the skills make after asking the user, and `release` (frees a lease)."""
+    sub = inv.split()[0]
+    if sub == "release":
+        return True
+    return (sub == "dispatch" or "--clean" in inv.split()) and "--dry-run" not in inv.split()
 
 
 def build_parser():
@@ -71,7 +76,10 @@ def allowed(cmd):
     """Does `friday <cmd>` match a Bash(friday ...) rule? A trailing ` *` matches any arguments."""
     for rule in fc.FRIDAY_ALLOW:
         pat = rule[len("Bash(friday "):-1]
-        if pat.endswith(" *"):
+        if "*" in pat[:-1]:
+            if fnmatch.fnmatchcase(cmd, pat):
+                return True
+        elif pat.endswith(" *"):
             base = pat[:-2]
             if cmd == base or cmd.startswith(base + " "):
                 return True
@@ -104,8 +112,11 @@ def test_skill_and_workflow_commands_match_allow_rules():
             if sub not in sp.choices:  # prose such as `friday` alone or a placeholder
                 continue
             seen += 1
-            assert allowed(inv) or sub in PROMPTED, f"{path}: `friday {inv}` matches no allow rule"
+            assert allowed(inv) or prompted(inv), f"{path}: `friday {inv}` matches no allow rule"
     assert seen >= 10
+    for ok in ("nodes", "nodes --check", "nodes --clean n1 --dry-run", "dispatch --goal g --dry-run"):
+        assert allowed(ok), ok
+    assert not allowed("nodes --clean n1") and not allowed("dispatch --goal g")
 
 
 def test_workflow_commands_all_match_allow_rules():

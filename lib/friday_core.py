@@ -30,10 +30,13 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*-\d{2,}$")
 
 # Allow rules every friday repo carries in its tracked .claude/settings.json (a plugin cannot
 # grant permissions). Defined once here; `friday init` merges them, `friday dispatch` checks them.
+# The read-only nodes listing and the dry-runs of dispatch and clean are allowed; the real
+# `dispatch` and `nodes --clean` runs (and `release`) are deliberately left to prompt.
 FRIDAY_ALLOW = [
     f"Bash(friday {c})"
     for c in ("status", "status *", "new *", "check *", "parse *", "start *",
-              "verify", "verify *", "finish *", "land *", "init", "session-end", "session-end *")
+              "verify", "verify *", "finish *", "land *", "init", "session-end", "session-end *",
+              "nodes", "nodes --check", "nodes --clean * --dry-run", "dispatch --goal * --dry-run")
 ]
 
 

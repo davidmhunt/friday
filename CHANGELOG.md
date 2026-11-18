@@ -7,6 +7,8 @@
   and checks that every `friday` command in skills and `workflows/execute.js` matches an allow rule.
 - Allow rules gain `friday init` and `friday session-end` (never `friday accept`); the status, nodes, dispatch and
   clean skills call plain `friday ...` and say to run `friday install` when it is not on PATH.
+- Allow rules also cover `friday nodes`, `nodes --check` and the dry-runs of `nodes --clean` and `dispatch --goal`;
+  the real `dispatch`, `nodes --clean` and `release` runs still prompt, and the surface test exempts only those.
 - `friday nodes --check` reports the number of `friday-*` tmux sessions per node.
 - `tailnet` is in `nodes.example.toml` and the docs/fleet.md key table; `friday dash up` mounts the registry file
   the CLI resolved and fails clearly when there is none.
