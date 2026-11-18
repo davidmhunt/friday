@@ -1,5 +1,5 @@
 # cli-01: `friday install` puts `friday` on PATH, on the master and on every node
-Status: approved
+Status: done
 Goal: cli-ergonomics
 Node: any
 Deliverable: code
@@ -43,3 +43,14 @@ install, repair and refusal cases.
 - Slash commands (cli-02).
 
 ## Log
+
+### 2026-11-17
+Commits:
+- d1fa173 cli-01: document friday install and uninstall in README, fleet.md and CHANGELOG
+- 5def447 cli-01: friday nodes --check reports friday on PATH: ok, missing or points at <path>
+- 21874b8 cli-01: friday nodes --setup also runs friday install on the node
+- c415b3b cli-01: friday install and uninstall link friday into a bin dir
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_install.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

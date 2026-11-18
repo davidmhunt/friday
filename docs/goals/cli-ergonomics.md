@@ -1,5 +1,5 @@
 # cli-ergonomics: `friday` on PATH everywhere, and slash commands in Claude
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
