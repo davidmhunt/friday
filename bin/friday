@@ -123,6 +123,38 @@ def cmd_status(a) -> int:
     return 0
 
 
+def cmd_init(a) -> int:
+    """Merge FRIDAY_ALLOW into the repo's tracked .claude/settings.json (never settings.local.json)."""
+    path = _root() / ".claude" / "settings.json"
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (ValueError, OSError) as e:
+            print(f"friday: cannot parse {path}: {e}", file=sys.stderr)
+            return 1
+        if not isinstance(data, dict):
+            print(f"friday: {path} is not a JSON object", file=sys.stderr)
+            return 1
+    perms = data.setdefault("permissions", {})
+    allow = perms.setdefault("allow", []) if isinstance(perms, dict) else None
+    if not isinstance(allow, list):
+        print(f"friday: {path}: permissions.allow is not a list", file=sys.stderr)
+        return 1
+    missing = [r for r in fc.FRIDAY_ALLOW if r not in allow]
+    if not missing and path.exists():
+        print(f"friday init: {path} already has every friday allow rule; nothing to add")
+        return 0
+    allow.extend(missing)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"friday init: added to {path}:")
+    for r in missing:
+        print(f"  {r}")
+    print("review, then commit it (friday init does not commit)")
+    return 0
+
+
 def cmd_new(a) -> int:
     print(fc.next_id(_root(), a.loop))
     return 0
@@ -1268,6 +1300,7 @@ def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.set_defaults(f=cmd_status)
+    s = sub.add_parser("init"); s.set_defaults(f=cmd_init)
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
