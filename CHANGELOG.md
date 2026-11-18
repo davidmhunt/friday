@@ -18,6 +18,13 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
   it on; `friday status` lists `origin/friday/*` branches whose PR is merged with the `git push origin --delete`
   command for each. Neither changes anything; both skip quietly without `gh`.
 
+### Fixed
+
+- `/friday:execute` runs `friday start` (which merges Base) before `friday parse`, so a directive added or
+  amended on Base runs from its current text (#18). The parse prompt carries the post-merge HEAD sha, so a
+  resumed run reuses a cached parse only when the goal branch has not moved; a parse failure runs
+  `friday finish --blocked` with the errors.
+
 ### Changed
 
 - Heredoc bodies stay fully scanned by the PreToolUse checks (fail closed). Long text that names a guarded
