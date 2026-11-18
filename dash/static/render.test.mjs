@@ -59,3 +59,14 @@ test("a missing machine card tells how to register; a stale one shows its age", 
   const stale = text(r.machineCard({ ...base, name: "alfred", status: "stale", age_s: 7200 }));
   assert.match(stale, /stale, seen .* ago/);
 });
+
+test("an awaiting-review directive is its own state and counts as needing the user", () => {
+  assert.equal(r.directiveKind("awaiting review"), "review");
+  const st = JSON.parse(JSON.stringify(state));
+  const alpha = r.projects(st).find((p) => p.name === "alpha");
+  alpha.goals[0].directives.push({ id: "x-01", status: "awaiting review", deliverable: "code", title: "t" });
+  const items = r.needsYou(st).filter((i) => i.kind === "review");
+  assert.equal(items.length, 1);
+  assert.match(items[0].text, /friday accept x-01/);
+  assert.match(text(r.renderNeeds(st)), /awaiting review/);
+});

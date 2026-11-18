@@ -30,6 +30,7 @@ export function directiveKind(status) {
   const s = String(status || "");
   if (s.startsWith("running")) return "running";
   if (s.startsWith("blocked")) return "blocked";
+  if (s === "awaiting review") return "review";
   return s || "unknown";
 }
 export function runningHost(status) {
@@ -75,6 +76,7 @@ export function needsYou(state) {
     for (const g of p.goals)
       for (const d of g.directives || [])
         if (directiveKind(d.status) === "blocked") items.push({ kind: "blocked", where: d.id, text: d.status.replace(/^blocked:\s*/, "") });
+        else if (directiveKind(d.status) === "review") items.push({ kind: "review", where: d.id, text: "awaiting review: run `friday accept " + d.id + "`" });
   for (const n of reports(state)) {
     if (n.status === "missing") items.push({ kind: "missing", where: n.name, text: "never reported" });
     else if (n.status === "stale") items.push({ kind: "stale", where: n.name, text: "last seen " + ago(n.age_s) + " ago" });
@@ -119,7 +121,7 @@ export function machineCard(n) {
 
 export function projectState(p, state) {
   const sess = allSessions(state).filter((s) => p.goals.some((g) => (g.directives || []).some((d) => d.id === s.directive)));
-  if (sess.some((s) => s.waiting) || p.goals.some((g) => (g.directives || []).some((d) => directiveKind(d.status) === "blocked"))) return "needs";
+  if (sess.some((s) => s.waiting) || p.goals.some((g) => (g.directives || []).some((d) => ["blocked", "review"].includes(directiveKind(d.status))))) return "needs";
   if (p.goals.some((g) => (g.directives || []).some((d) => directiveKind(d.status) === "running"))) return "working";
   if (prsFor(state, p).length) return "landed";
   return "idle";
@@ -178,7 +180,7 @@ export function renderProjects(state) {
             const host = runningHost(d.status), s = sess.find((x) => x.directive === d.id);
             const where = directiveKind(d.status) === "running" ? (host || "?") + (s ? " (" + s.node + ")" : "") : "";
             return h("tr", {}, h("td", { cls: "mono" }, d.id), h("td", {}, d.title),
-              h("td", {}, h("span", { cls: "badge " + (d.status === "done" ? "ok" : directiveKind(d.status) === "blocked" ? "warn" : "") }, d.status)),
+              h("td", {}, h("span", { cls: "badge " + (d.status === "done" ? "ok" : ["blocked", "review"].includes(directiveKind(d.status)) ? "warn" : "") }, d.status)),
               h("td", {}, d.deliverable), h("td", {}, where));
           }))))]))) : h("p", { cls: "empty" }, "No projects reported yet."));
 }

@@ -190,3 +190,16 @@ def test_hook_denies_friday_accept(cmd, tmp_path):
 def test_hook_allows_other_friday_commands(cmd, tmp_path):
     d = _pretool(cmd, tmp_path)
     assert not d or d["permissionDecision"] != "deny" or "accept" not in d["permissionDecisionReason"]
+
+
+def test_status_shows_awaiting_review_and_snapshot_carries_it(repo):
+    finish_first(repo)
+    out = cli(repo, "status").stdout
+    assert "awaiting review (needs you): core-01" in out
+    import friday_status as fs
+    errs = []
+    ent = fs.collect_repo(repo, errs)
+    ds = {d["id"]: d["status"] for g in ent["goals"] for d in g["directives"]}
+    assert ds["core-01"] == "awaiting review", (ds, errs)
+    snap = {**fs.empty_snapshot("n", "h", 0), "repos": [ent]}
+    assert not fs.check_schema(snap)

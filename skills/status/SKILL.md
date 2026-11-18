@@ -14,6 +14,6 @@ Read-only. From the repo root, run:
 friday status
 ```
 
-Summarise the output in a few lines. Put items that need the user first (blocked directives,
+Summarise the output in a few lines. Put items that need the user first (blocked directives, directives awaiting review,
 directives awaiting approval, held hardware leases), then the active directive, then the rest.
 Do not change anything.

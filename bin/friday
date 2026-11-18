@@ -134,6 +134,9 @@ def cmd_status(a) -> int:
         print("(no goal)")
         for d in rest:
             row(d["id"], d)
+    waiting = [i for i, d in ds.items() if d["status"].lower() == "awaiting review"]
+    if waiting:
+        print(f"\nawaiting review (needs you): {', '.join(waiting)}  -> friday accept <id>")
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
