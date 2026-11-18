@@ -1,5 +1,5 @@
 # attention: Nothing a run needs from the user goes unnoticed or uncommitted
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -18,3 +18,4 @@ file), and friday reports merged goal branches left on GitHub. All three approve
 4. rel-02: Release 1.1.0, installed from main
 
 ## Log
+- 2026-11-18: Landed: 4 directive(s) reverified on friday/attention; PR into v1.
