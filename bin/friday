@@ -1277,7 +1277,7 @@ def resume_restart(root: Path, a) -> int:
         _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
     host = socket.gethostname()
     launch = ff.launch_line(n, gid, st["path"], host, c["remaining"], c["report_to"])
-    kill = f"tmux kill-session -t =friday-{gid}"
+    kill = f"tmux kill-session -t '=friday-{gid}'"
     if a.dry_run:
         if st["session"]:
             print(f"kill: {kill}")
@@ -1462,7 +1462,7 @@ def cmd_session_end(a) -> int:
     m = re.search(r"(?m)^Status:\s*(\S+)", gp.read_text())
     if not m or m.group(1) != "done":
         return no(f"goal {a.goal} is '{m.group(1) if m else '?'}', not done")
-    cmd = f"sleep 10; tmux kill-session -t =friday-{a.goal}"
+    cmd = f"sleep 10; tmux kill-session -t '=friday-{a.goal}'"
     subprocess.Popen(["setsid", "sh", "-c", cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
     print(f"session-end: scheduled in 10s: {cmd}")

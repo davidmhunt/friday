@@ -57,9 +57,9 @@ def test_acts_when_all_three_conditions_hold(env):
     r = run(repo, e)
     assert r.returncode == 0, r.stderr
     log = scheduled(fake)
-    assert "sleep 10; tmux kill-session -t =friday-g1" in log
+    assert "sleep 10; tmux kill-session -t '=friday-g1'" in log
     assert log.startswith("setsid sh -c ")
-    assert "kill-session -t =friday-g1" in r.stdout
+    assert "kill-session -t '=friday-g1'" in r.stdout
     # the fake tmux was only asked for the session name; nothing was killed directly
     assert "kill-session" not in (fake / "tmux.log").read_text()
 
@@ -115,7 +115,7 @@ def test_never_targets_another_session(env):
     assert r.returncode == 0, r.stderr
     log = scheduled(fake)
     assert log.count("kill-session") == 1
-    assert "-t =friday-g2" in log and "friday-g1" not in log
+    assert "-t '=friday-g2'" in log and "friday-g1" not in log
 
 
 def test_rejects_malformed_goal_id(env):

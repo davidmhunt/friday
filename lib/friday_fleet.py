@@ -795,7 +795,7 @@ while read -r repo goal wt; do
     if ! idle "$goal"; then echo "FRIDAY_KEPT $id session friday-$goal is not idle"; continue; fi
   fi
   if [ "$DRY" = 1 ]; then
-    [ "$has_session" = 1 ] && echo "FRIDAY_WOULD $id: tmux kill-session -t =friday-$goal"
+    [ "$has_session" = 1 ] && echo "FRIDAY_WOULD $id: tmux kill-session -t '=friday-$goal'"
     echo "FRIDAY_WOULD $id: git worktree remove $wt"
     echo "FRIDAY_WOULD $id: git -C $clone branch -D friday/$goal"
     echo "FRIDAY_WOULD $id: git -C $clone worktree prune"

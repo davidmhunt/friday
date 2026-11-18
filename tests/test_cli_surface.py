@@ -178,3 +178,34 @@ def test_dash_up_without_registry_fails_clearly(tmp_path):
         return  # a plugin-root registry would be found; nothing to assert
     r = subprocess.run([sys.executable, str(FRIDAY), "dash", "up"], env=env, capture_output=True, text=True)
     assert r.returncode != 0 and "no registry file found" in r.stderr
+
+
+def test_no_unquoted_tmux_equals_target():
+    """zsh expands a bare `=word`, so every `-t =...` friday prints or builds must be quoted."""
+    bad = []
+    for p in [*(ROOT / "bin").glob("*"), *(ROOT / "lib").glob("*")]:
+        if not p.is_file():
+            continue
+        for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+            if re.search(r"-t\s+=", line):
+                bad.append(f"{p.relative_to(ROOT)}:{n}: {line.strip()}")
+    assert not bad, "unquoted tmux target:\n" + "\n".join(bad)
+
+
+def test_resume_kill_line_runs_under_zsh(tmp_path):
+    import shutil
+    zsh = shutil.which("zsh")
+    if not zsh:
+        import pytest
+        pytest.skip("zsh not installed")
+    m = re.search(r'^\s*kill = (f".*")$', FRIDAY.read_text(), re.M)
+    assert m, "dispatch --resume kill line not found in bin/friday"
+    gid = "g1"
+    kill = eval(m.group(1), {"gid": gid})
+    fake = tmp_path / "tmux"
+    fake.write_text('#!/bin/sh\nfor a; do echo "ARG:$a"; done\n')
+    fake.chmod(0o755)
+    r = subprocess.run([zsh, "-c", kill], capture_output=True, text=True,
+                       env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"})
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.split() == ["ARG:kill-session", "ARG:-t", "ARG:=friday-g1"]

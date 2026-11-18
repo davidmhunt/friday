@@ -288,7 +288,7 @@ def test_restart_dry_run_prints_launch_only(env):
     n_before = len(records(env))
     rc, out, err = resume(env, "--dry-run")
     assert rc == 0, err
-    assert "kill: tmux kill-session -t =friday-g1" in out and "launch: tmux new -d -s friday-g1" in out
+    assert "kill: tmux kill-session -t '=friday-g1'" in out and "launch: tmux new -d -s friday-g1" in out
     assert "d2" in out and "remaining directives" in out
     assert "kill-session" not in log.read_text() and "new -d" not in log.read_text()
     assert len(records(env)) == n_before
