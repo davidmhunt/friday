@@ -237,7 +237,8 @@ approval summary, then push Base. Run the goal with `/friday:execute` for each d
 `nav-01` needs no robot. `flash-01` runs its pre-approved commands without a prompt. `hwtest-01`
 asks before each `ssh` (they are not pre-approved) because you attend it, and ends
 `awaiting review`. Work through the checklist under `## Review` at the robot, then run
-`friday accept hwtest-01` yourself; friday lands the goal and opens the PR, which you merge.
+`friday accept hwtest-01` yourself. Accepting does not land the goal: then run
+`friday land --goal rover-nav` yourself to open the PR, which you merge.
 
 To run the unattended directives on a robot host, put them in a goal of their own and
 `friday dispatch --goal <goal>` it. A dispatched goal runs on one node, and a directive that would
