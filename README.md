@@ -12,13 +12,19 @@ constrain the work.
 
 ## Install
 
+```text
+/plugin marketplace add davidmhunt/friday
+/plugin install friday@friday
+```
+
+Or from a clone, to try it in one session or add it as a local marketplace:
+
 ```bash
-git clone https://github.com/davidmhunt/friday ~/src/friday     # branch v1
+git clone https://github.com/davidmhunt/friday ~/src/friday
 claude --plugin-dir ~/src/friday                                 # try it in one session
 ```
 
-To keep it enabled, add `~/src/friday` as a local marketplace with `/plugin` and install it from
-there. Requires Claude Code with workflows (v2.1.154+) and `python3` on the host.
+Requires Claude Code with workflows (v2.1.154+) and `python3` on the host.
 
 Once per machine, put `friday` on PATH:
 
@@ -118,7 +124,8 @@ fleet's status over the tailnet only (127.0.0.1 and its tailnet address, port `[
 ## Status
 
 friday 1.0 is described in full by [docs/spec.md](docs/spec.md), which tests keep in step with the
-code. Migrating a v0.20 project: [docs/migrating-from-v0.md](docs/migrating-from-v0.md).
+code. New here: [docs/getting-started.md](docs/getting-started.md) is the tutorial; release notes
+are in [CHANGELOG.md](CHANGELOG.md). Migrating a v0.20 project: [docs/migrating-from-v0.md](docs/migrating-from-v0.md).
 
 ## Tests
 
