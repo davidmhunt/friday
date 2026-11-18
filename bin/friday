@@ -67,7 +67,13 @@ def cmd_status_push(a) -> int:
         url = a.to
         if not url:
             path = ff.find_nodes_file()
-            url = fd.master_url(ff.load_nodes(path) if path else None)
+            try:
+                url = fd.master_url(ff.load_nodes(path) if path else None)
+            except fd.DashError:
+                nf = ff.load_node_file()
+                if not (nf and nf[2]):
+                    raise
+                url = nf[2]
     except (fd.DashError, ff.RegistryError) as e:
         print(f"friday: {e}", file=sys.stderr)
         return 1

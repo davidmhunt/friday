@@ -28,6 +28,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import friday_core as fc
 import friday_fleet as ff
@@ -378,16 +379,26 @@ def _is_friday_repo(p: Path) -> bool:
 
 
 def registry_node(registry_path=None, node_name: str | None = None, errors: list | None = None):
-    """This node's registry entry (matched on name or ssh against node_name/hostname), or None."""
+    """This node's registry entry (matched on name or ssh against node_name/hostname); else
+    the node identity file as a (name, repos) entry; else None."""
     errors = errors if errors is not None else []
     try:
         reg_file = Path(registry_path) if registry_path else ff.find_nodes_file()
         if reg_file:
             reg = ff.load_nodes(reg_file)
             names = {node_name, socket.gethostname()} if node_name else {socket.gethostname()}
-            return next((n for n in reg.nodes.values() if n.name in names or n.ssh in names), None)
+            hit = next((n for n in reg.nodes.values() if n.name in names or n.ssh in names), None)
+            if hit:
+                return hit
     except ff.RegistryError as e:
         errors.append({"where": "registry", "error": str(e)})
+    try:
+        nf = ff.load_node_file()
+    except ff.RegistryError as e:
+        errors.append({"where": "node file", "error": str(e)})
+        return None
+    if nf:
+        return SimpleNamespace(name=nf[0], repos=nf[1], ssh="")
     return None
 
 
