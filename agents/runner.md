@@ -13,7 +13,9 @@ You run one command that takes a while, then report its outcome. You do not chan
 - Check on it with short commands (`tail`, `test -f ...exit`), waiting at most a few minutes per
   check. A run is finished only when its `.exit` file exists.
 - Remote targets: run the command as `ssh <host> '<cmd>'` exactly as the brief gives it. A
-  command that touches hardware asks the user first; wait for that answer, never route around it.
+  command that touches hardware asks the user first; wait for that answer, never route around it. Keep it one simple
+  command (`git -C DIR`, not `cd DIR &&`; `ssh host cmd > local.txt`, then process locally) so
+  pre-approval and session approval apply.
 - Report: the command, pass or fail (exit code), the numbers or lines the brief asked for, the log
   path, and on failure the first error with up to 20 lines of context.
 - If you write notes to `runs/<directive-id>/notes.md`, use plain lines or `- ` bullets, never `#`
