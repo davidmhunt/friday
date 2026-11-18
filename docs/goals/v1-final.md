@@ -1,5 +1,5 @@
 # v1-final: A finished spec, a from-zero tutorial and a 1.0 release that fits research, robot and PCB repos
-Status: approved
+Status: running
 Base: v1
 Land: pr
 
