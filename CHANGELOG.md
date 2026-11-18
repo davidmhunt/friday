@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` records an expensive
+  run once in the tracked `results/<id>.json` (metrics, file sha256 and size, command, HEAD, dirty flag, node,
+  time); `friday result check <id> [--require 'K OP V']... [--files]` is the cheap Verify, failing with one line
+  per unmet condition (no record, commit not an ancestor of HEAD, requirement, changed file). `friday check`
+  warns when a Verify matches a `hardware` pattern. Allow rule `friday result *`; the long-jobs,
+  data-artifacts and plan skills describe the run-once, record, cheap-check pattern (advice, no hook enforces it).
 - `Accept: user` directives (default `auto`) need a `## Review` section and end `awaiting review` at
   `friday finish`; the goal branch is pushed and later directives continue. Only the user's
   `friday accept <id> [--note TEXT | --reject REASON]` makes one `done` (a hook denies it to agents);
