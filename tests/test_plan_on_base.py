@@ -1,6 +1,6 @@
 """review-02: friday start merges the goal's Base into the goal branch."""
 import subprocess
-from test_friday import cli, repo, _g, fc  # noqa: F401
+from test_friday import cli, repo, grepo2, _g, fc  # noqa: F401
 
 
 def _commit_on(repo, branch, name, text, msg):
@@ -164,3 +164,17 @@ def test_pretool_judges_the_repo_the_command_commits_in(repo, tmp_path):
     assert pre(repo, f"git -C {other} commit -m x")[0] == "deny"
     # the other way round: session in the main worktree, command commits in the directive worktree
     assert pre(other, f"git -C {repo} commit -m x")[0] is None
+
+
+def test_restart_after_amendment_ignores_the_goal_status_flip(grepo2):
+    from test_friday import _git
+    assert cli(grepo2, "start", "core-01").returncode == 0
+    assert "Status: running" in (grepo2 / "docs/goals/core.md").read_text()
+    _git(grepo2, "switch", "-q", "main")
+    p = grepo2 / "docs/directives/core-01.md"
+    p.write_text(p.read_text() + "\namended\n")
+    _git(grepo2, "commit", "--no-verify", "-qam", "amend")
+    _git(grepo2, "switch", "-q", "friday/core")
+    r = cli(grepo2, "start", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert "amended" in p.read_text() and "merged main" in r.stdout
