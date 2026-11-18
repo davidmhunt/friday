@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `friday land --goal` refuses (exit 7, naming the ids) unless every directive is `done`, and
+  re-runs Verify for every directive whose Verify is not `none`.
+- `Verify: none` is accepted by `friday check` only for `Deliverable: external`; `friday verify` and the
+  Stop gate skip it and say so. An empty `Hardware:` value is an error; the unread `verify` config key
+  is gone.
+- The commit guard also refuses commits on the goal's `Base`, and names `friday/<goal>`.
+
 - `friday unblock <id>`: a blocked directive goes back to `approved` with a Log line, in one commit on
   the goal branch; `friday finish --blocked` sets the goal to `blocked: <id>` and `unblock` sets it back to
   `running`. `dispatch --resume --unblock` now runs it on the node (one commit, not an uncommitted edit).

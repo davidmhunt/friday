@@ -111,3 +111,28 @@ def test_unblock_refuses_when_not_blocked_or_off_goal_branch(repo):
     p.write_text(p.read_text().replace("Status: approved", "Status: blocked: x"))
     r = cli(repo, "unblock", "core-01")
     assert r.returncode != 0 and "unblock runs on branch" in r.stderr
+
+
+def _goal_branch(repo, directive_status, verify):
+    _git(repo, "checkout", "-q", "main")
+    g = repo / "docs/goals/core.md"
+    g.write_text(g.read_text().replace("Land: pr", "Land: none"))
+    p = repo / "docs/directives/core-01.md"
+    p.write_text(p.read_text().replace("Status: approved", f"Status: {directive_status}")
+                 .replace("Verify: test -f ok.txt", f"Verify: {verify}"))
+    _git(repo, "commit", "-qam", "setup")
+    _git(repo, "checkout", "-qb", "friday/core")
+
+
+def test_land_goal_refuses_unfinished_directive_whatever_its_land(repo):
+    _goal_branch(repo, "approved", "true")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 7 and "core-01" in r.stderr
+    assert "Status: approved" in (repo / "docs/goals/core.md").read_text()
+
+
+def test_land_goal_reverifies_every_directive(repo):
+    _goal_branch(repo, "done", "false")
+    r = cli(repo, "land", "--goal", "core")
+    assert r.returncode == 6 and "core-01" in r.stdout and "nothing pushed" in r.stdout
+    assert "Status: approved" in (repo / "docs/goals/core.md").read_text()
