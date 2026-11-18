@@ -56,3 +56,87 @@ def test_failed_fetch_falls_back_to_local_base(repo, tmp_path):
     r = cli(repo, "start", "core-01")
     assert r.returncode == 0, r.stderr
     assert "warning" in r.stderr and "merged main" in r.stdout and (repo / "plan.txt").exists()
+
+
+# ---------------------------------------------------------------- commit-msg guard
+def _commit(repo, msg, name="f.txt", *flags):
+    (repo / name).write_text(msg)
+    _g(repo, "add", name)
+    return subprocess.run(["git", "-C", str(repo), "commit", "-q", *flags, "-m", msg],
+                          capture_output=True, text=True)
+
+
+def _hook(repo):
+    return repo / ".git" / "hooks" / "commit-msg"
+
+
+def test_hook_refuses_without_trailer_allows_with(repo):
+    assert cli(repo, "start", "core-01").returncode == 0
+    r = _commit(repo, "no trailer")
+    assert r.returncode != 0 and "Directive: core-01" in r.stderr and "--no-verify" in r.stderr
+    assert _commit(repo, "ok\n\nDirective: core-01").returncode == 0
+    assert _commit(repo, "forced", "g.txt", "--no-verify").returncode == 0
+
+
+def test_hook_allows_without_marker(repo):
+    assert cli(repo, "init").returncode == 0 and _hook(repo).exists()
+    assert _commit(repo, "anything").returncode == 0
+
+
+def test_existing_hook_preserved_and_runs(repo):
+    h = _hook(repo)
+    h.parent.mkdir(exist_ok=True)
+    h.write_text("#!/bin/sh\ngrep -q nope \"$1\" && exit 7\nexit 0\n")
+    h.chmod(0o755)
+    assert cli(repo, "init").returncode == 0
+    assert (h.parent / "commit-msg.local").read_text().startswith("#!/bin/sh\ngrep")
+    r = _commit(repo, "nope")
+    assert r.returncode != 0
+    assert _commit(repo, "fine").returncode == 0
+    cli(repo, "start", "core-01")
+    assert _commit(repo, "nope\n\nDirective: core-01", "h.txt").returncode != 0
+
+
+def test_install_twice_and_uninstall_restores(repo):
+    h = _hook(repo)
+    h.parent.mkdir(exist_ok=True)
+    h.write_text("#!/bin/sh\nexit 0\n")
+    h.chmod(0o755)
+    cli(repo, "init")
+    cli(repo, "init")
+    cli(repo, "start", "core-01")
+    assert sorted(p.name for p in h.parent.glob("commit-msg*") if p.suffix != ".sample") == ["commit-msg", "commit-msg.local"]
+    assert (h.parent / "commit-msg.local").read_text() == "#!/bin/sh\nexit 0\n"
+    r = cli(repo, "uninstall", "--bin-dir", str(repo / "nobin"))
+    assert r.returncode == 0, r.stderr
+    assert h.read_text() == "#!/bin/sh\nexit 0\n" and not (h.parent / "commit-msg.local").exists()
+
+
+def test_uninstall_without_local_removes_hook(repo):
+    cli(repo, "init")
+    cli(repo, "uninstall", "--bin-dir", str(repo / "nobin"))
+    assert not _hook(repo).exists()
+
+
+def test_hooks_path_honoured(repo, tmp_path):
+    _g(repo, "config", "core.hooksPath", str(tmp_path / "hp"))
+    cli(repo, "init")
+    assert (tmp_path / "hp" / "commit-msg").exists() and not _hook(repo).exists()
+
+
+def test_record_only_commit_naming_goal_sibling_passes(repo):
+    assert cli(repo, "start", "core-01").returncode == 0
+    d = repo / "docs" / "directives"
+    goal = fc.parse_directive_full((d / "core-01.md").read_text())["goal"]
+    assert goal
+    (d / "core-02.md").write_text((d / "core-01.md").read_text().replace("core-01", "core-02"))
+    _g(repo, "add", "docs/directives/core-02.md")
+    ok = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "record\n\nDirective: core-02"],
+                        capture_output=True, text=True)
+    assert ok.returncode == 0, ok.stderr
+    # a code file in the commit is not a record-only commit
+    (repo / "x.py").write_text("x")
+    _g(repo, "add", "x.py")
+    bad = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "code\n\nDirective: core-02"],
+                         capture_output=True, text=True)
+    assert bad.returncode != 0

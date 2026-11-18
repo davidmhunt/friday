@@ -133,7 +133,21 @@ def cmd_status(a) -> int:
     return 0
 
 
+def _install_hook(root: Path) -> None:
+    res = fc.install_commit_hook(root)
+    if res == "installed":
+        print(f"friday: installed the commit-msg guard in {fc.hooks_dir(root)}")
+    elif res == "blocked":
+        print(f"friday: warning: {fc.hooks_dir(root)}/commit-msg is not friday's and commit-msg.local exists; "
+              "guard not installed", file=sys.stderr)
+
+
 def cmd_init(a) -> int:
+    _install_hook(_root())
+    return _init_settings(a)
+
+
+def _init_settings(a) -> int:
     """Merge FRIDAY_ALLOW into the repo's tracked .claude/settings.json (never settings.local.json)."""
     path = _root() / ".claude" / "settings.json"
     data: dict = {}
@@ -262,6 +276,7 @@ def cmd_start(a) -> int:
         old = fc.read_marker(Path.cwd())
         base = old["base"] if old and old.get("id") == a.id and old.get("base") else \
             _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
+    _install_hook(root)
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
                                  "gate": not a.no_gate, "base": base})
     print(f"base {base}")
@@ -1426,6 +1441,13 @@ def cmd_install(a) -> int:
 
 
 def cmd_uninstall(a) -> int:
+    root = fc.repo_root(Path.cwd())
+    if root is not None and fc.uninstall_commit_hook(root):
+        print(f"friday: removed the commit-msg guard from {fc.hooks_dir(root)}")
+    return _uninstall_link(a)
+
+
+def _uninstall_link(a) -> int:
     link = _bin_dir(a) / "friday"
     if link.is_symlink():
         if _is_friday_link(link):

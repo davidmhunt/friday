@@ -5,7 +5,7 @@ from test_friday import cli, repo, _g, fc  # noqa: F401
 def _commit(repo, name, msg):
     (repo / name).write_text(name)
     _g(repo, "add", name)
-    _g(repo, "commit", "-qm", msg)
+    _g(repo, "commit", "--no-verify", "-qm", msg)
 
 
 def test_finish_log_lists_only_own_commits_and_start_prints_merge_base(repo):
@@ -60,7 +60,7 @@ def test_plan_only_commit_without_trailer_is_neither_listed_nor_untracked(repo):
     g = repo / "docs/goals/core.md"
     g.write_text(g.read_text() + "\namended\n")
     _g(repo, "add", "docs/goals/core.md")
-    _g(repo, "commit", "-qm", "amend plan")
+    _g(repo, "commit", "--no-verify", "-qm", "amend plan")
     r = cli(repo, "commits", "core-01")
     assert r.returncode == 0 and _subjects(r) == ["mine a"] and not _untracked(r)
 
@@ -81,7 +81,7 @@ def test_blocked_unblock_then_more_commits_keep_earlier_ones(repo):
     p = repo / "docs/directives/core-01.md"
     p.write_text(p.read_text().replace("Status: blocked: needs a board", "Status: approved"))
     _g(repo, "add", "-A")
-    _g(repo, "commit", "-qm", "core-01: unblock\n\nDirective: core-01")
+    _g(repo, "commit", "--no-verify", "-qm", "core-01: unblock\n\nDirective: core-01")
     assert cli(repo, "start", "core-01").returncode == 0
     _commit(repo, "b.txt", "mine b\n\nDirective: core-01")
     r = cli(repo, "commits", "core-01")
@@ -96,7 +96,7 @@ def test_merging_base_into_goal_branch_keeps_commits_and_adds_no_untracked(repo)
     _commit(repo, "m.txt", "main moved")
     _g(repo, "checkout", "-q", "friday/core-01")
     _commit(repo, "b.txt", "mine b\n\nDirective: core-01")
-    _g(repo, "merge", "-q", "--no-edit", "main")
+    _g(repo, "merge", "--no-verify", "-q", "--no-edit", "main")
     r = cli(repo, "commits", "core-01")
     assert r.returncode == 0, r.stderr
     assert _subjects(r) == ["mine a", "mine b"] and not _untracked(r)
@@ -110,7 +110,7 @@ def test_finish_log_excludes_other_directives_and_untagged_plan_commits(repo):
     g = repo / "docs/goals/core.md"
     g.write_text(g.read_text() + "\namended\n")
     _g(repo, "add", "docs/goals/core.md")
-    _g(repo, "commit", "-qm", "amend plan")
+    _g(repo, "commit", "--no-verify", "-qm", "amend plan")
     assert cli(repo, "finish", "core-01").returncode == 0
     log = (repo / "docs/directives/core-01.md").read_text().split("## Log")[1]
     assert "mine a" in log and "other" not in log and "amend plan" not in log

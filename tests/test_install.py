@@ -10,7 +10,7 @@ FRIDAY = Path(__file__).resolve().parent.parent / "bin" / "friday"
 def run(tmp_path, *args, path=""):
     env = {**os.environ, "HOME": str(tmp_path / "home"), "PATH": path or os.environ["PATH"]}
     return subprocess.run([sys.executable, str(FRIDAY), *args, "--bin-dir", str(tmp_path / "bin")],
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True, env=env, cwd=tmp_path)
 
 
 def fake_checkout(tmp_path, name):
