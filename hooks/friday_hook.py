@@ -102,6 +102,20 @@ def _commit_message(argv: list[str], cwd: Path) -> str | None:
     return "\n".join(msgs) if saw else None
 
 
+def _goal_and_base(cwd: Path, did: str) -> tuple[str, str]:
+    """The directive's goal id and that goal's Base branch ('' when unreadable)."""
+    root = fc.repo_root(cwd)
+    if not root:
+        return "", ""
+    try:
+        m = re.search(r"(?m)^Goal:\s*(\S+)\s*$", fc.directive_path(root, did).read_text())
+        goal = m.group(1) if m else ""
+        base = fc.parse_goal(fc.goal_path(root, goal).read_text())["base"] if goal else ""
+    except OSError:
+        return "", ""
+    return goal, base.strip()
+
+
 def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
     """Agent commits during a directive carry a `Directive: <id>` trailer and never land on main."""
     marker = fc.read_marker(cwd)
@@ -115,9 +129,12 @@ def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
         if not rest or rest[0] != "commit":
             continue
         branch = fc.current_branch(cwd)
+        if marker:
+            goal, base = _goal_and_base(cwd, marker["id"])
+            if branch in ("main", "master") or (base and branch == base):
+                target = f"friday/{goal}" if goal else f"friday/{marker['id']}"
+                return "deny", f"Directive {marker['id']} commits go on the goal branch, not {branch}. Create or switch to {target}."
         if branch in ("main", "master"):
-            if marker:
-                return "deny", f"Directive {marker['id']} commits go on its own branch, not {branch}. Create or switch to friday/{marker['id']}."
             return "ask", f"Commit directly on {branch}?"
         if marker:
             msg = _commit_message(rest[1:], cwd)

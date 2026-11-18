@@ -55,3 +55,23 @@ def test_empty_hardware_is_error(repo):
     r = cli(repo, "check", "core-01")
     assert r.returncode != 0
     assert "Hardware must not be empty" in r.stdout + r.stderr
+
+
+def _pre(repo, cmd):
+    out = subprocess.run([sys.executable, str(HOOK), "pretool"], capture_output=True, text=True,
+                         input=json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd},
+                                           "cwd": str(repo), "session_id": "s"}), env={**os.environ})
+    return out.stdout
+
+
+def test_commit_guard_protects_goal_base(repo):
+    g = repo / "docs" / "goals" / "core.md"
+    g.write_text(g.read_text().replace("Base: main", "Base: develop"))
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True)
+    git("commit", "-qam", "base develop")
+    assert cli(repo, "start", "core-01").returncode == 0
+    git("checkout", "-qb", "develop")
+    out = _pre(repo, "git commit -m x -m 'Directive: core-01'")
+    assert "deny" in out and "friday/core" in out and "develop" in out
+    git("checkout", "-q", "friday/core-01")
+    assert "deny" not in _pre(repo, "git commit -m x -m 'Directive: core-01'")
