@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""friday: directive bookkeeping for the friday plugin. On PATH while the plugin is enabled.
+"""friday: directive bookkeeping for the friday plugin. Put it on PATH with `friday install`.
 
   friday status [--json]            directives in this repo, the active one here, hardware leases; --json: one node snapshot
+  friday status --node NAME         same, with NAME as the node name (first in the identity order; works with --json and --push)
   friday status --push [--to URL]   post this node's snapshot to the dash (URL: the master's [dash] port by default)
+  friday init                       write the friday allow rules into this repo's .claude/settings.json
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
   friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), write the marker (commits nothing)
   friday verify [<id>]              run the directive's Verify command (default: the active one)
   friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
                                     append the Log entry, Status -> done (or blocked: R), one commit, clear the marker
   friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
+  friday session-end --goal <g>     close this dispatched session's own tmux session once its goal is done
   friday land <id> [--base <branch>]
                                     by the directive's Land: pr -> push friday/<id> and open its PR (gh);
                                     goal -> push friday/<goal>, no PR; none -> push nothing
@@ -25,6 +28,8 @@
   friday nodes --clean <node> [--dry-run]   remove finished goals' worktrees on a node
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
+  friday dispatch --goal <g> --resume [--unblock ID]...
+                                    resume the goal's session; --unblock ID (repeatable) unblocks that directive first
   friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
   friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
   friday dash [--bind ADDR]... [--no-self]
