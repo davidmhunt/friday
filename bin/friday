@@ -21,6 +21,7 @@
   friday nodes --setup <node> [--yes]
                                     set the node's first-run prompt skips in ~/.claude/settings.json and
                                     install the friday-push.timer systemd user timer (30 s status push)
+  friday nodes --clean <node> [--dry-run]   remove finished goals' worktrees on a node
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
   friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
@@ -30,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
@@ -727,6 +729,23 @@ def cmd_nodes_setup(a, reg) -> int:
     return 1
 
 
+def cmd_nodes_clean(a, reg) -> int:
+    n = reg.nodes.get(a.clean)
+    if n is None:
+        print(f"friday: no node named {a.clean!r}; known: {', '.join(reg.nodes)}")
+        return 1
+    if n.role not in ("master", "worker"):
+        print(f"friday: {n.name} is a target node; --clean applies to master and worker nodes")
+        return 1
+    root = _root()
+    origin_url = _git_out(["remote", "get-url", "origin"], root)[1].strip()
+    repo_name = origin_url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
+    clean = ff.run_clean(n, {repo_name: origin_url}, dry_run=a.dry_run)
+    for line in print_clean_lines(n, clean):
+        print(line)
+    return 1 if clean["error"] else 0
+
+
 def cmd_nodes(a) -> int:
     path = ff.find_nodes_file()
     if path is None:
@@ -741,6 +760,11 @@ def cmd_nodes(a) -> int:
         return 1
     if a.setup:
         return cmd_nodes_setup(a, reg)
+    if a.clean:
+        return cmd_nodes_clean(a, reg)
+    if a.dry_run:
+        print("friday: --dry-run applies to --clean")
+        return 2
     ok = True
     for n in reg.nodes.values():
         if not a.check:
@@ -758,7 +782,8 @@ def cmd_nodes(a) -> int:
 
 # Exit codes of `friday dispatch` refusals (0 = ok). Each has a one-line fix on stderr.
 DISPATCH_EXIT = {"goal": 10, "format": 11, "directives": 12, "land-pr": 13, "unpushed": 14,
-                 "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19, "report-to": 20}
+                 "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19, "report-to": 20,
+                 "no-record": 21, "no-worktree": 22, "goal-done": 23, "busy": 24, "blocked": 25, "unblock": 26}
 
 
 def _refuse(kind: str, msg: str, fix: str):
@@ -867,8 +892,140 @@ def dispatch_preconditions(root: Path, gid: str, node_name: str | None) -> dict:
             "registry": reg}
 
 
+def print_clean_lines(n, clean: dict) -> list[str]:
+    """Report lines for a clean run before a dispatch; a failure is reported, never fatal."""
+    if clean["error"]:
+        return [f"clean {n.name}: failed ({clean['error']}); dispatching anyway"]
+    out = [f"clean {n.name}: would remove {i}" for i in clean.get("would", [])]
+    out += [f"clean {n.name}: removed {i}" for i in clean["cleaned"]]
+    out += [f"clean {n.name}: kept {k}" for k in clean["kept"]]
+    out += [f"clean {n.name}: note: {x}" for x in clean["notes"]]
+    out += [f"clean {n.name}: stray clone {s['folder']} (origin {s['origin']}) at {s['path']}; remove by hand"
+            for s in clean["strays"]]
+    return out or [f"clean {n.name}: nothing to remove"]
+
+
+def resume_checks(root: Path, a) -> dict:
+    """`--resume` step 1: find the node and worktree, and refuse unless it can be resumed.
+    Read-only on the node; returns {"node", "repo", "state"} when every check passes."""
+    gid = a.goal
+    rec = ff.latest_dispatch(gid)
+    path = ff.find_nodes_file()
+    if path is None:
+        _refuse("registry", "no nodes file", f"copy {ff.PLUGIN_ROOT / 'nodes.example.toml'} to ~/.config/friday/nodes.toml and edit it")
+    try:
+        reg = ff.load_nodes(path)
+    except ff.RegistryError as e:
+        _refuse("registry", str(e), f"fix {path}")
+    node_name = a.node or (rec or {}).get("node")
+    if not node_name:
+        _refuse("no-record", f"no dispatch record for goal {gid} and no --node",
+                "pass --node <name>, or use a normal dispatch")
+    n = reg.nodes.get(node_name)
+    if n is None or n.role == "target":
+        _refuse("node", f"node {node_name!r} is not a master or worker in {path}", "pick one from `friday nodes`")
+    if rec and rec.get("repo"):
+        repo_name = rec["repo"]
+    else:
+        url = _git_out(["remote", "get-url", "origin"], root)[1]
+        repo_name = url.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
+    argv, stdin = ff.ssh_cmd(n, ff.resume_script(n, gid, repo_name))
+    r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+    if r.returncode != 0:
+        _refuse("unreachable", f"node {n.name} not reachable ({r.stderr.strip()})",
+                f"check that `ssh {n.ssh}` works non-interactively (`friday nodes --check`)")
+    st = ff.parse_resume(r.stdout)
+    if st["missing"]:
+        _refuse("no-worktree", f"no worktree {st['missing']} on {n.name}",
+                f"use a normal dispatch: friday dispatch --goal {gid}")
+    if st["branch"] != f"friday/{gid}":
+        _refuse("no-worktree", f"worktree {st['path']} is on branch {st['branch']}, not friday/{gid}",
+                "fix the worktree by hand, or use a normal dispatch")
+    if st["goalstatus"].lower().startswith("done"):
+        _refuse("goal-done", f"goal {gid} is done in {st['path']}", "nothing to resume")
+    if st["session"] and not st["idle"]:
+        _refuse("busy", f"session friday-{gid} on {n.name} is busy or waiting on a prompt",
+                f"wait for it, or attach (`tmux attach -t friday-{gid}`) and answer it")
+    todo = [(i, s) for i, s in st["directives"] if s.lower() != "done"]
+    unblock = list(getattr(a, "unblock", None) or [])
+    known = {i for i, _ in st["directives"]}
+    for u in unblock:
+        if u not in known:
+            _refuse("unblock", f"--unblock {u}: not a directive of goal {gid} in {st['path']}",
+                    "pick one of: " + ", ".join(i for i, _ in st["directives"]))
+    stuck = [(i, s) for i, s in todo if s.lower().startswith("blocked") and i not in unblock]
+    if stuck:
+        i, s = stuck[0]
+        _refuse("blocked", f"directive {i} is {s}",
+                f"fix the cause, then `friday dispatch --goal {gid} --resume --unblock {i}`")
+    print(f"resume {gid} on {n.name} ({n.ssh}): worktree {st['path']} on {st['branch']}")
+    print("session: " + (f"friday-{gid} exists and is idle at a prompt" if st["session"] else f"friday-{gid} is not running"))
+    if st["dirty"]:
+        print(f"uncommitted files (kept, not touched): {len(st['dirty'])}")
+        for d in st["dirty"]:
+            print(f"  {d}")
+    else:
+        print("uncommitted files: none")
+    print("remaining directives (from the worktree's goal file):" + ("" if todo else " none"))
+    for i, s in todo:
+        note = ""
+        if s.lower().startswith("blocked"):
+            note = f"  [{s}; reset to approved by --unblock]"
+        print(f"  {i}{note}" if note else f"  {i}  [{s}]")
+    for u in unblock:
+        if a.dry_run:
+            print(f"would reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
+            continue
+        argv, stdin = ff.ssh_cmd(n, ff.unblock_script(n, gid, repo_name, u))
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+        if r.returncode != 0 or f"FRIDAY_UNBLOCKED {u}" not in r.stdout:
+            _refuse("unblock", f"could not reset {u} on {n.name} ({(r.stderr or r.stdout).strip()})",
+                    "edit its Status in the worktree by hand")
+        print(f"reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
+    return {"node": n, "repo": repo_name, "state": st, "remaining": [i for i, _ in todo],
+            "report_to": a.report_to or (rec or {}).get("report_to") or reg.report_to}
+
+
+def resume_restart(root: Path, a) -> int:
+    """`--resume` step 3: after the checks pass, replace the session and record a `resume`."""
+    c = resume_checks(root, a)
+    n, st, gid = c["node"], c["state"], a.goal
+    if not c["remaining"]:
+        _refuse("goal-done", f"goal {gid} has no directive left to run in {st['path']}", "nothing to resume")
+    if not c["report_to"]:
+        _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
+    host = socket.gethostname()
+    launch = ff.launch_line(n, gid, st["path"], host, c["remaining"], c["report_to"])
+    kill = f"tmux kill-session -t =friday-{gid}"
+    if a.dry_run:
+        if st["session"]:
+            print(f"kill: {kill}")
+        print(f"launch: {launch}")
+        print("dry run: nothing changed on any node")
+        return 0
+    if st["session"]:
+        argv, stdin = ff.ssh_cmd(n, kill + "\n")
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"friday: could not stop session friday-{gid} on {n.name}: {r.stderr.strip()}", file=sys.stderr)
+            return 1
+    argv, stdin = ff.ssh_cmd(n, launch + "\n")
+    r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"friday: launch failed on {n.name}: {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    path = ff.record_dispatch({
+        "kind": "resume", "goal": gid, "directives": c["remaining"], "repo": c["repo"], "node": n.name,
+        "tmux_session": f"friday-{gid}", "worktree": st["path"], "branch": f"friday/{gid}",
+        "report_to": c["report_to"], "time": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+    print(f"resumed {gid} on {n.name}: tmux session friday-{gid}; recorded in {path}")
+    return 0
+
+
 def cmd_dispatch(a) -> int:
     root = _root()
+    if a.resume:
+        return resume_restart(root, a)
     plan = dispatch_preconditions(root, a.goal, a.node)
     n = plan["node"]
     print(f"dispatch {a.goal} -> {n.name} ({n.ssh}); {plan['reason']}; {plan['load']} friday session(s) running")
@@ -886,8 +1043,12 @@ def cmd_dispatch(a) -> int:
         print("prepare script:")
         print(script)
         print(f"launch: {launch}")
+        print(f"clean: would remove finished goal worktrees on {n.name} first (`friday nodes --clean {n.name} --dry-run` plans it)")
         print("dry run: nothing changed on any node")
         return 0
+    clean = ff.run_clean(n, {repo_name: origin_url.strip()})
+    for line in print_clean_lines(n, clean):
+        print(line)
     argv, stdin = ff.ssh_cmd(n, script)
     r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
     if r.returncode != 0:
@@ -978,6 +1139,35 @@ def cmd_parse(a) -> int:
     return 1 if out["errors"] else 0
 
 
+def cmd_session_end(a) -> int:
+    """Close this dispatched session's own tmux session shortly after its goal is done."""
+    def no(why: str) -> int:
+        print(f"friday: session-end refused: {why}", file=sys.stderr)
+        return 1
+    if not fc.GOAL_RE.match(a.goal):
+        return no(f"bad goal id '{a.goal}'")
+    if not os.environ.get("FRIDAY_DISPATCHED_FROM"):
+        return no("not a dispatched session (FRIDAY_DISPATCHED_FROM is unset)")
+    try:
+        r = subprocess.run(["tmux", "display-message", "-p", "#S"], capture_output=True, text=True)
+    except OSError:
+        return no("tmux is not available")
+    cur = r.stdout.strip() if r.returncode == 0 else ""
+    if cur != f"friday-{a.goal}":
+        return no(f"current tmux session is '{cur or 'none'}', not friday-{a.goal}")
+    gp = fc.goal_path(_root(), a.goal)
+    if not gp.is_file():
+        return no(f"no goal file {gp}")
+    m = re.search(r"(?m)^Status:\s*(\S+)", gp.read_text())
+    if not m or m.group(1) != "done":
+        return no(f"goal {a.goal} is '{m.group(1) if m else '?'}', not done")
+    cmd = f"sleep 10; tmux kill-session -t =friday-{a.goal}"
+    subprocess.Popen(["setsid", "sh", "-c", cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    print(f"session-end: scheduled in 10s: {cmd}")
+    return 0
+
+
 def cmd_dash(a) -> int:
     import friday_dash
     return friday_dash.main(a.bind)
@@ -996,8 +1186,10 @@ def main() -> int:
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
-    s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true"); s.set_defaults(f=cmd_nodes)
-    s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dispatch)
+    s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true")
+    s.add_argument("--clean", metavar="NODE"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_nodes)
+    s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.add_argument("--resume", action="store_true"); s.add_argument("--unblock", action="append", metavar="ID"); s.set_defaults(f=cmd_dispatch)
+    s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
     s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)

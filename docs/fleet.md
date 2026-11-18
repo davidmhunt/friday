@@ -161,6 +161,53 @@ friday dispatch --goal <g> [--node <name>] [--report-to <session>] [--dry-run]
 prepares the worktree over ssh, starts tmux session `friday-<g>` there running `claude` with Remote
 Control, and tells it to run the goal's remaining directives in order and land the goal.
 
+### Ending a finished session
+
+`friday session-end --goal <g>` closes the dispatched session's own tmux session `friday-<g>` ten
+seconds later. It acts only when `FRIDAY_DISPATCHED_FROM` is set, the current tmux session is
+`friday-<g>`, and the goal file says `Status: done`; otherwise it prints one line and exits 1.
+
+After the session sends `done <g> PR <url>` it runs `friday session-end --goal <g>` and stops, so no
+idle Claude is left on the node. After `blocked ...` it does not run it and stays open, so you can
+attach (`tmux attach -t friday-<g>`) or use Remote Control to unblock it.
+
+To close a blocked session by hand, on the node: `tmux kill-session -t =friday-<g>`. The worktree
+and branch stay as they are.
+
+### Restarting a stopped goal (`--resume`)
+
+Use `--resume` when a dispatched goal stopped and its worktree is still on the node: the session
+reported `blocked`, a command was refused, or the session crashed or was closed. A normal dispatch
+refuses then (exit 33, the worktree exists).
+
+```
+friday dispatch --goal <g> --resume [--unblock <id>]... [--node <name>] [--report-to <session>] [--dry-run]
+```
+
+The node is the one in the latest `dispatches.jsonl` record for the goal; `--node` is needed only
+when there is no record. Moving a goal to another node is not supported. Resume checks the worktree
+`<repos>/<repo>.friday/<g>` is on branch `friday/<g>`, reports its uncommitted files (kept, never
+touched), and lists the directives that are not `done`, read from the goal file in the worktree.
+It then kills an idle or leftover `friday-<g>` session, starts a fresh one in the same worktree
+(which reloads project settings) with the dispatch launch line and the remaining directive ids, and
+appends a `resume` record to `dispatches.jsonl`. `--dry-run` prints the checks and the launch line
+and changes nothing, including `--unblock`.
+
+A directive marked `blocked: <reason>` is listed with its reason and is not resumed on its own.
+Fix the cause, then pass `--unblock <id>`: it resets that directive's Status to `approved` in the
+worktree as an uncommitted edit, and the directive's `friday finish` commit carries it.
+
+| kind | exit | cause |
+|---|---|---|
+| no-record | 21 | no dispatch record for the goal and no `--node` |
+| no-worktree | 22 | the worktree is missing, or is not on `friday/<g>` (use a normal dispatch) |
+| goal-done | 23 | the goal is done, or no directive is left to run |
+| busy | 24 | session `friday-<g>` exists and is not idle at a prompt |
+| blocked | 25 | a remaining directive is blocked and not named by `--unblock` |
+| unblock | 26 | `--unblock` names a directive that is not in the goal, or the reset failed |
+
+Resume runs only when you or the master session ask for it; nothing restarts a goal automatically.
+
 ### Refusals
 
 Each refusal prints one line and a fix on stderr and exits with its own code.
@@ -190,6 +237,35 @@ The node itself can also refuse (the dispatch command exits with the node's code
 | branch | 34 | local branch `friday/<g>` already exists in the clone |
 | plugin | 35 | cannot check out the plugin commit at `plugin_dir` |
 | git | 36 | clone, fetch or worktree add failed |
+
+## Cleaning up finished goals
+
+Worktrees, branches and trust entries pile up on a node. Clean them with:
+
+```
+friday nodes --clean <node> [--dry-run]
+```
+
+`--dry-run` prints the plan and changes nothing. `friday dispatch` runs the same clean for the target
+node first, without a prompt, and prints what it removed. If the clean fails, dispatch says so and
+carries on.
+
+The clean looks at each worktree `<repos>/<repo>.friday/<goal>` on the node. The master decides:
+
+- **Finished**: a merged PR exists for `friday/<goal>` (`gh pr list --state merged --head
+  friday/<goal>`; squash merges are found this way, not by ancestry), or `friday/<goal>` is gone from
+  origin and the goal file in the worktree says `Status: done`. Without `gh` on the master only the
+  branch-gone rule is used, and the clean says so.
+- **Kept, with a one-line reason**: unfinished goals, dirty worktrees (tracked or untracked changes,
+  ignoring `runs/`), and goals whose `friday-<goal>` tmux session is not at an idle prompt.
+
+For each finished goal the node removes the tmux session (only if idle), the worktree (never forced),
+the local branch `friday/<goal>`, and the goal's entry under `projects` in `~/.claude.json` (other keys
+stay).
+
+Not cleaned: remote branches (turn on GitHub's "delete branch on merge"), clones, and the master's own
+checkout. A clone whose folder name differs from its origin repo name is a stray clone: the clean
+reports it and never deletes it, so remove stray clones by hand.
 
 ## The master and reports
 

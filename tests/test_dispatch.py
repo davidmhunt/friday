@@ -328,9 +328,11 @@ def test_launch_line_verbatim():
            "1. /friday:execute g1-01\n2. /friday:execute g1-02\n"
            "Start the next only when the previous ended done. Stop at the first that blocks.")
     report = ("When the directives of goal g1 are finished or one has blocked, send session boss exactly "
-              "one message with SendMessage, then stop. If the goal landed, the message is "
-              "`done g1 PR <url>` (the URL from the goal landing). If a directive blocked, it is "
-              "`blocked g1 <id>: <reason>`. Send no other message.")
+              "one message with SendMessage. If the goal landed, the message is "
+              "`done g1 PR <url>` (the URL from the goal landing); after sending it, "
+              "run `friday session-end --goal g1` and stop. If a directive blocked, it is "
+              "`blocked g1 <id>: <reason>`; after sending it, do not run session-end and stay "
+              "open. Send no other message.")
     q = shlex.quote
     assert line == ("tmux new -d -s friday-g1 -c /w/proj.friday/g1 env FRIDAY_RUNTIME=docker "
                     "FRIDAY_DISPATCHED_FROM=laptop claude --model opus --permission-mode auto "
@@ -478,3 +480,54 @@ def test_dry_run_shows_trust_step(env):
     rc, out, err = dispatch(env, "--dry-run", "--node", "alfred", "--report-to", "me")
     assert rc == 0, err
     assert "FRIDAY_TRUSTED" in out and "hasTrustDialogAccepted" in out
+
+
+# ---- fleet-07 step 4: dispatch cleans the target node first ----
+FAKE_SSH_CLEAN = """#!/bin/sh
+for a; do host=$a; shift; [ "$1" = bash ] && break; done
+cat > "$FAKE_DIR/stdin-$host-$$"
+echo "$host $(grep -q FRIDAY_WT "$FAKE_DIR/stdin-$host-$$" && echo inventory)\
+$(grep -q 'refuse()' "$FAKE_DIR/stdin-$host-$$" && echo prepare)" >> "$FAKE_DIR/order"
+if grep -q 'FRIDAY_WT' "$FAKE_DIR/stdin-$host-$$"; then
+  [ -e "$FAKE_DIR/clean-fails" ] && { echo "inventory boom" >&2; exit 5; }
+  echo "FRIDAY_STRAY folder=odd origin=proj path=/w/odd"
+  exit 0
+fi
+echo FRIDAY_REACH ok
+echo "FRIDAY_LOAD 0"
+echo "FRIDAY_WORKTREE /abs/work/proj.friday/g1"
+exit 0
+"""
+
+
+def test_dispatch_cleans_first_and_reports(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_CLEAN)
+    env.env["XDG_STATE_HOME"] = str(env.tmp / "state")
+    rc, out, err = dispatch(env, "--node", "alfred", "--report-to", "me")
+    assert rc == 0, out + err
+    order = [l.split()[-1] for l in (env.fake / "order").read_text().splitlines() if l.split()[-1:] != ["me@alfred"]]
+    assert order[:2] == ["inventory", "prepare"]
+    assert "clean alfred: stray clone odd" in out and "remove by hand" in out
+    assert out.index("clean alfred") < out.index("dispatched g1")
+
+
+def test_dispatch_proceeds_when_clean_fails(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_CLEAN)
+    env.env["XDG_STATE_HOME"] = str(env.tmp / "state")
+    (env.fake / "clean-fails").write_text("")
+    rc, out, err = dispatch(env, "--node", "alfred", "--report-to", "me")
+    assert rc == 0, out + err
+    assert "clean alfred: failed (inventory boom); dispatching anyway" in out
+    assert "dispatched g1 to alfred" in out
+
+
+def test_nodes_clean_cli_runs_clean_and_dry_run(env):
+    Path(env.env["FRIDAY_SSH"]).write_text(FAKE_SSH_CLEAN)
+    for extra in ([], ["--dry-run"]):
+        r = subprocess.run([sys.executable, str(FRIDAY), "nodes", "--clean", "alfred", *extra],
+                           cwd=env.repo, env=env.env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "clean alfred: stray clone odd" in r.stdout
+    r = subprocess.run([sys.executable, str(FRIDAY), "nodes", "--clean", "nope"],
+                       cwd=env.repo, env=env.env, capture_output=True, text=True)
+    assert r.returncode == 1 and "no node named" in r.stdout

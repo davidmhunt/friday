@@ -1,5 +1,5 @@
 # fleet-08: `friday dispatch --goal <g> --resume` restarts a stopped goal in its existing worktree
-Status: approved
+Status: done
 Goal: fleet-cleanup
 Node: any
 Deliverable: code
@@ -39,3 +39,15 @@ missing worktree or a goal already done refuses. tests/test_dispatch_resume.py p
 - Restarting automatically without the user or the master session asking.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 9e6ab8b fleet-08: docs/fleet.md on --resume and --unblock, CHANGELOG entry
+- f41b962 fleet-08: --resume kills an idle session, relaunches the remaining directives, appends a resume record; --dry-run prints the launch only
+- 2bb6b23 fleet-08: --resume lists remaining directives from the worktree's goal file; --unblock resets a blocked one
+- 82dc51b fleet-08: dispatch --resume checks the worktree, branch, goal status and session (read-only), with tests
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+step 4: tests/test_dispatch_resume.py already covers every listed case (built across steps 1-3 commits); 48 passed with test_dispatch.py. No change needed.
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_dispatch_resume.py tests/test_dispatch.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
