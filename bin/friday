@@ -24,6 +24,8 @@
   friday nodes --clean <node> [--dry-run]   remove finished goals' worktrees on a node
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
+  friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
+  friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
   friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
 """
 from __future__ import annotations
@@ -1168,6 +1170,65 @@ def cmd_session_end(a) -> int:
     return 0
 
 
+def _bin_dir(a) -> Path:
+    return Path(os.path.expanduser(a.bin_dir or "~/.local/bin"))
+
+
+def _is_friday_link(link: Path) -> bool:
+    """True when the symlink's target is a friday checkout's bin/friday (a dangling one counts by name)."""
+    t = Path(os.path.abspath(link.parent / os.readlink(link)))
+    if t.name != "friday" or t.parent.name != "bin":
+        return False
+    return (t.parent.parent / "lib" / "friday_core.py").is_file() or not t.exists()
+
+
+def cmd_install(a) -> int:
+    d = _bin_dir(a)
+    link = d / "friday"
+    me = Path(__file__).resolve()
+    if link.is_symlink():
+        old = os.readlink(link)
+        if Path(os.path.abspath(d / old)) == me or link.resolve() == me:
+            print(f"friday: {link} already points at {me}")
+        elif _is_friday_link(link):
+            link.unlink()
+            link.symlink_to(me)
+            print(f"friday: repointed {link}\n  old: {old}\n  new: {me}")
+        else:
+            print(f"friday: {link} is a link to {old}, which is not friday; not touching it", file=sys.stderr)
+            return 1
+    elif link.exists():
+        print(f"friday: {link} is a regular file; not overwriting it", file=sys.stderr)
+        return 1
+    else:
+        d.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(me)
+        print(f"friday: linked {link} -> {me}")
+    on_path = str(d) in [os.path.expanduser(x) for x in os.environ.get("PATH", "").split(":")]
+    if on_path:
+        print(f"{d} is on PATH")
+    else:
+        print(f"{d} is not on PATH; add this line to ~/.profile:\n  export PATH=\"{d}:$PATH\"")
+    return 0
+
+
+def cmd_uninstall(a) -> int:
+    link = _bin_dir(a) / "friday"
+    if link.is_symlink():
+        if _is_friday_link(link):
+            old = os.readlink(link)
+            link.unlink()
+            print(f"friday: removed {link} (was -> {old})")
+            return 0
+        print(f"friday: {link} is a link to {os.readlink(link)}, which is not friday; not removing it", file=sys.stderr)
+        return 1
+    if link.exists():
+        print(f"friday: {link} is a regular file; not removing it", file=sys.stderr)
+        return 1
+    print(f"friday: no link at {link}; nothing to do")
+    return 0
+
+
 def cmd_dash(a) -> int:
     import friday_dash
     return friday_dash.main(a.bind)
@@ -1190,6 +1251,8 @@ def main() -> int:
     s.add_argument("--clean", metavar="NODE"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.add_argument("--resume", action="store_true"); s.add_argument("--unblock", action="append", metavar="ID"); s.set_defaults(f=cmd_dispatch)
     s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
+    for nm, fn in (("install", cmd_install), ("uninstall", cmd_uninstall)):
+        s = sub.add_parser(nm); s.add_argument("--bin-dir", metavar="DIR"); s.set_defaults(f=fn)
     s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)
