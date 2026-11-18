@@ -54,9 +54,9 @@ def _emit_pretool(decision: str, reason: str) -> None:
 
 
 def check_deny(cmd: str) -> str | None:
-    # Heredoc bodies are data: drop them, but keep the substitutions the shell runs in an unquoted one.
-    text, live = fc._strip_heredocs(cmd)
-    text = "\n".join([text] + [m for b in live for g in re.findall(fc._SUBST, b) for m in g if m])
+    # The body of a quoted heredoc is data: drop it. Everything else is scanned in full.
+    text = fc._strip_heredocs(cmd)
+    text = "\n".join([text] + [m for g in re.findall(fc._SUBST, text) for m in g if m])
     for pat, reason in DENY:
         if re.search(pat, text):
             return reason

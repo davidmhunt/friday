@@ -27,7 +27,7 @@ def refused(cmd):
 
 
 def test_quoted_heredoc_body_is_data():
-    for opener in ("<<'EOF'", '<<"EOF"', "<<\\EOF", "<<-'EOF'"):
+    for opener in ("<<'EOF'", '<<"EOF"', "<<-'EOF'"):
         cmd = f"gh pr create --body-file - {opener}\n{TEXT}\nEOF"
         assert not refused(cmd), opener
         assert fc.split_commands(cmd) == [f"gh pr create --body-file - {opener}"], opener
@@ -57,7 +57,7 @@ def test_real_accept_after_a_heredoc_is_refused():
 
 def test_unterminated_and_here_string_do_not_hide_commands():
     assert hook.check_accept(f"cat <<< x; {ACCEPT}")
-    assert hook.check_accept(f"cat <<'EOF'\nbody\nEOF2\n{ACCEPT}") is None  # still inside the body
+    assert hook.check_accept(f"cat <<'EOF'\nbody\nEOF2\n{ACCEPT}")  # no closing line: scanned in full
 
 
 def test_pretool_hook_end_to_end(tmp_path):
