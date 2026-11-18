@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `friday --help` lists every subcommand and flag (`init`, `session-end`, `unblock`, `dispatch --resume/--unblock`,
+  `status --node`) and names `friday install`; `tests/test_cli_surface.py` compares the parser with the help text
+  and checks that every `friday` command in skills and `workflows/execute.js` matches an allow rule.
+- Allow rules gain `friday init` and `friday session-end` (never `friday accept`); the status, nodes, dispatch and
+  clean skills call plain `friday ...` and say to run `friday install` when it is not on PATH.
+- `friday nodes --check` reports the number of `friday-*` tmux sessions per node.
+- `tailnet` is in `nodes.example.toml` and the docs/fleet.md key table; `friday dash up` mounts the registry file
+  the CLI resolved and fails clearly when there is none.
 - `friday status --node NAME` (with `--json`/`--push`) names the snapshot's node, ahead of the registry,
   `node.toml` and the hostname.
 - `friday land --goal` refuses (exit 7, naming the ids) unless every directive is `done`, and
