@@ -1,5 +1,5 @@
 # spec-02: A from-zero tutorial and recipes for research, robot and PCB repos
-Status: approved
+Status: blocked: review gaps remain: /home/david/Documents/claude_temp/friday.friday/v1-final/docs/recipes/pcb.md:131-132, 139, 175-178: The fix makes the user route STATUS_LED during led-01's review, but the recipe never tells them to commit the routed board on the goal branch, or that the commit needs a final 'Directive: led-01' line. 'friday accept' commits only the directive file. So the routing stays uncommitted. When fab-01 starts, friday refuses to run while other tracked files are uncommitted. Even if it ran, fab-01's DRC Verify and the PR would not include the routing. The flow as written does not reach a landed goal without a step the recipe leaves out. The closing paragraph (line 176) also still says led-01 'runs ERC and DRC', but its Verify is now ERC only.
 Goal: v1-final
 Node: any
 Deliverable: doc
@@ -59,3 +59,19 @@ against a throwaway repo, so the tutorial cannot drift.
 - Installing KiCad or ROS to run the recipe examples.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 3381fb4 Amend spec-01 and spec-02: document pre-approved commands (gate-03), as the user asked
+- b3c1e02 spec-02 step 1: docs/getting-started.md, a from-zero tutorial
+- 4cf8374 spec-02 step 2: docs/recipes/research.md
+- e940006 spec-02 step 3: docs/recipes/robot.md
+- 7c67c57 spec-02 step 4: docs/recipes/pcb.md
+- dc7fe94 spec-02 step 5: docs/migrating-from-v0.md gains goals, init, check --all; README links tutorial and recipes
+- 4d35173 spec-02 step 6: tests/test_tutorial.py runs the tutorial's commands and checks every example
+- 4c38be9 spec-02: fix robot recipe against console, pcb led-01 Verify, tutorial install path
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_docs.py tests/test_tutorial.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: not recorded
+Blocked: review gaps remain: /home/david/Documents/claude_temp/friday.friday/v1-final/docs/recipes/pcb.md:131-132, 139, 175-178: The fix makes the user route STATUS_LED during led-01's review, but the recipe never tells them to commit the routed board on the goal branch, or that the commit needs a final 'Directive: led-01' line. 'friday accept' commits only the directive file. So the routing stays uncommitted. When fab-01 starts, friday refuses to run while other tracked files are uncommitted. Even if it ran, fab-01's DRC Verify and the PR would not include the routing. The flow as written does not reach a landed goal without a step the recipe leaves out. The closing paragraph (line 176) also still says led-01 'runs ERC and DRC', but its Verify is now ERC only.
