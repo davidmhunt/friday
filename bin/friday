@@ -21,6 +21,8 @@
   friday commits <id> [--json]      the directive's own commits since its Base (base, commits, untracked); exit 3 when none, 2 on error
   friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]
                                     record an expensive run in results/<id>.json (metrics, file hashes, HEAD, node, time)
+  friday result check <id> [--require 'K OP V']... [--files]
+                                    cheap Verify: record exists, commit is an ancestor of HEAD, requirements hold, files keep their hash; exit 1 otherwise
   friday release <resource>|--all   free a hardware lease (or all of them)
   friday check [<id> | --goal <g> | --all]
                                     validate directive/goal files (default --all); exit 1 on any error
@@ -739,6 +741,11 @@ def cmd_result(a) -> int:
             p = fr.write(root, a.id, metrics=a.metric or [], files=a.file or [], cmd=a.cmd or "", note=a.note or "")
             print(f"wrote {p.relative_to(root)}")
             return 0
+        if a.action == "check":
+            fails = fr.check(root, a.id, requires=a.require or [], files=a.files)
+            for line in fails:
+                print(f"friday result check {a.id}: {line}")
+            return 1 if fails else 0
     except fr.ResultError as e:
         print(f"friday result: {e}", file=sys.stderr)
         return 1
@@ -1665,7 +1672,7 @@ def main() -> int:
     s = sub.add_parser("commits"); s.add_argument("id"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_commits)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
-    s = sub.add_parser("result"); s.add_argument("action", choices=["write"]); s.add_argument("id"); s.add_argument("--metric", action="append", metavar="K=V"); s.add_argument("--file", action="append", metavar="PATH"); s.add_argument("--cmd", metavar="TEXT"); s.add_argument("--note", metavar="TEXT"); s.set_defaults(f=cmd_result)
+    s = sub.add_parser("result"); s.add_argument("action", choices=["write", "check"]); s.add_argument("id"); s.add_argument("--require", action="append", metavar="'K OP V'"); s.add_argument("--files", action="store_true"); s.add_argument("--metric", action="append", metavar="K=V"); s.add_argument("--file", action="append", metavar="PATH"); s.add_argument("--cmd", metavar="TEXT"); s.add_argument("--note", metavar="TEXT"); s.set_defaults(f=cmd_result)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")

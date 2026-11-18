@@ -64,3 +64,33 @@ def test_missing_file_and_bad_metric_fail(repo):
     r = friday(repo, "result", "write", "t-01", "--metric", "oops")
     assert r.returncode == 1 and "K=V" in r.stderr
     assert not (repo / "results" / "t-01.json").exists()
+
+
+def test_check_passes_and_fails(repo):
+    ck = repo / "ck.bin"
+    ck.write_bytes(b"w")
+    assert friday(repo, "result", "write", "t-01", "--metric", "acc=0.93", "--metric", "tag=v1", "--file", "ck.bin").returncode == 0
+    ok = friday(repo, "result", "check", "t-01", "--require", "acc >= 0.9", "--require", "tag == v1", "--require", "acc != 1", "--files")
+    assert ok.returncode == 0, ok.stdout
+    r = friday(repo, "result", "check", "t-01", "--require", "acc > 0.95", "--require", "nope == 1")
+    assert r.returncode == 1 and "acc > 0.95" in r.stdout and "nope is not recorded" in r.stdout
+    assert len(r.stdout.strip().splitlines()) == 2
+    ck.write_bytes(b"changed")
+    r = friday(repo, "result", "check", "t-01", "--files")
+    assert r.returncode == 1 and "file changed: ck.bin" in r.stdout
+    assert friday(repo, "result", "check", "t-01").returncode == 0
+    ck.unlink()
+    assert friday(repo, "result", "check", "t-01", "--files").returncode == 0
+
+
+def test_check_missing_record(repo):
+    r = friday(repo, "result", "check", "t-09")
+    assert r.returncode == 1 and "no record" in r.stdout
+
+
+def test_check_unrelated_commit(repo):
+    assert friday(repo, "result", "write", "t-01").returncode == 0
+    git(repo, "checkout", "-q", "--orphan", "other")
+    git(repo, "commit", "-qm", "other", "--allow-empty")
+    r = friday(repo, "result", "check", "t-01")
+    assert r.returncode == 1 and "not an ancestor of HEAD" in r.stdout
