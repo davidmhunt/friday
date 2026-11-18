@@ -152,6 +152,24 @@ into the file: other keys stay as they are, the file is written to a temp file a
 previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
 permission rules. Run `friday nodes --check` again afterwards.
 
+### The node identity file (`node.toml`)
+
+After the settings step, `--setup` also writes `~/.config/friday/node.toml` on the node (temp file and
+rename; it is listed in the same y/N summary). It holds three keys, and unknown keys are an error:
+
+```toml
+name = "alfred"                       # the node's registry name
+repos = "~/repos"                     # the node's repos directory
+dash = "http://master-ts:8787"        # the dash URL: master tailnet or ssh host, [dash] port
+```
+
+A node has no `nodes.toml`, so `friday status` and `friday status --push` read this file: the
+snapshot's `node` is `name` (not the hostname), `repos` is what gets scanned, and `dash` is the push
+URL. Order for the name: `--node`, a matching registry entry, `node.toml`, hostname. Push URL: `--to`,
+the registry master, `node.toml`. A malformed file is reported in the snapshot's `errors` and status
+still prints. `$FRIDAY_NODE_FILE` overrides the path. A setup on the master writes one too; its
+registry still wins.
+
 ### Allow rules live in the repo
 
 A plugin cannot grant permissions, so friday's own commands are allowed by rules in each repo's

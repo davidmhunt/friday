@@ -1,5 +1,5 @@
 # dash-01: `friday dash` runs as a Docker Compose service on the master
-Status: approved
+Status: done
 Goal: deploy
 Node: any
 Deliverable: code
@@ -43,3 +43,13 @@ directive says; Verify also builds the image.
 - TLS or a reverse proxy; the tailnet is the security boundary.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 2cd97b5 dash-01: docs/dashboard.md covers running the dash in Docker
+- d802710 dash-01: tests/test_dash_docker.py covers compose.yaml, friday dash up/down and --no-self
+- fc88942 dash-01: --no-self skips the master snapshot; friday dash up/down drive the compose service
+- 3102417 dash-01: deploy/compose.yaml runs friday-dash on the host network with read-only registry and tailscaled socket
+- 44a94d9 dash-01: deploy/Dockerfile runs friday dash --no-self as a non-root user
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_dash_docker.py && uv run --with pytest pytest -q && docker compose -f deploy/compose.yaml config -q && docker build -q -f deploy/Dockerfile . && claude plugin validate .
+Independent review: no gaps

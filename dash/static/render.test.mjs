@@ -51,3 +51,11 @@ test("sessions view shows the snippet only when expanded, as plain text", () => 
 test("empty state renders without throwing", () => {
   for (const f of Object.values(r.VIEWS)) assert.ok(f({}, []));
 });
+
+test("a missing machine card tells how to register; a stale one shows its age", () => {
+  const base = { role: "node", rep: {} };
+  const miss = text(r.machineCard({ ...base, name: "pi", status: "missing", age_s: null }));
+  assert.match(miss, /never reported: run `friday nodes --setup pi` on the master/);
+  const stale = text(r.machineCard({ ...base, name: "alfred", status: "stale", age_s: 7200 }));
+  assert.match(stale, /stale, seen .* ago/);
+});

@@ -3,6 +3,30 @@
 `friday dash` runs on the master and collects a status snapshot from every node in the registry
 ([fleet.md](fleet.md)). It is read-only: it serves state, it never acts on a repo or a node.
 
+## How machines and projects get on the page
+
+- **Machines are the registry's nodes.** Every `[node.<name>]` in `nodes.toml` ([fleet.md](fleet.md))
+  is a machine card on the page. A node in the registry that has not reported shows as missing, with
+  the fix on its card.
+- **A node appears once its timer pushes.** `friday nodes --setup <name>` writes
+  `~/.config/friday/node.toml` on the node (`name`, `repos`, `dash` URL, taken from the registry and
+  the master's `[dash] port`) and installs `friday-push.timer`, which runs `friday status --push`
+  every 30 s. The first accepted push turns the card from missing to ok.
+- **Projects are the friday repos under the node's `repos` folder.** The `repos` key of the node
+  (and its `<repo>.friday/<goal>` worktrees) is scanned on every push. A friday repo is a git repo
+  with `docs/goals` or `docs/directives`; other folders there are ignored.
+- **`friday nodes --check`** prints one `dash:` line per node (ok, stale, missing or not running)
+  with its fix.
+
+Adding a new machine takes three commands:
+
+1. Add it to `nodes.toml` on the master: a `[node.<name>]` block with `role`, `ssh`, `repos` and
+   `plugin_dir` (see `nodes.example.toml`).
+2. `friday nodes --setup <name>` on the master: confirm with y, and it sets up the node and its push
+   timer.
+3. Open the page (`http://<master tailnet name>:8787`). The machine shows within about 30 s; if it
+   does not, run `friday nodes --check`.
+
 ## How it works
 
 - **Push.** Each node runs `friday status --push` every 30 s (a systemd user timer) and POSTs its
@@ -54,6 +78,42 @@ Adjust the path to the plugin folder (`plugin_dir`), then
 `loginctl enable-linger $USER` keeps it running when you are logged out. Logs:
 `journalctl --user -u friday-dash`.
 
+## Running it in Docker
+
+On the master, the dash can run as a Docker Compose service (`deploy/compose.yaml`, image built from
+`deploy/Dockerfile`) instead of a foreground process or a systemd unit:
+
+```
+friday dash up      # docker compose -f <plugin>/deploy/compose.yaml up -d --build
+friday dash down    # docker compose -f <plugin>/deploy/compose.yaml down
+docker compose -f <plugin>/deploy/compose.yaml logs -f friday-dash   # logs
+```
+
+Both commands print the command they ran and fail with a clear message when `docker` is missing.
+`up` passes `GH_TOKEN` from `gh auth token` through the environment (never on the command line or in
+a file); when `gh` is signed out it is left unset with a note and the dash shows no PRs, so run
+`gh auth login` and `friday dash up` again. The service is `restart: unless-stopped`, so it comes
+back with the machine.
+
+The container runs on the host network (so it binds the tailnet IP and sees real peer addresses),
+mounts `~/.config/friday/nodes.toml` and `/var/run/tailscale/tailscaled.sock` read-only, and keeps
+its state in the named volume `dash-state`. The security rules are unchanged: whois sender check,
+bind only to `127.0.0.1` and the tailnet IP.
+
+In the container the dash runs `friday dash --no-self`: it only receives reports and does not take
+the master's own snapshot. The master therefore pushes its snapshot with its push timer like every
+other node. Install the timer once on the master:
+
+```
+friday nodes --setup laptop     # use the master's registry name
+```
+
+A report from localhost is accepted as the master's. Until the timer is installed the master shows
+as missing.
+
+The foreground `friday dash` still works as described under "Starting it" and takes its own master
+snapshot. Do not run it and the container at the same time: they use the same port.
+
 ## Setting up nodes
 
 `friday nodes --setup <node>` sets the skip keys (see fleet.md) and, after the same y/N
@@ -64,6 +124,10 @@ python3 or systemd gets a message and no timer. The node must be in the registry
 must have `role = "master"` there, because the push URL is built from it
 (`http://<master tailnet or ssh host>:<[dash] port>`). Add `tailnet = "<device name>"` to a node
 or the master when its tailnet name differs from the host in `ssh`.
+
+`--setup` also writes `~/.config/friday/node.toml` on the node (`name`, `repos`, `dash` URL). A node
+has no registry, so `friday status --push` takes its node name, repos and push URL from that file;
+this is why the dash shows `alfred` and not the machine's hostname. See fleet.md.
 
 ## Stale and missing
 

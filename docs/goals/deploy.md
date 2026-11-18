@@ -1,5 +1,5 @@
 # deploy: Every machine reports to a dash that runs in Docker, with no hand setup
-Status: approved
+Status: done
 Base: v1
 Land: pr
 
@@ -22,3 +22,4 @@ as the v1 release after this goal lands and the live check passes.
 3. dash-02: `friday nodes --check` shows each node's dash status; the docs explain registration
 
 ## Log
+- 2026-11-17: Landed: 3 directive(s) reverified on friday/deploy; PR into v1.

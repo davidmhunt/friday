@@ -26,7 +26,10 @@
                                     check preconditions, pick a node (refusals have their own exit codes)
   friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
   friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
-  friday dash [--bind ADDR]...      serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port)
+  friday dash [--bind ADDR]... [--no-self]
+                                    serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port);
+                                    --no-self: do not collect the master's own snapshot (it pushes it)
+  friday dash up | down             start / stop the dash as a Docker Compose service (deploy/compose.yaml)
 """
 from __future__ import annotations
 
@@ -67,7 +70,13 @@ def cmd_status_push(a) -> int:
         url = a.to
         if not url:
             path = ff.find_nodes_file()
-            url = fd.master_url(ff.load_nodes(path) if path else None)
+            try:
+                url = fd.master_url(ff.load_nodes(path) if path else None)
+            except fd.DashError:
+                nf = ff.load_node_file()
+                if not (nf and nf[2]):
+                    raise
+                url = nf[2]
     except (fd.DashError, ff.RegistryError) as e:
         print(f"friday: {e}", file=sys.stderr)
         return 1
@@ -708,6 +717,59 @@ def timer_script(n) -> str:
             f"FRIDAY_UNITS={shlex.quote(json.dumps(timer_units(n)))} python3 -c {shlex.quote(_TIMER_PY)}\n")
 
 
+_NODEFILE_PY = """
+import os, sys, tempfile
+p = os.environ.get("FRIDAY_NODE_FILE") or os.path.expanduser("~/.config/friday/node.toml")
+try:
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p), prefix=".node.toml.friday-")
+    with os.fdopen(fd, "w") as f:
+        f.write(os.environ["FRIDAY_NODETOML"])
+    os.replace(tmp, p)
+except OSError:
+    print("FRIDAY_NODEFILE error"); sys.exit(1)
+print("FRIDAY_NODEFILE ok")
+"""
+
+
+def node_file_text(n, reg) -> str:
+    """The node's identity file: its registry name, repos, and the master's dash URL."""
+    import friday_dash as fd
+    try:
+        url = fd.master_url(reg)
+    except fd.DashError:
+        url = ""
+    lines = ["# written by `friday nodes --setup`; read by `friday status [--push]`",
+             f"name = {json.dumps(n.name)}"]
+    if n.repos:
+        lines.append(f"repos = {json.dumps(n.repos)}")
+    if url:
+        lines.append(f"dash = {json.dumps(url)}")
+    return "\n".join(lines) + "\n"
+
+
+def node_file_script(n, reg) -> str:
+    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_NODEFILE nopython'; exit 1; }}\n"
+            f"FRIDAY_NODETOML={shlex.quote(node_file_text(n, reg))} python3 -c {shlex.quote(_NODEFILE_PY)}\n")
+
+
+def setup_node_file(n, reg) -> int:
+    argv, stdin = ff.ssh_cmd(n, node_file_script(n, reg))
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"friday: {n.name}: could not write ~/.config/friday/node.toml: {e}")
+        return 1
+    res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_NODEFILE ")), "")
+    if r.returncode == 0 and res == "ok":
+        print(f"{n.name}: ~/.config/friday/node.toml written")
+        return 0
+    why = {"nopython": "python3 is missing on the node",
+           "error": "could not write ~/.config/friday"}.get(res, f"ssh failed (exit {r.returncode})")
+    print(f"friday: {n.name}: node.toml not written: {why}")
+    return 1
+
+
 def setup_script() -> str:
     return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
             f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} python3 -c {shlex.quote(_SETUP_PY)}\n")
@@ -767,6 +829,8 @@ def cmd_nodes_setup(a, reg) -> int:
           "every 30 s.")
     print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which links "
           "~/.local/bin/friday to that checkout.")
+    print(f"and it writes ~/.config/friday/node.toml on {n.name} (name, repos, dash URL), which "
+          "`friday status --push` reads when the node has no nodes.toml.")
     if not a.yes:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             print("friday: refusing to change settings without a terminal to confirm; "
@@ -784,7 +848,8 @@ def cmd_nodes_setup(a, reg) -> int:
     res = next((l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_SETUP ")), "")
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: settings updated; run `friday nodes --check` to confirm")
-        rc = setup_install(n)
+        rc = setup_node_file(n, reg)
+        rc = setup_install(n) or rc
         return setup_timer(n) or rc
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
            "nopython": "python3 is missing on the node",
@@ -830,6 +895,9 @@ def cmd_nodes(a) -> int:
         print("friday: --dry-run applies to --clean")
         return 2
     ok = True
+    import friday_dash as fd
+    state = fd.fetch_state(reg) if a.check else None
+    down_said = False
     for n in reg.nodes.values():
         if not a.check:
             print(f"{n.name:<12} {n.role:<7} {n.ssh:<24} {n.runtime:<9} "
@@ -841,6 +909,11 @@ def cmd_nodes(a) -> int:
             print(f"  {f}")
         if fixes and n.role in ("master", "worker"):
             ok = False
+        if n.role in ("master", "worker"):
+            line = fd.dash_line(state, n.name)
+            if line and (state is not None or not down_said):
+                print(f"  {line}")
+                down_said = down_said or state is None
     return 0 if ok else 1
 
 
@@ -1306,8 +1379,37 @@ def cmd_uninstall(a) -> int:
 
 
 def cmd_dash(a) -> int:
+    if a.action:
+        return dash_compose(a.action)
     import friday_dash
-    return friday_dash.main(a.bind)
+    return friday_dash.main(a.bind, no_self=a.no_self)
+
+
+def dash_compose(action: str) -> int:
+    """`friday dash up|down`: drive deploy/compose.yaml. The token goes in the environment, never argv."""
+    import shutil
+    if shutil.which("docker") is None:
+        print("friday dash: docker is not installed or not on PATH; install Docker to use `friday dash up`", file=sys.stderr)
+        return 1
+    compose = ff.PLUGIN_ROOT / "deploy" / "compose.yaml"
+    argv = ["docker", "compose", "-f", str(compose)] + (["up", "-d", "--build"] if action == "up" else ["down"])
+    env = dict(os.environ)
+    if action == "up":
+        token = ""
+        if shutil.which("gh"):
+            r = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
+            token = r.stdout.strip() if r.returncode == 0 else ""
+        if token:
+            env["GH_TOKEN"] = token
+        else:
+            env.pop("GH_TOKEN", None)
+            print("friday dash: gh is not signed in; GH_TOKEN left unset, so the dash will show no open PRs "
+                  "(run `gh auth login`, then `friday dash up` again)")
+    print("friday dash: running " + shlex.join(argv) + (" (GH_TOKEN set from gh auth token)" if env.get("GH_TOKEN") and action == "up" else ""), flush=True)
+    rc = subprocess.run(argv, env=env).returncode
+    if rc != 0:
+        print(f"friday dash: docker compose {action} failed (exit {rc})", file=sys.stderr)
+    return rc
 
 
 def main() -> int:
@@ -1330,7 +1432,7 @@ def main() -> int:
     s = sub.add_parser("session-end"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_session_end)
     for nm, fn in (("install", cmd_install), ("uninstall", cmd_uninstall)):
         s = sub.add_parser(nm); s.add_argument("--bin-dir", metavar="DIR"); s.set_defaults(f=fn)
-    s = sub.add_parser("dash"); s.add_argument("--bind", action="append", metavar="ADDR"); s.set_defaults(f=cmd_dash)
+    s = sub.add_parser("dash"); s.add_argument("action", nargs="?", choices=["up", "down"]); s.add_argument("--bind", action="append", metavar="ADDR"); s.add_argument("--no-self", action="store_true"); s.set_defaults(f=cmd_dash)
     a = p.parse_args()
     return a.f(a)
 
