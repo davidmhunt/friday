@@ -30,3 +30,57 @@ def test_no_record_falls_back_to_pane_detection(tmp_path, monkeypatch):
     assert st["waiting_age"] is None
     quiet = fs.session_state("friday-g2", 800, None, "working...\n")
     assert quiet["waiting"] is False and quiet["waiting_age"] is None
+
+
+# --- friday nodes --waiting, with a fake ssh ---
+
+import os
+import subprocess
+
+FRIDAY = Path(__file__).resolve().parent.parent / "bin" / "friday"
+NODES = '''[node.laptop]
+role = "master"
+ssh = "me@laptop"
+repos = "~/r"
+plugin_dir = "~/f"
+[node.alfred]
+role = "worker"
+ssh = "me@alfred"
+repos = "~/r"
+plugin_dir = "~/f"
+'''
+SESSION = {"name": "friday-g1", "goal": "g1", "directive": "d-01", "waiting": True,
+           "waiting_line": "Claude needs your permission to use Bash", "waiting_age": 125}
+
+
+def _waiting(tmp_path, per_host):
+    """per_host: ssh target -> sessions list, or None for unreachable."""
+    (tmp_path / "n.toml").write_text(NODES)
+    ssh = tmp_path / "fakessh"
+    cases = "\n".join(
+        f'  *{h}*) ' + ("exit 255" if v is None else f"echo '{json.dumps({'sessions': v})}'") + " ;;"
+        for h, v in per_host.items())
+    ssh.write_text(f"#!/bin/bash\ncat >/dev/null\ncase \"$*\" in\n{cases}\nesac\n")
+    ssh.chmod(0o755)
+    env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "n.toml"), FRIDAY_SSH=str(ssh), HOME=str(tmp_path))
+    return subprocess.run([sys.executable, str(FRIDAY), "nodes", "--waiting"], env=env,
+                          capture_output=True, text=True, cwd=tmp_path)
+
+
+def test_nodes_waiting_none_is_0(tmp_path):
+    quiet = {**SESSION, "waiting": False}
+    r = _waiting(tmp_path, {"laptop": [quiet], "alfred": []})
+    assert r.returncode == 0
+    assert "g1" not in r.stdout
+
+
+def test_nodes_waiting_some_is_10_with_a_line(tmp_path):
+    r = _waiting(tmp_path, {"laptop": [], "alfred": [SESSION]})
+    assert r.returncode == 10
+    assert "alfred g1 d-01 2m Claude needs your permission to use Bash" in r.stdout
+
+
+def test_nodes_waiting_unreachable_is_2(tmp_path):
+    r = _waiting(tmp_path, {"laptop": [SESSION], "alfred": None})
+    assert r.returncode == 2
+    assert "alfred: unreachable" in r.stdout and "laptop g1 d-01" in r.stdout

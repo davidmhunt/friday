@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `friday nodes --waiting`: one line per session waiting on a prompt across the registry (node, goal,
+  directive, age, message); exit 0 none, 10 some, 2 a node unreachable. Allowed without a prompt.
+
 ### Changed
 
 - `friday accept <id>` and `--reject` exit 8 and change nothing while tracked files are modified or staged

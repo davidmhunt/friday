@@ -20,6 +20,7 @@ From any session that loads the plugin (including over Remote Control), these ru
 |---|---|
 | `/friday:status` | `friday status` |
 | `/friday:nodes [--check]` | `friday nodes` (lists the registry; with `--check` it probes each node over ssh) |
+| `/friday:nodes --waiting` | `friday nodes --waiting`: one line per session waiting on a prompt (node, goal, directive, age, message); exit 0 none, 10 some, 2 a node unreachable |
 | `/friday:dispatch <goal>` | `friday dispatch --goal <goal>`: runs `--dry-run` first, shows it, runs for real after you say yes |
 | `/friday:clean <node>` | `friday nodes --clean <node>`: runs `--dry-run` first, shows it, runs for real after you say yes |
 

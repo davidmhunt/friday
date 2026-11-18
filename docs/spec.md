@@ -254,7 +254,7 @@ how an unattended or dispatched run gets past the commands that would otherwise 
   user's own Claude Code permissions. The friday allow rules in `.claude/settings.json`
   (`friday init` merges them) cover `status`, `new`, `check`, `parse`, `start`, `verify`,
   `finish`, `commits`, `result`, `land`, `init`, `session-end`, `nodes`, `nodes --check`,
-  `nodes --clean <node> --dry-run` and `dispatch --goal <g> --dry-run`. A real `dispatch`, a real
+  `nodes --waiting`, `nodes --clean <node> --dry-run` and `dispatch --goal <g> --dry-run`. A real `dispatch`, a real
   `nodes --clean` and `release` are prompted on purpose and run unattended only when a directive
   lists them. `friday accept` can never be allowed.
 - While a directive is active, `git push` may update only the goal's own branch (`friday/<goal>`,
@@ -307,6 +307,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday check [<id> \| --goal G \| --all]` | validate goal and directive files (default all) | 0; 1 any error |
 | `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive | 0; 1 the file has errors; 2 file missing |
 | `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash | 0; 1 no registry, or a master or worker failed the check |
+| `friday nodes --waiting` | one line per session waiting on a prompt across the registry's master and worker nodes (node, goal, directive, age, message), read from each node's `friday status --json` over ssh | 0 none waiting; 10 some waiting; 2 a node unreachable |
 | `friday nodes --setup NODE [--yes]` | set the node's first-run prompt skips in its `~/.claude/settings.json`, write its `node.toml`, link `friday`, install the 30 s push timer; asks y/N (`--yes` skips, required without a terminal) | 0; 1 refused or failed |
 | `friday nodes --clean NODE [--dry-run]` | remove finished goals' worktrees, branches, tmux sessions and trust entries on a node; `--dry-run` only plans | 0; 1 error; `--dry-run` without `--clean` exits 2 |
 | `friday dispatch --goal G [--node N] [--report-to S] [--dry-run]` | check, pick a node, prepare a worktree there and start a tmux session `friday-<G>` running the goal's directives; records it. `--dry-run` changes nothing | 0; 10-27 a refusal on the master (table below); 30-36 a refusal by the node; 1 launch failed |

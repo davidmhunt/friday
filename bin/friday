@@ -30,6 +30,8 @@
   friday parse <id> --json          parsed directive as JSON (exit 1 on errors, 2 if file missing)
   friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
+  friday nodes --waiting            one line per session waiting on a prompt, across the registry;
+                                    exit 0 none, 10 some, 2 a node unreachable
   friday nodes --setup <node> [--yes]
                                     set the node's first-run prompt skips in ~/.claude/settings.json and
                                     install the friday-push.timer systemd user timer (30 s status push)
@@ -1103,6 +1105,38 @@ def cmd_nodes_clean(a, reg) -> int:
     return 1 if clean["error"] else 0
 
 
+def waiting_on_node(n) -> list | None:
+    """Sessions waiting on a prompt on node `n`, from its `friday status --json`; None if unreachable."""
+    argv, stdin = ff.ssh_cmd(n, "friday status --json\n")
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+        snap = json.loads(r.stdout) if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    if not isinstance(snap, dict) or not isinstance(snap.get("sessions"), list):
+        return None
+    return [s for s in snap["sessions"] if isinstance(s, dict) and s.get("waiting")]
+
+
+def cmd_nodes_waiting(reg) -> int:
+    found, down = 0, False
+    for n in reg.nodes.values():
+        if n.role not in ("master", "worker"):
+            continue
+        got = waiting_on_node(n)
+        if got is None:
+            print(f"{n.name}: unreachable")
+            down = True
+            continue
+        for s in got:
+            age = s.get("waiting_age")
+            msg = " ".join(str(s.get("waiting_line") or "waiting for input").split())
+            print(f"{n.name} {s.get('goal') or s.get('name')} {s.get('directive') or '-'} "
+                  f"{fs.fmt_age(age) if isinstance(age, (int, float)) else '?'} {msg}")
+            found += 1
+    return 2 if down else 10 if found else 0
+
+
 def cmd_nodes(a) -> int:
     path = ff.find_nodes_file()
     if path is None:
@@ -1119,6 +1153,8 @@ def cmd_nodes(a) -> int:
         return cmd_nodes_setup(a, reg)
     if a.clean:
         return cmd_nodes_clean(a, reg)
+    if a.waiting:
+        return cmd_nodes_waiting(reg)
     if a.dry_run:
         print("friday: --dry-run applies to --clean")
         return 2
@@ -1691,7 +1727,7 @@ def main() -> int:
     s = sub.add_parser("result"); s.add_argument("action", choices=["write", "check"]); s.add_argument("id"); s.add_argument("--require", action="append", metavar="'K OP V'"); s.add_argument("--files", action="store_true"); s.add_argument("--metric", action="append", metavar="K=V"); s.add_argument("--file", action="append", metavar="PATH"); s.add_argument("--cmd", metavar="TEXT"); s.add_argument("--note", metavar="TEXT"); s.set_defaults(f=cmd_result)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
-    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
+    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.add_argument("--waiting", action="store_true")
     s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true")
     s.add_argument("--clean", metavar="NODE"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.add_argument("--resume", action="store_true"); s.add_argument("--unblock", action="append", metavar="ID"); s.set_defaults(f=cmd_dispatch)

@@ -18,6 +18,7 @@
       "Bash(friday session-end *)",
       "Bash(friday nodes)",
       "Bash(friday nodes --check)",
+      "Bash(friday nodes --waiting)",
       "Bash(friday nodes --clean * --dry-run)",
       "Bash(friday dispatch --goal * --dry-run)"
     ]
