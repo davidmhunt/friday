@@ -359,8 +359,10 @@ Master-side refusals print a one-line reason and a fix on stderr.
 It runs one agent at a time. Each friday command is run as its own single Bash call so the repo's
 allow rules match it.
 
-1. **Prepare.** `friday parse <id> --json` (errors stop the run), then `friday start <id> --no-gate`
-   (goal branch, goal order, Base merge, marker). Nothing is committed.
+1. **Prepare.** `friday start <id> --no-gate` first (goal branch, goal order, Base merge, marker),
+   then `friday parse <id> --json` on the merged branch, so a directive added or amended on Base is
+   read from its current text. A parse failure runs `friday finish <id> --blocked` and stops.
+   Nothing is committed.
 2. **Implement.** One `implementer` agent per step, in order; `[heavy]` steps run on Opus. A step
    commits only if it changed tracked files, last line `Directive: <id>`. A step that needs a
    decision or fails stops the run as blocked.
