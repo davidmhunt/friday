@@ -12,29 +12,27 @@ constrain the work.
 
 ## Install
 
+```bash
+git clone -b v1 https://github.com/davidmhunt/friday ~/src/friday
+```
+
 ```text
-/plugin marketplace add davidmhunt/friday
+/plugin marketplace add ~/src/friday
 /plugin install friday@friday
 ```
 
-Or from a clone, to try it in one session or add it as a local marketplace:
-
 ```bash
-git clone https://github.com/davidmhunt/friday ~/src/friday
-claude --plugin-dir ~/src/friday                                 # try it in one session
+python3 ~/src/friday/bin/friday install      # once per machine: links ~/.local/bin/friday to the clone
+friday --help                                # make sure ~/.local/bin is on PATH
 ```
+
+Use `-b v1` until 1.0 is on main. To update, run `git pull` in the clone, then
+`/plugin marketplace update friday`. `friday uninstall` removes the link again.
 
 Requires Claude Code with workflows (v2.1.154+) and `python3` on the host.
 
-Once per machine, put `friday` on PATH:
-
-```bash
-python3 ~/src/friday/bin/friday install      # links ~/.local/bin/friday to this checkout
-friday uninstall                             # removes the link again
-```
-
 After that, just `friday ...`. On a node: `ssh <node> friday uninstall`. The `uv run` and
-`python3 <checkout>/bin/friday` forms still work.
+`python3 <clone>/bin/friday` forms still work.
 
 ## Use
 
