@@ -26,25 +26,29 @@ def refused(cmd):
     return any(judged(cmd))
 
 
-def test_quoted_heredoc_body_is_data():
-    for opener in ("<<'EOF'", '<<"EOF"', "<<-'EOF'"):
+def test_quoted_heredoc_text_is_still_refused():
+    """The documented limit: heredoc bodies are scanned in full, quoted or not."""
+    for opener in ("<<'EOF'", '<<"EOF"', "<<-'EOF'", "<<EOF"):
         cmd = f"gh pr create --body-file - {opener}\n{TEXT}\nEOF"
-        assert not refused(cmd), opener
-        assert fc.split_commands(cmd) == [f"gh pr create --body-file - {opener}"], opener
+        assert hook.check_accept(cmd), opener
+        assert hook.check_deny(cmd), opener
+        assert any(ACCEPT in c for c in fc.split_commands(cmd)), opener
 
 
-def test_unquoted_heredoc_substitution_is_still_scanned():
+def test_same_text_in_a_body_file_passes(tmp_path):
+    body = tmp_path / "body.md"
+    body.write_text(TEXT)
+    assert not refused(f"gh pr create --body-file {body}")
+
+
+def test_unquoted_heredoc_substitution_is_scanned():
     for body in (f"$({ACCEPT})", f"`{ACCEPT}`"):
         cmd = f"cat <<EOF\nplain line\n{body}\nEOF"
         assert hook.check_accept(cmd), body
     assert hook.check_accept(f'cat <<"EOF" ; echo $({ACCEPT})\nx\nEOF')
-
-
-def test_deny_list_scans_unquoted_heredoc_substitutions_only():
     assert hook.check_deny("cat <<EOF\n$(sudo ls)\nEOF")
     assert hook.check_deny("cat <<EOF\n`sudo ls`\nEOF")
-    assert hook.check_deny("cat <<'EOF'\nx\nEOF\nsudo ls")
-    assert not hook.check_deny("cat <<'EOF'\n$(sudo ls)\nEOF")
+    assert hook.check_deny("cat <<'EOF'\n$(sudo ls)\nEOF")
 
 
 def test_real_accept_after_a_heredoc_is_refused():
@@ -68,7 +72,8 @@ def test_pretool_hook_end_to_end(tmp_path):
                            capture_output=True, text=True)
         return json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"] if p.stdout.strip() else None
 
-    assert run(f"gh pr create --body-file - <<'EOF'\n{TEXT}\nEOF") is None
+    assert run(f"gh pr create --body-file - <<'EOF'\n{TEXT}\nEOF") == "deny"
+    assert run("gh pr create --body-file body.md") is None
     assert run(f"gh pr create --body-file - <<EOF\n$({ACCEPT})\nEOF") == "deny"
     assert run(f"cat <<'EOF'\nx\nEOF\n{ACCEPT}") == "deny"
 
