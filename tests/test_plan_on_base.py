@@ -11,7 +11,7 @@ def _commit_on(repo, branch, name, text, msg):
 
 
 def test_start_merges_base_with_trailer(repo):
-    _commit_on(repo, "friday/core-01", "own.txt", "own", "own work")
+    _commit_on(repo, "friday/core-01", "own.txt", "own", "own work\n\nDirective: core-01")
     _commit_on(repo, "main", "plan.txt", "amend", "amend plan")
     _g(repo, "switch", "-q", "friday/core-01")
     head = _g(repo, "rev-parse", "HEAD").strip()
@@ -23,6 +23,12 @@ def test_start_merges_base_with_trailer(repo):
     msg = _g(repo, "log", "-1", "--format=%B")
     assert msg.startswith("Merge main into friday/core-01 before core-01") and "Directive: core-01" in msg
     assert _g(repo, "rev-parse", "HEAD^1").strip() == head
+    # the merge commit is the directive's own: friday commits lists no untracked line
+    c = cli(repo, "commits", "core-01", "--json")
+    assert c.returncode in (0, 3), c.stderr
+    import json
+    out = json.loads(c.stdout) if c.stdout.strip() else {}
+    assert not out.get("untracked"), out
     # already up to date: no second merge
     r = cli(repo, "start", "core-01")
     assert r.returncode == 0 and "merged" not in r.stdout
