@@ -140,3 +140,21 @@ def test_record_only_commit_naming_goal_sibling_passes(repo):
     bad = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "code\n\nDirective: core-02"],
                          capture_output=True, text=True)
     assert bad.returncode != 0
+
+
+# ---------------------------------------------------------------- PreToolUse guard
+def test_pretool_judges_the_repo_the_command_commits_in(repo, tmp_path):
+    from test_friday import pre
+    assert cli(repo, "start", "core-01").returncode == 0
+    other = tmp_path / "wt"
+    _g(repo, "worktree", "add", "-q", str(other), "main")
+    # the session's cwd is on the directive branch: free, and no trailer check (the git hook does that)
+    assert pre(repo, "git commit -m x")[0] is None
+    # a commit in the other worktree (on main, no marker) is judged by that worktree
+    assert pre(repo, f"git -C {other} commit -m x")[0] == "ask"
+    assert pre(repo, f"cd {other} && git commit -m x")[0] == "ask"
+    # and with a marker there, the same commit is denied
+    fc.write_marker(other, {"id": "core-01"})
+    assert pre(repo, f"git -C {other} commit -m x")[0] == "deny"
+    # the other way round: session in the main worktree, command commits in the directive worktree
+    assert pre(other, f"git -C {repo} commit -m x")[0] is None

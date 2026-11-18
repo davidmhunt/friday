@@ -156,15 +156,6 @@ def test_commit_on_main_asks_without_directive(repo):
     assert pre(repo, "git commit -m x")[0] == "ask"
 
 
-def test_active_directive_requires_trailer(repo):
-    assert cli(repo, "start", "core-01").returncode == 0
-    d, reason = pre(repo, "git commit -m 'Add ok.txt'")
-    assert d == "deny" and "Directive: core-01" in reason
-    assert pre(repo, "git commit -m 'Add ok.txt' -m 'Directive: core-01'")[0] is None
-    assert pre(repo, 'git commit -m "Add ok.txt\n\nDirective: core-01"')[0] is None
-    assert pre(repo, "git commit")[0] is None   # editor: can't see the message, don't guess
-
-
 def test_active_directive_never_commits_on_main(repo):
     assert cli(repo, "start", "core-01").returncode == 0
     subprocess.run(["git", "-C", str(repo), "checkout", "-q", "main"], check=True)
