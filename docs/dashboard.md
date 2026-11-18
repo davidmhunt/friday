@@ -65,6 +65,10 @@ must have `role = "master"` there, because the push URL is built from it
 (`http://<master tailnet or ssh host>:<[dash] port>`). Add `tailnet = "<device name>"` to a node
 or the master when its tailnet name differs from the host in `ssh`.
 
+`--setup` also writes `~/.config/friday/node.toml` on the node (`name`, `repos`, `dash` URL). A node
+has no registry, so `friday status --push` takes its node name, repos and push URL from that file;
+this is why the dash shows `alfred` and not the machine's hostname. See fleet.md.
+
 ## Stale and missing
 
 - **ok**: the node reported within the last 90 s.
