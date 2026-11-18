@@ -390,6 +390,28 @@ def cmd_verify(a) -> int:
     return subprocess.run(d["verify"], shell=True, cwd=root).returncode
 
 
+def _demote_note_headings(text: str) -> str:
+    """Rewrite `#`..`######` heading lines to `####`+ so notes never read as Log sections.
+
+    Lines inside fenced code blocks are left untouched.
+    """
+    out, fence = [], None
+    for ln in text.split("\n"):
+        m = re.match(r"^ {0,3}(`{3,}|~{3,})", ln)
+        if m:
+            mark = m.group(1)
+            if fence is None:
+                fence = mark
+            elif mark[0] == fence[0] and len(mark) >= len(fence):
+                fence = None
+        elif fence is None:
+            h = re.match(r"^(#{1,6}) (.*)$", ln)
+            if h:
+                ln = ("#" * max(4, len(h.group(1)))) + " " + h.group(2)
+        out.append(ln)
+    return "\n".join(out)
+
+
 def cmd_finish(a) -> int:
     """Write the record: one Log entry, the Status, and exactly one commit carrying the directive
     file and (if modified) its goal file. Refuses when other tracked files are uncommitted."""
@@ -425,7 +447,7 @@ def cmd_finish(a) -> int:
     entry = [f"### {time.strftime('%Y-%m-%d')}", "Commits:", *lines]
     notes = root / "runs" / a.id / "notes.md"
     if notes.is_file() and notes.read_text().strip():
-        entry += ["Notes:", notes.read_text().strip()]
+        entry += ["Notes:", _demote_note_headings(notes.read_text().strip())]
     entry.append(f"Verify: {a.verify or 'not run'}")
     entry.append(f"Independent review: {a.review or 'not recorded'}")
     if a.blocked:
