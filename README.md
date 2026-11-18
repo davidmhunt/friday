@@ -38,7 +38,9 @@ After that, just `friday ...`. On a node: `ssh <node> friday uninstall`. The `uv
 /friday:execute core-03                                    # implement, verify, review, push, PR
 ```
 
-Then review the PR (one per goal). The spec: [docs/spec.md](docs/spec.md). `friday status` in a shell (or ask Claude to run it) lists directives, the one
+Start with [docs/getting-started.md](docs/getting-started.md), then the recipes for a
+[research](docs/recipes/research.md), [robot](docs/recipes/robot.md) or
+[PCB](docs/recipes/pcb.md) repo. Then review the PR (one per goal). The spec: [docs/spec.md](docs/spec.md). `friday status` in a shell (or ask Claude to run it) lists directives, the one
 active in this worktree, and hardware leases. See [docs/workflow.md](docs/workflow.md).
 
 Slash commands for the same CLI forms, from any session with the plugin loaded (also over Remote Control):

@@ -101,41 +101,6 @@ section, one command per bullet in backticks, `*` matching any text:
 
 Details: [spec.md](spec.md) section 5. For dispatch see [fleet.md](fleet.md).
 
-## Migrating a directive to a goal
-
-A directive written before the goal model (for example `bench-01` in CPSL_TI_Radar) fails
-`friday check` with two errors: missing `Goal:` and missing `Deliverable:`. Everything else in it
-(Status, Node, Verify, Hardware, Goal/Steps/Out of scope/Log sections) already passes. A
-one-directive goal needs:
-
-1. Two header lines in `docs/directives/bench-01.md`, after `Status:`:
-
-   ```
-   Goal: bench-warnings
-   Deliverable: code
-   ```
-
-2. A goal file `docs/goals/bench-warnings.md`:
-
-   ```
-   # bench-warnings: Silence the bench_pipeline allocator warning
-   Status: approved
-   Base: main
-   Land: pr
-
-   ## Goal
-   A Release build of `bench_pipeline` emits no `-Wmismatched-new-delete` warning, with one PR.
-
-   ## Directives
-   1. bench-01: Silence the -Wmismatched-new-delete warning in bench_pipeline
-
-   ## Log
-   ```
-
-Then `friday check --all` passes, `/friday:execute bench-01` works on branch `friday/bench-warnings`
-and `friday land --goal bench-warnings` opens the PR. `Land:` is optional in the directive (it
-defaults to `goal`).
-
 ## Amending an approved plan
 
 Amendments to an approved goal are commits on its Base, checked with `friday check`. They reach the
