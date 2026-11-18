@@ -15,8 +15,12 @@ them. Found when a `gh pr create --body-file - <<'EOF'` whose PR text named the 
 was refused. And GitHub stays tidy: friday reports merged goal branches left on origin.
 
 ## Steps
-1. lib/friday_core.py `split_commands`: recognise heredocs; drop the body of a quoted heredoc
-   from command and substitution scanning; keep scanning substitutions in an unquoted one.
+1. lib/friday_core.py `split_commands`, failing closed (amended by the user 2026-11-18 after the
+   review showed general heredoc parsing can hide real commands): skip a heredoc body only
+   when the delimiter is quoted and a plain word (`<<'W'`, `<<"W"`, `<<-'W'`, W matching
+   `[A-Za-z_][A-Za-z0-9_]*`) followed by whitespace, a newline or one of `;|&`; the exact closing
+   line is found; and the `<<` is not inside `$[`, `${`, `$((` or `((`. Anything else, including
+   every unquoted heredoc, is scanned in full as today.
 2. Branch hygiene: `friday init` reports whether the GitHub repo deletes head branches on merge
    (`gh api repos/<owner>/<repo> --jq .delete_branch_on_merge`) and prints the command to turn it
    on; it changes nothing. `friday status` lists `origin/friday/*` branches whose PR is merged,
@@ -24,7 +28,8 @@ was refused. And GitHub stays tidy: friday reports merged goal branches left on 
    `gh` is unavailable or signed out.
 3. tests/test_hook_parsing.py: quoted heredoc text naming the accept command, `sudo` and
    backticks passes; the same in an unquoted heredoc's substitution is still refused; a real
-   accept command after the heredoc is still refused; init and status report from a fake `gh`.
+   accept command after the heredoc is still refused; the fail-closed cases are still scanned
+   (`<<EOF+`, `<<EOF@`, `<<'EOF'+`, `<<EOF$x`, `$[1<<EOF]`, `${x:-<<EOF}`, a missing closing line); init and status report from a fake `gh`.
    Spec and CHANGELOG.
 
 ## Out of scope
