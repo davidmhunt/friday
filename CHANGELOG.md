@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.0.0 - 2026-11-18
+
+First stable release of friday as a Claude Code plugin: plan with the user, then execute approved
+directives behind deterministic gates (Verify commands, deny list, `./run`, hardware leases).
+Since 1.0.0-alpha.1 it adds allowed-command lists, `friday result`, user-accepted directives,
+`friday commits`, a complete `--help`, and many fixes.
+
 - A directive may list `## Allowed commands` (bullets of one backticked pattern, `*` matches any text). While that
   directive is active the PreToolUse hook allows a single simple Bash command matching a pattern, so dispatched
   and overnight runs need no prompt for `friday dispatch`, `nodes --clean`, `release` or hardware commands. The
@@ -126,11 +133,6 @@ tag `v0.20.0` keeps it.
 - Skills: `directive`, `hardware`, `long-jobs`, `data-artifacts` (v0.20 rules 1, 5-7, 9, 11, 15, 18).
 - `bin/friday`: status, new, start, verify, finish, release.
 - Docs: workflow, runtime (`./run` + dev container), migrating from v0.
-
-<!-- Maintainer reminder: bump VERSION in the same commit as the entry
-     below it documents. VERSION drifted for several releases (stuck at
-     0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
-     atomic step. -->
 
 ## v0.20.0
 
