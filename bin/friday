@@ -175,6 +175,40 @@ def _branch_exists(root: Path, ref: str) -> bool:
                           cwd=root, capture_output=True).returncode == 0
 
 
+def _merge_base(root: Path, base: str, branch: str, did: str) -> None:
+    """Bring the goal's Base into the branch before a directive starts: origin/<base> after a
+    fetch (a failed or timed-out fetch warns and uses the local branch). Conflicts abort the merge."""
+    if not base:
+        return
+    if _run(["git", "remote", "get-url", "origin"], root).returncode == 0:
+        try:
+            r = subprocess.run(["git", "fetch", "-q", "origin", base], cwd=root, capture_output=True,
+                               text=True, timeout=30, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+            if r.returncode != 0:
+                print(f"friday: warning: fetch of origin/{base} failed ({r.stderr.strip()}); using local {base}",
+                      file=sys.stderr)
+        except subprocess.TimeoutExpired:
+            print(f"friday: warning: fetch of origin/{base} timed out; using local {base}", file=sys.stderr)
+    if _branch_exists(root, f"refs/remotes/origin/{base}"):
+        ref = f"origin/{base}"
+    elif _branch_exists(root, f"refs/heads/{base}"):
+        ref = base
+    else:
+        return
+    if _run(["git", "merge-base", "--is-ancestor", ref, "HEAD"], root).returncode == 0:
+        return
+    if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+        sys.exit(f"friday: uncommitted changes to tracked files; commit them before merging {base} into {branch}")
+    r = _run(["git", "merge", "--no-edit", "-m", f"Merge {base} into {branch} before {did}",
+              "-m", f"Directive: {did}", ref], root)
+    if r.returncode != 0:
+        paths = _run(["git", "diff", "--name-only", "--diff-filter=U"], root).stdout.split()
+        _run(["git", "merge", "--abort"], root)
+        sys.exit(f"friday: merging {base} into {branch} conflicts in: {', '.join(paths) or r.stderr.strip()}; "
+                f"resolve on {base} or the branch, then start again")
+    print(f"merged {base} {_run(['git', 'rev-parse', '--short', 'HEAD'], root).stdout.strip()}")
+
+
 def cmd_start(a) -> int:
     """Check the directive and its goal, enforce goal order, put the work on its branch
     (friday/<goal> for Land goal|none, friday/<id> for Land pr), then mark it running."""
@@ -218,6 +252,7 @@ def cmd_start(a) -> int:
         if r.returncode != 0:
             sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
         print(f"on {branch}")
+    _merge_base(root, goal["base"], branch, a.id)
     if goal["status"] == "approved":
         gp = fc.goal_path(root, gid)
         gp.write_text(re.sub(r"(?m)^Status:.*$", "Status: running", gp.read_text(), count=1))
