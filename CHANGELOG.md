@@ -10,8 +10,15 @@
 - `friday nodes --waiting`: one line per session waiting on a prompt across the registry (node, goal,
   directive, age, message); exit 0 none, 10 some, 2 a node unreachable. Allowed without a prompt.
 
+- `friday init` reports whether the GitHub repo deletes head branches on merge and prints the command to turn
+  it on; `friday status` lists `origin/friday/*` branches whose PR is merged with the `git push origin --delete`
+  command for each. Neither changes anything; both skip quietly without `gh`.
+
 ### Changed
 
+- The PreToolUse checks ignore the body of a quoted heredoc (`<<'EOF'`, `<<"EOF"`, `<<\EOF`), so a PR body
+  that names the accept command or `sudo` is no longer refused. `$(...)` and backticks in an unquoted heredoc
+  are still scanned.
 - `friday accept <id>` and `--reject` exit 8 and change nothing while tracked files are modified or staged
   (untracked files do not count); they list the files and print the `git commit -am` command that commits
   them as the directive's work, then the accept command to rerun.
