@@ -1,5 +1,5 @@
 # cli-03: `friday init` adds the friday allow rules to a repo; dispatch refuses a repo without them
-Status: approved
+Status: done
 Goal: cli-ergonomics
 Node: any
 Deliverable: code
@@ -36,3 +36,15 @@ ref's `.claude/settings.json` does not allow them. tests/test_init.py proves the
 - Editing user or node-level settings.
 
 ## Log
+
+### 2026-11-17
+Commits:
+- 07a2c5f cli-03: tests for friday init and this repo's allow rules
+- 0f42665 cli-03: plan skill runs friday init and commits the settings file; document why rules live in the repo
+- e9a30bd cli-03: dispatch refuses a source ref whose settings lack the friday allow rules (exit 27)
+- 494557e cli-03: add friday init to merge the allow rules into .claude/settings.json
+- 32c8cf2 cli-03: define FRIDAY_ALLOW rule list in friday_core
+Notes:
+2026-11-17: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_init.py tests/test_dispatch.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
