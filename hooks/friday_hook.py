@@ -172,25 +172,37 @@ def _one_simple_command(cmd: str) -> bool:
     return len(fc.split_commands(c)) == 1
 
 
+def _git_show(root: Path, spec: str) -> str | None:
+    r = subprocess.run(["git", "show", spec], cwd=str(root), capture_output=True, text=True, timeout=20)
+    return r.stdout if r.returncode == 0 else None
+
+
 def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
-    """A command matching `## Allowed commands` of the active directive, as committed on the goal's
-    Base (so a goal-branch edit cannot widen it). Base comes from the marker in
-    the git dir, never from tracked files an agent can edit. None (no decision) on any doubt."""
+    """A command matching `## Allowed commands` of the active directive, as committed on
+    origin/<Base> (the plan the user approved), so a goal-branch edit cannot widen it. Base comes from
+    the marker (outside the working tree) and is trusted only when it is not a friday/* branch and the
+    goal file on origin/<Base> names the same Base. None (no decision) on any doubt."""
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
         if not marker or not root or not _one_simple_command(cmd):
             return None
         did = marker["id"]
-        base = str(marker.get("goal_base") or "").strip()   # written by `friday start`, outside the working tree
-        if not base:
+        base = str(marker.get("goal_base") or "").strip()
+        if not base or base.startswith("friday/") or base.startswith("-"):
             return None
-        r = subprocess.run(["git", "show", f"{base}:docs/directives/{did}.md"], cwd=str(root),
-                           capture_output=True, text=True, timeout=20)
-        if r.returncode != 0:
+        text = _git_show(root, f"origin/{base}:docs/directives/{did}.md")
+        if text is None:
+            return None
+        parsed = fc.parse_directive_full(text)
+        goal = (parsed.get("goal") or "").strip()
+        if not goal or not fc.GOAL_RE.match(goal) or base == f"friday/{goal}":
+            return None
+        gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
+        if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
             return None
         c = cmd.strip()
-        for pat in fc.parse_directive_full(r.stdout).get("allowed") or []:
+        for pat in parsed.get("allowed") or []:
             rx = ".*".join(re.escape(part) for part in pat.split("*"))
             if re.fullmatch(rx, c, re.S):
                 return "allow", f"pre-approved in {did} (on {base})"

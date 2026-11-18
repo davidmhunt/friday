@@ -77,6 +77,7 @@ def make_repo(tmp_path, monkeypatch, base_allowed, branch_allowed=None):
     dpath.write_text(DIRECTIVE.format(allowed=allowed_section(base_allowed) if base_allowed else ""))
     git(r, "add", ".")
     git(r, "commit", "--no-verify", "-qm", "init")
+    git(r, "update-ref", "refs/remotes/origin/main", "main")   # the pushed Base the hook trusts
     git(r, "checkout", "-qb", "friday/core")
     if branch_allowed is not None:
         dpath.write_text(DIRECTIVE.format(allowed=allowed_section(branch_allowed)))
