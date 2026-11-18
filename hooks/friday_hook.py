@@ -164,7 +164,11 @@ def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
                             f"({age} min ago: {holder.get('note', '')}). Wait, or ask the user to run "
                             f"`friday release {resource}`.")
         fc.take_lease(resource, session, cmd)
-        return "ask", f"Hardware `{resource}`: this command touches a physical device. Lease taken for this session."
+        reason = (f"Hardware `{resource}`: this command touches a physical device. Lease taken and "
+                  f"held for this session; this approval covers this command only.")
+        if (cfg.get("hardware_approval") or {}).get(resource) == "session":
+            reason += f" Approving it once approves `{resource}` for the rest of the session."
+        return "ask", reason
     return None
 
 
