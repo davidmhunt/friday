@@ -111,6 +111,41 @@ def master_url(reg) -> str:
     return f"http://{host}:{reg.dash_port}"
 
 
+def fetch_state(reg, timeout: float = 2) -> dict | None:
+    """The dash's /api/state, trying localhost first (the master runs it), then the master's URL.
+    None when no dash answers; never raises."""
+    import urllib.request
+    urls = [f"http://127.0.0.1:{reg.dash_port}"]
+    try:
+        urls.append(master_url(reg))
+    except DashError:
+        pass
+    for u in urls:
+        try:
+            with urllib.request.urlopen(u.rstrip("/") + "/api/state", timeout=timeout) as r:
+                d = json.loads(r.read())
+            if isinstance(d, dict) and isinstance(d.get("nodes"), dict):
+                return d
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def dash_line(state: dict | None, name: str) -> str | None:
+    """One line for a node from the dash state; None when the node is not on the dash's list."""
+    if state is None:
+        return "dash: not running; fix: friday dash up (on the master)"
+    n = state["nodes"].get(name)
+    if n is None:
+        return None
+    st = n.get("status")
+    if st == "ok":
+        return f"dash: ok ({round(n.get('age_s') or 0)} s ago)"
+    if st == "stale":
+        return f"dash: stale (last report {round(n.get('age_s') or 0)} s ago); fix: friday nodes --setup {name}"
+    return f"dash: missing (never reported); fix: friday nodes --setup {name}"
+
+
 def push(snap: dict, url: str, timeout: float = 10) -> tuple[bool, str]:
     """POST one snapshot to <url>/api/report. (ok, message); never raises."""
     import urllib.error
