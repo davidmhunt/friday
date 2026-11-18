@@ -1487,7 +1487,7 @@ def cmd_parse(a) -> int:
         ids = [x["id"] for x in gd]
         out = {"id": d["id"], "title": d["title"], "status": d["status"], "goal": d["goal"],
                "base": g["base"] if g else None, "node": d["node"], "deliverable": d["deliverable"],
-               "land": d["land"], "verify": d["verify"], "hardware": d["hardware"],
+               "land": d["land"], "accept": d["accept"], "review": d["review"] or [], "verify": d["verify"], "hardware": d["hardware"],
                "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"]} for s in d["steps"]],
                "acceptance": d["acceptance"] or [], "goal_directives": gd,
                "position": ids.index(a.id) + 1 if a.id in ids else None,

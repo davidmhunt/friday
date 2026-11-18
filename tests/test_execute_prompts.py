@@ -73,3 +73,13 @@ def test_no_prompt_asks_for_an_echoed_exit_code():
         stripped = body.replace("${ALONE}", "")
         assert not forbidden.search(stripped), body[:100]
         assert not re.search(r"\becho\b", stripped), body[:100]
+
+
+def test_awaiting_review_branch_skips_land_goal():
+    i = SRC.index("if (d.accept === 'user')")
+    j = SRC.index("const goalCmd", i)
+    block = SRC[i:j]
+    assert "friday accept ${id}" in block and "friday land --goal ${d.goal}" in block
+    assert "runLand" not in block and "d.review" in block
+    # the push (friday land <id>) happens before this branch
+    assert SRC.index("const land = await runLand(landCmd") < i
