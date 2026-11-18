@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import friday_status as fs  # noqa: E402
+import friday_fleet  # noqa: E402
 
 
 def _repo(base, name):
@@ -47,3 +48,30 @@ def test_registry_beats_node_file(tmp_path, monkeypatch):
     reg.write_text('[nodes.m]\nname = "regname"\nssh = "me@h"\nrole = "master"\nrepos = "~/c"\n')
     snap = fs.collect(cwd=tmp_path, registry_path=reg, node_name="regname")
     assert snap["node"] == "regname"
+
+
+def test_setup_writes_node_file(tmp_path):
+    import subprocess
+    home = tmp_path / "home"
+    (home / "f").parent.mkdir(parents=True)
+    (home / "f").symlink_to(Path(__file__).resolve().parent.parent)
+    (tmp_path / "n.toml").write_text(
+        '[node.m]\nrepos = "~/code"\nrole = "master"\nssh = "me@mhost"\nplugin_dir = "~/f"\n'
+        '[node.w]\nrole = "worker"\nssh = "me@w"\nplugin_dir = "~/f"\nrepos = "~/code"\n')
+    ssh = tmp_path / "fakessh"
+    ssh.write_text('#!/bin/bash\nexec bash -s\n')
+    ssh.chmod(0o755)
+    ctl = tmp_path / "ctl"
+    ctl.write_text("#!/bin/bash\n")
+    ctl.chmod(0o755)
+    import os
+    env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "n.toml"), FRIDAY_SSH=str(ssh), HOME=str(home),
+               FRIDAY_SYSTEMCTL=str(ctl))
+    env.pop("FRIDAY_NODE_FILE", None)
+    r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / "bin" / "friday"),
+                        "nodes", "--setup", "w", "--yes"], env=env, capture_output=True, text=True, cwd=tmp_path)
+    assert "node.toml" in r.stdout, r.stdout + r.stderr
+    text = (home / ".config" / "friday" / "node.toml").read_text()
+    assert 'name = "w"' in text and 'repos = "~/code"' in text and 'dash = "http://mhost:' in text
+    import friday_fleet as ff
+    assert ff.load_node_file(home / ".config" / "friday" / "node.toml")[0] == "w"
