@@ -545,5 +545,11 @@ the user. How machines and projects appear, the API and the Docker deployment:
   not yet fetched by a `friday start`, is not seen by the hook.
 - **Goal directives run in sequence.** Parallel directives within a goal are not built.
 - **A dispatched goal runs on one node** and cannot move to another.
+- **Parallelism is across goals**, not within one: separate branches, worktrees or machines. A
+  workflow runs one agent at a time unless it carries its own limit (Claude Code caps a workflow at
+  min(16, CPUs-2) agents and the cap is not configurable).
+- **A host with ROS 2 sourced breaks pytest collection** through its `launch_testing` plugin. Run
+  pytest with `-p no:launch_testing -p no:launch_ros` (friday's `pytest.ini` does).
+- **A PR's Base branch must exist on origin**, or `friday land` exits 4.
 - **`--no-verify` skips the commit guard**; `friday commits` shows the commit as `untracked`.
 - **A hook failure fails open.**

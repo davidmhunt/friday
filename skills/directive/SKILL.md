@@ -182,9 +182,9 @@ must name this goal.
 | Deliverable | Source and output | Verify | Land | Log line |
 |---|---|---|---|---|
 | `code` | code and tests in the repo | build + tests | `goal` (or `pr`) | commits, Verify result |
-| `doc` (LaTeX, markdown reports) | source in the repo; built PDF or rendered report | build with no undefined refs, bibliography resolves, figures regenerate from scripts | `goal` | `Built: <path or link to the PDF>`; the PR links it |
-| `slides` | prefer source in the repo: Beamer, Marp, or python-pptx built from results and figures; built PDF in `runs/<id>/` | build, no overflowing text, every figure produced in the repo | `goal` | `Built: runs/<id>/<file>.pdf` |
-| `external` (Google Slides, Claude Docs) | lives outside the repo | `none` | `none` | `Link: <url>`; the verifier grades `## Acceptance`, then the user reviews |
+| `doc` (LaTeX, markdown reports) | source in the repo; built PDF or rendered report | build with no undefined refs, bibliography resolves, figures regenerate from scripts | `goal` | commits, Verify result; the built file's path if you name it in a note |
+| `slides` | prefer source in the repo: Beamer, Marp, or python-pptx built from results and figures; built PDF in `runs/<id>/` | build, no overflowing text, every figure produced in the repo | `goal` | commits, Verify result; the PDF is in `runs/<id>/` |
+| `external` (Google Slides, Claude Docs) | lives outside the repo | `none` | `none` | the link, in a step note; the verifier grades `## Acceptance`, then the user reviews |
 
 `doc`, `slides` and `external` need `## Acceptance` (see above): each bullet is a statement a
 reviewer can grade against the deliverable (sections present, figures regenerate, claims sourced,

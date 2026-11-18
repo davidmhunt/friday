@@ -38,7 +38,7 @@ After that, just `friday ...`. On a node: `ssh <node> friday uninstall`. The `uv
 /friday:execute core-03                                    # implement, verify, review, push, PR
 ```
 
-Then review the PR (one per goal). `friday status` in a shell (or ask Claude to run it) lists directives, the one
+Then review the PR (one per goal). The spec: [docs/spec.md](docs/spec.md). `friday status` in a shell (or ask Claude to run it) lists directives, the one
 active in this worktree, and hardware leases. See [docs/workflow.md](docs/workflow.md).
 
 Slash commands for the same CLI forms, from any session with the plugin loaded (also over Remote Control):
@@ -60,7 +60,7 @@ Slash commands for the same CLI forms, from any session with the plugin loaded (
 | `hooks/` | Deny list, `./run` enforcement, hardware prompt + lease, commit trailer, Verify gate on Stop |
 | `skills/status`, `nodes`, `dispatch`, `clean` | User-invoked slash commands that run the CLI and summarise it |
 | `skills/` | `directive` (format), `hardware`, `long-jobs`, `data-artifacts` |
-| `bin/friday` | `status`, `new`, `start`, `verify`, `finish`, `land`, `release`, `check`, `parse`, `nodes`, `dispatch` |
+| `bin/friday` | `status`, `init`, `new`, `start`, `verify`, `finish`, `accept`, `unblock`, `commits`, `land`, `release`, `result`, `check`, `parse`, `nodes`, `dispatch`, `session-end`, `install`, `uninstall`, `dash`; flags and exit codes in [docs/spec.md](docs/spec.md#7-commands) |
 
 ## The goal model
 
@@ -83,16 +83,13 @@ flowchart LR
 | Directive | `docs/directives/<id>.md` | the goal branch (`friday/<id>` for `Land: pr`) | its `Verify:` plus verifier review against `## Acceptance` | commits on the goal branch |
 | Step | numbered in the directive | the goal branch | covered by the directive's Verify | one commit |
 
-New commands: `friday check [<id> | --goal <g> | --all]` validates the file formats;
-`friday parse <id> --json` (or `--goal <g>`) prints the parsed file; `friday land --goal <g>`
-reverifies every directive, marks the goal done and opens the one PR (exit 6: a Verify failed,
-nothing pushed); `friday unblock <id>` sets a blocked directive back to `approved` (and a blocked goal
-to `running`) in one commit. `friday accept <id> [--note TEXT | --reject REASON]` is typed by the user:
-it turns an `awaiting review` directive (`Accept: user`) into `done` or `blocked: REASON` in one commit. `friday commits <id> [--json]` lists the directive's own commits since
-its Base (exit 3: none, 2: error). `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` records an expensive run
-once in the tracked `results/<id>.json` (metrics, file sha256 and size, command, HEAD, dirty, node, time).
-A PostToolUse hook runs the format check on every edited goal or directive file and
-sends errors back to the model. Details: [docs/workflow.md](docs/workflow.md).
+Commands for this model: `friday check` validates the file formats; `friday parse` prints a parsed
+file; `friday land --goal <g>` reverifies every directive and opens the one PR; `friday unblock <id>`
+re-approves a blocked directive; `friday accept <id>` (typed by the user) finishes an
+`awaiting review` directive; `friday commits <id>` lists a directive's own commits; `friday result
+write|check` records an expensive run once. Every command, flag and exit code is in
+[docs/spec.md](docs/spec.md#7-commands); a PostToolUse hook runs the format check on every edited goal
+or directive file. The walkthrough is [docs/workflow.md](docs/workflow.md).
 
 ## Per project
 
@@ -118,8 +115,8 @@ fleet's status over the tailnet only (127.0.0.1 and its tailnet address, port `[
 
 ## Status
 
-v1 is in alpha. Next: a status page ([design spec](docs/workflow.md#roadmap)). Migrating a v0.20 project:
-[docs/migrating-from-v0.md](docs/migrating-from-v0.md).
+friday 1.0 is described in full by [docs/spec.md](docs/spec.md), which tests keep in step with the
+code. Migrating a v0.20 project: [docs/migrating-from-v0.md](docs/migrating-from-v0.md).
 
 ## Tests
 

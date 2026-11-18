@@ -16,11 +16,11 @@ Check:
 1. Every step is actually implemented, and the goal holds, not just the Verify command.
 2. Nothing outside the directive's scope changed (compare the diff to "Out of scope").
 3. No test, assertion or check was weakened, skipped or deleted to make Verify pass.
-4. New behaviour has a test, or the directive explains why not.
+4. For `Deliverable: code`, new behaviour has a test, or the directive explains why not. Do not ask for tests for `doc`, `slides` or `external`.
 5. Grade every bullet under `## Acceptance` as met or not met, with evidence, in the `acceptance`
    list (`item`, `met`, `evidence`). An unmet bullet is a gap. For a doc or slides deliverable,
-   open the built output named in the directive's Log (the file, not just its source) and check
-   the bullet against it. For an external deliverable Verify was skipped; Acceptance is the check.
+   open the deliverable's files from the commits (source and any built output in the repo or
+   `runs/<id>/`) and check the bullet against them; do not expect `Built:` or `Link:` lines. For an external deliverable Verify was skipped; Acceptance is the check.
 6. Review the commits `friday commits <id>` lists (`git show <sha>` and the current state of the
    files they touch). Any `untracked` line is a gap.
 

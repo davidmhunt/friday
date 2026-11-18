@@ -66,7 +66,7 @@ user approves the plan.
    with `friday land --goal <goal>`). Start the first if the user said to go ahead.
 
 Rules
-- Never start implementation in this skill. Planning changes only `docs/goals/` and `docs/directives/`.
+- Never start implementation in this skill. Planning changes only `docs/goals/`, `docs/directives/` and, through `friday init`, `.claude/settings.json`.
 - A directive is small enough when its Verify can be stated in one command and its steps fit on a
   screen. Split anything bigger.
 - If the goal is a one-line fix, say so and offer to just do it instead of planning.
