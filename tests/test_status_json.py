@@ -274,6 +274,12 @@ def test_cli_json_matches_schema_and_writes_nothing(tree):
     assert before == after
 
 
+def test_cli_status_node_flag_names_the_snapshot(tree):
+    r = run_cli(tree, "status", "--json", "--node", "boxy")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["node"] == "boxy"
+
+
 def test_plain_status_unchanged(tree):
     r = run_cli(tree, "status")
     assert r.returncode == 0, r.stderr

@@ -81,7 +81,7 @@ def cmd_status_push(a) -> int:
     except (fd.DashError, ff.RegistryError) as e:
         print(f"friday: {e}", file=sys.stderr)
         return 1
-    ok, msg = fd.push(fs.collect(), url)
+    ok, msg = fd.push(fs.collect(node_name=getattr(a, "node", None)), url)
     print(msg if ok else f"friday: {msg}", file=None if ok else sys.stderr)
     return 0 if ok else 1
 
@@ -92,7 +92,7 @@ def cmd_status(a) -> int:
     if getattr(a, "to", None):
         sys.exit("friday: --to only goes with --push")
     if getattr(a, "json", False):
-        print(json.dumps(fs.collect(), indent=2))
+        print(json.dumps(fs.collect(node_name=getattr(a, "node", None)), indent=2))
         return 0
     root = _root()
     ds = {d["id"]: fc.parse_directive_full(fc.directive_path(root, d["id"]).read_text())
@@ -1467,7 +1467,7 @@ def dash_compose(action: str) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.set_defaults(f=cmd_status)
+    s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.add_argument("--node", metavar="NAME"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("init"); s.set_defaults(f=cmd_init)
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)

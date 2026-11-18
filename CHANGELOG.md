@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `friday status --node NAME` (with `--json`/`--push`) names the snapshot's node, ahead of the registry,
+  `node.toml` and the hostname.
 - `friday land --goal` refuses (exit 7, naming the ids) unless every directive is `done`, and
   re-runs Verify for every directive whose Verify is not `none`.
 - `Verify: none` is accepted by `friday check` only for `Deliverable: external`; `friday verify` and the
