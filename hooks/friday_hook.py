@@ -56,6 +56,32 @@ def check_deny(cmd: str) -> str | None:
     return None
 
 
+_SHELLISH = {"ssh", "bash", "sh", "zsh", "dash", "eval", "xargs", "docker", "podman", "run", "watch", "env"}
+
+
+def _runs_accept(cmd: str, depth: int = 0) -> bool:
+    """True when some simple command in `cmd` invokes `friday accept`: directly, through
+    `python3 .../bin/friday`, `uv run`, or as an argument string (ssh host '...', bash -c '...')."""
+    for simple in fc.split_commands(cmd):
+        argv = fc.argv_of(simple)
+        for i, a in enumerate(argv):
+            if Path(a).name in ("friday", "friday.py"):
+                nxt = [x for x in argv[i + 1:] if not x.startswith("-")]
+                if nxt and nxt[0] == "accept":
+                    return True
+            if (depth < 4 and i and re.search(r"\s", a)
+                    and any(Path(x).name in _SHELLISH for x in argv[:i]) and _runs_accept(a, depth + 1)):
+                return True
+    return False
+
+
+def check_accept(cmd: str) -> str | None:
+    if _runs_accept(cmd):
+        return ("`friday accept` is not allowed from an agent session: only the user accepts a directive "
+                "that is awaiting review. Print the review bullets and the command, and stop.")
+    return None
+
+
 def check_run_only(cmd: str, cfg: dict) -> str | None:
     tools = set(cfg.get("run_only") or [])
     wrapper = cfg.get("run_wrapper", "./run")
@@ -146,6 +172,8 @@ def pretool(payload: dict) -> None:
     cfg = fc.load_config(root)
     results: list[tuple[str, str]] = []
     if (r := check_deny(cmd)):
+        results.append(("deny", r))
+    if (r := check_accept(cmd)):
         results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
         results.append(("deny", r))

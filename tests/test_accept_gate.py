@@ -152,3 +152,41 @@ def test_start_continues_past_awaiting_review_and_land_goal_exits_7(repo):
 def test_start_refuses_after_unfinished_earlier(repo):
     r = cli(repo, "start", "core-02")
     assert r.returncode == 1 and "core-01" in r.stderr
+
+
+HOOK = ROOT / "hooks" / "friday_hook.py"
+
+
+def _pretool(cmd, cwd):
+    out = subprocess.run([sys.executable, str(HOOK), "pretool"], capture_output=True, text=True,
+                         input=json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd},
+                                           "cwd": str(cwd), "session_id": "s"}))
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)["hookSpecificOutput"] if out.stdout.strip() else None
+
+
+@pytest.mark.parametrize("cmd", [
+    "friday accept core-01",
+    "friday accept core-01 --note ok",
+    "cd /x && friday accept core-01",
+    "python3 /home/u/friday/bin/friday accept core-01",
+    "uv run /home/u/friday/bin/friday accept core-01 --reject no",
+    "uv run --with pytest python3 bin/friday accept core-01",
+    "ssh host friday accept core-01",
+    "ssh host 'cd repo && friday accept core-01'",
+    'ssh -t host "python3 ~/friday/bin/friday accept core-01"',
+    "bash -c 'friday accept core-01'",
+    "echo hi; ./bin/friday accept core-01",
+])
+def test_hook_denies_friday_accept(cmd, tmp_path):
+    d = _pretool(cmd, tmp_path)
+    assert d and d["permissionDecision"] == "deny" and "only the user" in d["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("cmd", [
+    "friday status", "friday finish core-01", "friday land --goal core", "echo accept friday",
+    "git commit -m 'friday accept'", "ssh host friday status",
+])
+def test_hook_allows_other_friday_commands(cmd, tmp_path):
+    d = _pretool(cmd, tmp_path)
+    assert not d or d["permissionDecision"] != "deny" or "accept" not in d["permissionDecisionReason"]
