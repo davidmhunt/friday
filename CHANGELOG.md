@@ -37,6 +37,13 @@ Goal model: one planning run is a goal with one branch `friday/<goal>` and one P
 - Docs: commit rules; recommendation to make squash-merge the default on GitHub
   (`gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false`).
 
+### Fixed
+
+- `/friday:execute`: a dispatched `friday land` was refused by the auto-mode classifier despite the
+  `Bash(friday ...)` allow rules, because the agent chained it (`cd ... && friday land ...; echo $?`)
+  and a chained command matches no rule. Workflow prompts now tell the agent to run each friday
+  command alone from the current directory, with no `cd`, `&&`, `;`, `|` or `echo $?`.
+
 ## v1.0.0-alpha.1 (2026-11-17)
 
 friday becomes a Claude Code plugin built for Fable/Opus-level orchestrators. The v0.20 harness
