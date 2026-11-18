@@ -371,9 +371,11 @@ allow rules match it.
    reports every untracked commit as a gap. Real gaps get one fix round, then Verify and a second
    review; gaps that remain block.
 5. **Land.** `friday finish <id> --verify ... --review ...` writes the record. Then by `Land`:
-   - `goal`: `friday land <id>` pushes `friday/<goal>`. If this was the last directive of the goal
-     and no directive of the goal is `awaiting review`, the workflow also runs
-     `friday land --goal <goal>`, which opens the goal's PR. Otherwise it names the next directive.
+   - `goal`: `friday land <id>` pushes `friday/<goal>`. If this directive is `Accept: user`, the
+     workflow stops at `awaiting review` and skips `land --goal`. Otherwise, if it was the last
+     directive of the goal, the workflow runs `friday land --goal <goal>`, which opens the goal's
+     PR, or exits 7 if an earlier directive is not yet done (for example still `awaiting review`).
+     If it was not the last, the workflow names the next directive.
    - `pr`: `friday land <id> --base <Base>` pushes `friday/<id>` and opens that directive's own PR.
    - `none`: nothing is pushed.
 
@@ -381,9 +383,11 @@ Any stop sets `Status: blocked: <reason>` through `friday finish --blocked` and 
 already committed stays. Fix or answer, run `friday unblock <id>`, and run `/friday:execute <id>`
 again.
 
-**When the goal's PR opens by itself.** Only at the end of the last directive of a goal whose
-directives are `Land: goal` and `Accept: auto`, when its Verify and review pass and the push
-succeeds (a dispatched session does this too). **When you run `friday land --goal <g>`:** after
+**When the goal's PR opens by itself.** At the end of the last directive of a goal, when that
+directive is `Land: goal` and `Accept: auto`, its Verify and review pass and the push succeeds (a
+dispatched session does this too). The workflow does not look at earlier directives: if one is
+still `awaiting review`, `friday land --goal` exits 7 and no PR opens; if you already accepted it,
+the PR opens. **When you run `friday land --goal <g>`:** after
 any directive was `awaiting review` and you ran `friday accept` (the goal PR is never opened for
 you while a review is pending); when the last directive is `Land: pr` or `none`; when a landing
 step exited 3, 4, 5, 6 or 7 (the output says why); and when you ran directives by hand.

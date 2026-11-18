@@ -6,7 +6,9 @@ agents and a dashboard (`dash/`). The single reference for what it does is `docs
 ## Where things are
 - `docs/spec.md`: the spec (model, file formats, lifecycle, commands, hooks, config, limits).
   Start there. `docs/workflow.md` is the walkthrough, `docs/fleet.md` covers nodes.
-- `lib/friday_core.py`: parser, header fields, statuses, exit codes, deny list.
+- `lib/friday_core.py`: parser, header fields, statuses. Exit codes are in `bin/friday`
+  (`DISPATCH_EXIT`) and `lib/friday_fleet.py` (`PREPARE_EXIT`); the deny list is in
+  `hooks/friday_hook.py` (`DENY`).
 - `hooks/`, `skills/`, `agents/`, `workflows/`: the plugin's parts.
 - `docs/directives/<id>.md`: directives for friday's own development.
 
@@ -30,7 +32,7 @@ reload the plugin after merging.
 
 ## Rules of the repo
 - One commit per step, only if tracked files changed; the last line is `Directive: <id>`.
-- Do not edit a directive's `Status:` or `## Log` by hand; `friday start` and `friday finish`
-  write them.
+- Do not edit a directive's `Status:` or `## Log` by hand; `friday finish` and
+  `friday unblock` write them (`friday start` commits nothing to the directive).
 - Never weaken or skip a test to get green.
 - Keep other docs linking to the spec rather than repeating it.

@@ -37,8 +37,9 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
    same branch.
 5. **The goal's PR.** `friday land --goal <g>` reruns every directive's Verify on the goal branch,
    marks the goal done, pushes `friday/<g>` and opens or updates the one PR into Base.
-   - It opens by itself at the end of the last directive when all are `Land: goal` and
-     `Accept: auto` and Verify and review passed. A dispatched session does this too.
+   - It opens by itself at the end of the last directive when that directive is `Land: goal` and
+     `Accept: auto` and Verify and review passed, and every earlier directive is done (an earlier
+     one still `awaiting review` makes it exit 7). A dispatched session does this too.
    - **You run `friday land --goal <g>`** when a directive was `awaiting review` and you ran
      `friday accept`; when the last directive is `Land: pr` or `none`; when you ran directives by
      hand; or when a landing step stopped (exit 3 push failed, 4 Base not on origin, 5 no PR because
