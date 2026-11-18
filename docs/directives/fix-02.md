@@ -28,7 +28,10 @@ dispatched sessions run match the allow rules `friday init` writes.
    `friday dash up` mounts the registry file the CLI actually resolved (plugin root or
    `~/.config/friday/nodes.toml`) and fails clearly when there is none.
 6. tests/test_cli_surface.py: every parser subcommand and option string appears in the help text;
-   every `friday <sub>` in skills/ and workflows/execute.js matches an allow rule; steps 1, 2, 5.
+   every `friday <sub>` in skills/ and workflows/execute.js matches an allow rule, except
+   `friday dispatch --goal <g>`, `friday nodes --clean <node>` and `friday release <resource>`,
+   which stay prompted on purpose (they act on other machines or free hardware; amended by the
+   user 2026-11-18) and are named in the test's `prompted()` list; steps 1, 2, 5.
    CHANGELOG entries.
 
 ## Out of scope
@@ -47,6 +50,7 @@ Commits:
 - e94da8a friday nodes --check: report the number of friday-* tmux sessions per node
 - f21c7a7 friday status --node NAME: pass the name to collect for --json and --push
 Notes:
+2026-11-18: Step 6 amended by the user: dispatch, nodes --clean and release stay prompted; pre-approval moves to gate-03.
 2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
 Verify: Verify passed: uv run --with pytest pytest -q tests/test_cli_surface.py && uv run --with pytest pytest -q && claude plugin validate .
 Independent review: not recorded

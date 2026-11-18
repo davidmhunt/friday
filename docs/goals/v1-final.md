@@ -20,8 +20,9 @@ hardware prompts in a dispatched session, GitHub-only landing) are documented in
 2. fix-02: Every command and flag is real, documented in `--help` and allowed without a prompt
 3. gate-01: A directive with `Accept: user` waits for `friday accept` before its goal can land
 4. gate-02: `friday result` records an expensive run once so Verify stays cheap
-5. spec-01: `docs/spec.md` is the single reference, kept in step with the code by tests
-6. spec-02: A from-zero tutorial and recipes for research, robot and PCB repos
-7. rel-01: Release 1.0.0
+5. gate-03: Commands the user pre-approves in a directive run without a prompt during that directive
+6. spec-01: `docs/spec.md` is the single reference, kept in step with the code by tests
+7. spec-02: A from-zero tutorial and recipes for research, robot and PCB repos
+8. rel-01: Release 1.0.0
 
 ## Log
