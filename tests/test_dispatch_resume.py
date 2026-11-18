@@ -65,6 +65,22 @@ def worktree(e, status="running", goal="g1"):
     return wt
 
 
+def directives(e, statuses, goal="g1"):
+    """Commit a goal file listing d1.. with the given Statuses into the worktree (and a different one in
+    the master clone, to prove the worktree's copy is the one read)."""
+    wt = e.repos / "proj.friday" / goal
+    ids = [f"d{i}" for i in range(1, len(statuses) + 1)]
+    (wt / "docs" / "directives").mkdir(parents=True, exist_ok=True)
+    body = "\n".join(f"{i}. {d}: title" for i, d in enumerate(ids, 1))
+    (wt / "docs" / "goals" / f"{goal}.md").write_text(
+        f"# {goal}: g\nStatus: running\n\n## Directives\n{body}\n\n## Log\n")
+    for d, st in zip(ids, statuses):
+        (wt / "docs" / "directives" / f"{d}.md").write_text(f"# {d}: t\nStatus: {st}\nGoal: {goal}\n\n## Log\n")
+    git(wt, "add", ".")
+    git(wt, "commit", "-qm", "directives")
+    return ids
+
+
 def session(e, pane, goal="g1"):
     (e.tmp / f"friday-{goal}.pane").write_text(pane)
     tmux = ["#!/bin/bash", 'sub=$1; shift; t=; while [ $# -gt 0 ]; do [ "$1" = -t ] && t=$2; shift; done',
@@ -148,3 +164,60 @@ def test_busy_or_waiting_session_refuses(env, pane):
     session(env, pane)
     rc, _, err = resume(env)
     assert rc == 24 and "busy or waiting" in err
+
+
+def test_remaining_after_blocked_land_lists_only_later(env):
+    record(env)
+    worktree(env)
+    directives(env, ["done", "approved", "approved"])
+    rc, out, err = resume(env)
+    assert rc == 0, err
+    assert "remaining directives" in out
+    rem = out.split("remaining directives", 1)[1]
+    assert "d2" in rem and "d3" in rem and "d1" not in rem
+
+
+def test_reads_worktree_goal_file_not_master(env):
+    record(env)
+    worktree(env)
+    directives(env, ["done", "done", "approved"])
+    (env.proj / "docs" / "goals").mkdir(parents=True)
+    (env.proj / "docs" / "goals" / "g1.md").write_text(
+        "# g1: g\nStatus: running\n\n## Directives\n1. d1: t\n2. d2: t\n")
+    rc, out, _ = resume(env)
+    rem = out.split("remaining directives", 1)[1]
+    assert rc == 0 and "d3" in rem and "d1" not in rem and "d2" not in rem
+
+
+def test_blocked_directive_refuses_without_unblock(env):
+    record(env)
+    wt = worktree(env)
+    directives(env, ["done", "blocked: needs a key", "approved"])
+    rc, _, err = resume(env)
+    assert rc == 25 and "d2" in err and "blocked: needs a key" in err and "--unblock d2" in err
+    assert "blocked: needs a key" in (wt / "docs" / "directives" / "d2.md").read_text()
+
+
+def test_unblock_resets_status_uncommitted(env):
+    record(env)
+    wt = worktree(env)
+    directives(env, ["done", "blocked: needs a key", "approved"])
+    (wt / "a.txt").write_text("wip")
+    rc, out, err = resume(env, "--unblock", "d2")
+    assert rc == 0, err
+    assert "reset d2 to approved" in out and "d2" in out.split("remaining directives", 1)[1]
+    assert "Status: approved" in (wt / "docs" / "directives" / "d2.md").read_text()
+    st = subprocess.run(["git", "status", "--porcelain"], cwd=wt, capture_output=True, text=True).stdout
+    assert " M docs/directives/d2.md" in st and (wt / "a.txt").read_text() == "wip"
+    assert "Status: approved" in (wt / "docs" / "directives" / "d3.md").read_text()
+
+
+def test_unblock_dry_run_changes_nothing_and_unknown_id_refuses(env):
+    record(env)
+    wt = worktree(env)
+    directives(env, ["blocked: x"])
+    rc, out, _ = resume(env, "--unblock", "d1", "--dry-run")
+    assert rc == 0 and "would reset d1" in out
+    assert "blocked: x" in (wt / "docs" / "directives" / "d1.md").read_text()
+    rc, _, err = resume(env, "--unblock", "zz")
+    assert rc == 26 and "not a directive" in err

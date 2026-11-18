@@ -444,7 +444,9 @@ def resume_script(node, goal: str, repo_name: str) -> str:
 
     Prints `FRIDAY_RESUME_MISSING <path>` when there is no worktree, else
     `FRIDAY_RESUME branch=<b> goalstatus=<word|-> session=<0|1> idle=<0|1|-> path=<abs path>` and one
-    `FRIDAY_DIRTY <porcelain line>` per uncommitted file (ignoring `runs/`). Nothing is changed.
+    `FRIDAY_DIRTY <porcelain line>` per uncommitted file (ignoring `runs/`), and one
+    `FRIDAY_DIRECTIVE <id> <status>` per directive of the worktree's goal file, in order (the worktree's
+    copy, not the master's). Nothing is changed.
     """
     import shlex
     wt = remote_path(worktree_path(node, repo_name, goal))
@@ -462,18 +464,45 @@ if tmux has-session -t "=friday-"{g} 2>/dev/null; then
 fi
 gs=$(sed -n 's/^Status:[[:space:]]*//p' "$wt/docs/goals/"{g}".md" 2>/dev/null | head -n 1)
 echo "FRIDAY_RESUME branch=$branch goalstatus=${{gs:--}} session=$session idle=$idl path=$wt"
+awk '/^## /{{s=($0=="## Directives")}} s && /^[0-9]+\\.[ \t]/{{sub(/^[0-9]+\\.[ \t]+/,""); id=$1; sub(/:$/,"",id); print id}}' "$wt/docs/goals/"{g}".md" 2>/dev/null | while read -r id; do
+  st=$(sed -n 's/^Status:[[:space:]]*//p' "$wt/docs/directives/$id.md" 2>/dev/null | head -n 1)
+  echo "FRIDAY_DIRECTIVE $id ${{st:-?}}"
+done
 git -C "$wt" status --porcelain -- . ':(exclude)runs' 2>/dev/null | sed 's/^/FRIDAY_DIRTY /'
+"""
+
+
+def unblock_script(node, goal: str, repo_name: str, did: str) -> str:
+    """Remote script for `dispatch --resume --unblock <did>`: in the worktree's own copy of the directive,
+    reset a `blocked: ...` Status to `approved` (an uncommitted edit). Prints `FRIDAY_UNBLOCKED <id>`, or
+    `FRIDAY_NOT_BLOCKED <id> <status>` and changes nothing."""
+    import shlex
+    wt = remote_path(worktree_path(node, repo_name, goal))
+    f = shlex.quote(f"docs/directives/{did}.md")
+    return f"""set -u
+wt={wt}
+f="$wt"/{f}
+st=$(sed -n 's/^Status:[[:space:]]*//p' "$f" 2>/dev/null | head -n 1)
+case "$st" in
+  blocked:*) ;;
+  *) echo "FRIDAY_NOT_BLOCKED {did} ${{st:-?}}"; exit 0 ;;
+esac
+awk 'BEGIN{{d=0}} !d && /^Status:/ {{print "Status: approved"; d=1; next}} {{print}}' "$f" > "$f.tmp.$$" && cat "$f.tmp.$$" > "$f" && rm -f "$f.tmp.$$"
+echo "FRIDAY_UNBLOCKED {did}"
 """
 
 
 def parse_resume(text: str) -> dict:
     """Parse `resume_script` output: {"missing": path|None, "branch", "goalstatus", "session", "idle",
-    "path", "dirty": [porcelain lines]}."""
+    "path", "dirty": [porcelain lines], "directives": [(id, status)]}."""
     import re
     out = {"missing": None, "branch": None, "goalstatus": "-", "session": False, "idle": None,
-           "path": None, "dirty": []}
+           "path": None, "dirty": [], "directives": []}
     for line in text.splitlines():
-        if line.startswith("FRIDAY_RESUME_MISSING "):
+        if line.startswith("FRIDAY_DIRECTIVE "):
+            parts = line.split(" ", 2)
+            out["directives"].append((parts[1], parts[2] if len(parts) > 2 else "?"))
+        elif line.startswith("FRIDAY_RESUME_MISSING "):
             out["missing"] = line.split(" ", 1)[1]
         elif line.startswith("FRIDAY_DIRTY "):
             out["dirty"].append(line[len("FRIDAY_DIRTY "):])
