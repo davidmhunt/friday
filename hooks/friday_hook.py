@@ -4,6 +4,8 @@
   pretool      PreToolUse on Bash: deny list, ./run enforcement, no commits on main, hardware gate
   stop         Stop: while a directive is active in this worktree, its Verify: must pass
   session-end  SessionEnd: release this session's hardware leases
+  notification Notification: a friday session stopped on a prompt; record it for status and the dash
+  waiting-clear PreToolUse/PostToolUse/UserPromptSubmit: the session moved on; drop that record
   posttool     PostToolUse on Write|Edit|MultiEdit: a goal/directive file's own format errors go
                back to the model (stderr, exit 2); warnings and clean files are silent
 
@@ -14,7 +16,9 @@ The rules and where they came from: docs/workflow.md ("Hooks") and docs/migratin
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -327,6 +331,7 @@ MAX_STOP_BLOCKS = 3
 
 
 def stop(payload: dict) -> None:
+    waiting_clear(payload)
     cwd = Path(payload.get("cwd") or ".")
     marker = fc.read_marker(cwd)
     if not marker or not marker.get("gate", True):
@@ -367,6 +372,81 @@ def session_end(payload: dict) -> None:
     fc.release_leases(session=payload.get("session_id") or None)
 
 
+# ------------------------------------------------------------------ waiting on a prompt
+def _waiting_identity(cwd: Path) -> tuple[str, str] | None:
+    """(goal, directive) when `cwd` is a friday worktree (an active marker, or a dispatched
+    session), else None. The goal comes from the directive, the friday/<goal> branch, or the
+    tmux session name, in that order."""
+    marker = fc.read_marker(cwd)
+    if not marker and not os.environ.get("FRIDAY_DISPATCHED_FROM"):
+        return None
+    did = str((marker or {}).get("id") or "")
+    goal = _goal_and_base(cwd, did)[0] if did else ""
+    if not goal:
+        br = fc.current_branch(cwd) or ""
+        goal = br[len("friday/"):] if br.startswith("friday/") else ""
+    if not goal:
+        goal = _tmux_session().removeprefix("friday-")
+    return (goal, did) if goal and fc.GOAL_RE.match(goal) else None
+
+
+def _tmux_session() -> str:
+    if not os.environ.get("TMUX"):
+        return ""
+    try:
+        r = subprocess.run(["tmux", "display-message", "-p", "#S"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def notification(payload: dict) -> None:
+    """Record that this session is waiting on the user, then push a fresh snapshot (detached,
+    bounded: the session never waits on it). Idle and informational notices are not prompts."""
+    kind = payload.get("notification_type") or ""
+    if kind in ("idle_prompt", "auth_success", "auth_storage_failure", "elicitation_complete",
+                "elicitation_response", "agent_completed", "plugin_notification") or kind.startswith("quota_"):
+        return
+    ident = _waiting_identity(Path(payload.get("cwd") or "."))
+    if not ident:
+        return
+    goal, did = ident
+    d = fc.waiting_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    rec = {"goal": goal, "directive": did, "message": str(payload.get("message") or ""), "kind": kind,
+           "tmux_session": _tmux_session() or f"friday-{goal}", "session_id": payload.get("session_id", ""),
+           "time": time.time()}
+    tmp = d / f".{goal}.json.tmp"
+    tmp.write_text(json.dumps(rec))
+    tmp.replace(d / f"{goal}.json")
+    cmd = [sys.executable, str(Path(__file__).resolve().parent.parent / "bin" / "friday"), "status", "--push"]
+    if shutil.which("timeout"):
+        cmd = ["timeout", "30"] + cmd
+    try:
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
+
+
+def waiting_clear(payload: dict) -> None:
+    """The session moved on (a tool call, a prompt, a stop): remove its waiting record if any."""
+    d = fc.waiting_dir()
+    if not d.is_dir() or not any(d.glob("*.json")):
+        return                                   # the common case costs one directory listing
+    sid = payload.get("session_id") or ""
+    for p in d.glob("*.json"):
+        try:
+            rec = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if sid and rec.get("session_id") == sid:
+            p.unlink(missing_ok=True)
+    ident = _waiting_identity(Path(payload.get("cwd") or "."))
+    if ident:
+        (d / f"{ident[0]}.json").unlink(missing_ok=True)
+
+
 # ------------------------------------------------------------------ posttool
 def posttool(payload: dict) -> int:
     """Validate one edited goal/directive file (no cross-checks). Returns the exit code."""
@@ -398,7 +478,8 @@ def main() -> int:
     try:
         if sys.argv[1] == "posttool":
             return posttool(payload)
-        {"pretool": pretool, "stop": stop, "session-end": session_end}[sys.argv[1]](payload)
+        {"pretool": pretool, "stop": stop, "session-end": session_end,
+         "notification": notification, "waiting-clear": waiting_clear}[sys.argv[1]](payload)
     except Exception as e:  # fail open, but say so
         print(f"friday hook error ({sys.argv[1:]}): {e}", file=sys.stderr)
     return 0

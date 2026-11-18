@@ -828,6 +828,12 @@ def lease_dir() -> Path:
     return d
 
 
+def waiting_dir() -> Path:
+    """`~/.local/state/friday/waiting/`: one `<goal>.json` per session stopped on a prompt."""
+    base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return base / "friday" / "waiting"
+
+
 def lease_holder(resource: str, now: float | None = None) -> dict | None:
     p = lease_dir() / f"{resource}.json"
     try:
