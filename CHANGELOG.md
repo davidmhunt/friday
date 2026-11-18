@@ -24,6 +24,8 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
   amended on Base runs from its current text (#18). The parse prompt carries the post-merge HEAD sha, so a
   resumed run reuses a cached parse only when the goal branch has not moved; a parse failure runs
   `friday finish --blocked` with the errors.
+- `friday finish` demotes `#` heading lines in `runs/<id>/notes.md` to `####` (fenced blocks untouched), so notes can no
+  longer break the directive's Log for `friday check` and `friday parse` (#14).
 
 ### Changed
 
