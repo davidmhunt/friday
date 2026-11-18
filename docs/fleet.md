@@ -206,6 +206,27 @@ friday dispatch --goal <g> [--node <name>] [--report-to <session>] [--dry-run]
 prepares the worktree over ssh, starts tmux session `friday-<g>` there running `claude` with Remote
 Control, and tells it to run the goal's remaining directives in order and land the goal.
 
+### Pre-approving commands for a dispatched run
+
+A dispatched session has nobody at the prompt, so a command that would ask (a hardware command,
+`friday nodes --clean`, `friday release`, a nested `friday dispatch`) leaves it waiting until you
+attach or `--resume`. Pre-approve what the goal needs in each directive's `## Allowed commands`:
+
+```markdown
+## Allowed commands
+- `ssh ground-bot ./run ros2 topic list`
+- `friday nodes --clean alfred`
+- `./run tools/bench.sh *`
+```
+
+One backticked command per bullet; `*` matches any text; only a single simple command (no `&&`, `;`,
+`|`, backticks or `$(`). The list is read from the directive as committed on `origin/<Base>` (the
+plan you approved), never from the goal branch, so publish it before dispatching. To add a command
+later, commit the amendment on Base, run `friday check`, push Base, and the node picks it up at its
+next `friday start` (or after `--resume`). The deny list still wins: `sudo`, force-push and push to
+main stay refused even if listed, so `sudo` on a target over `ssh` stays a step you do. A
+pre-approved hardware command still takes the lease. See [spec.md](spec.md) section 5.
+
 ### Ending a finished session
 
 `friday session-end --goal <g>` closes the dispatched session's own tmux session `friday-<g>` ten

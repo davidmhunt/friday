@@ -10,6 +10,50 @@ and one PR into its Base. It orders **directives** (`docs/directives/<id>.md`); 
 `Verify:` command, a `Deliverable` (code, doc, slides, external) and numbered **steps**. Every step
 that changes tracked files is one commit, and each directive adds one record commit.
 
+The full rules are in [spec.md](spec.md); this page is the walkthrough.
+
+## Walkthrough
+
+1. **Plan.** `/friday:plan <goal>` in a session on Fable or Opus. It reads the repo, interviews
+   you, runs `friday init`, and commits the goal file and its directives (`Status: proposed`) on the
+   goal's Base.
+2. **Approve.** Read each directive's goal, steps, Verify, `## Allowed commands` and out-of-scope
+   list; approve, amend or drop. Approved files are committed with `Status: approved`, once for the
+   whole goal.
+3. **Execute.** `/friday:execute <id>` for the first directive; it runs a workflow in the background
+   (watch it with `/workflows`):
+   - **Prepare**: `friday start <id> --no-gate` switches to the goal branch `friday/<goal>` (created
+     from Base on the first directive), merges Base in, and commits nothing.
+   - **Implement**: one `implementer` per step, in order; `[heavy]` steps run on Opus.
+   - **Verify**: the `runner` runs the Verify command; on failure an implementer fixes the root
+     cause and it runs again, up to 4 rounds or until the same failure repeats twice.
+   - **Review**: the `verifier` (Opus, read-only, fresh context) checks the directive's commits
+     (`friday commits <id>`) against the directive; real gaps get one fix round, then Verify and
+     review again.
+   - **Land**: `friday finish <id>` writes the record, then `friday land <id>` pushes the goal
+     branch (`Land: goal`; no PR yet). With `Land: pr` it pushes `friday/<id>` and opens that
+     directive's own PR; with `Land: none` it pushes nothing.
+4. **Next directive.** Run `/friday:execute <next-id>`. Directives of a goal run in order on the
+   same branch.
+5. **The goal's PR.** `friday land --goal <g>` reruns every directive's Verify on the goal branch,
+   marks the goal done, pushes `friday/<g>` and opens or updates the one PR into Base.
+   - It opens by itself at the end of the last directive when all are `Land: goal` and
+     `Accept: auto` and Verify and review passed. A dispatched session does this too.
+   - **You run `friday land --goal <g>`** when a directive was `awaiting review` and you ran
+     `friday accept`; when the last directive is `Land: pr` or `none`; when you ran directives by
+     hand; or when a landing step stopped (exit 3 push failed, 4 Base not on origin, 5 no PR because
+     `gh` is missing or signed out and a compare URL is printed, 6 a Verify failed, 7 a directive is
+     not done). The output says which.
+6. **Review the PR** and merge it yourself.
+
+`Accept: user` directives stop at `awaiting review`: the goal branch is pushed, later directives
+continue, and you open the `## Review` bullets and run `friday accept <id>` (or
+`friday accept <id> --reject REASON`). Agents cannot run it.
+
+The workflow runs one agent at a time. Claude Code also caps any workflow at min(16, CPUs - 2)
+agents at once. Allow the `friday` commands in the project's `.claude/settings.json` (`friday init`
+does) so the workflow doesn't wait on a prompt for its own bookkeeping.
+
 ```mermaid
 flowchart TD
   P[/friday:plan/] --> G[goal file, approved once]
@@ -26,45 +70,35 @@ flowchart TD
 | Directive | `docs/directives/<id>.md` | goal branch; `friday/<id>` if `Land: pr` | `Verify:` passes, verifier agrees with `## Acceptance` | commits on the goal branch (`Land: goal`), its own PR (`pr`), nothing (`none`) |
 | Step | `## Steps` item | goal branch | covered by the directive's Verify | one commit |
 
-`friday land --goal <g>` is the step that opens the one PR: it reruns each directive's Verify on
-the goal branch, marks the goal done, pushes `friday/<g>` and opens or updates the PR.
+Format checks: `friday check [<id> | --goal <g> | --all]` exits 1 on any error, and a PostToolUse
+hook sends a goal or directive file's own format errors back to the model after every edit.
 
-### Commands and the format hook
+## Pre-approving commands for an unattended or dispatched run
 
-- `friday check [<id> | --goal <g> | --all]`: validate formats; exit 1 on any error.
-- `friday parse <id> --json` / `--goal <g> --json`: parsed file as JSON (1 on errors, 2 if missing).
-- `friday land --goal <g>`: as above. Exit codes: 0 done, 3 push failed, 4 pushed but base not on
-  origin, 5 pushed but no PR (`gh` missing; prints a compare URL), 6 a directive's Verify failed on
-  the goal branch and nothing was pushed.
-- PostToolUse hook (Write, Edit, MultiEdit): after a goal or directive file is edited, its own
-  format errors go back to the model (exit 2); warnings and clean files are silent.
+Some commands always prompt: `friday dispatch`, `friday nodes --clean`, `friday release`, and any
+command matching a `hardware` pattern. With nobody at the prompt (a dispatched session, or a run you
+walk away from) the session waits. List the ones the directive needs in its `## Allowed commands`
+section, one command per bullet in backticks, `*` matching any text:
 
-Follow-up (not built): parallel directives within a goal, each on a sub-branch merged into the goal
-branch.
+```markdown
+## Allowed commands
+- `friday nodes --clean alfred`
+- `ssh rover ./run ros2 topic list`
+- `./run tools/bench.sh *`
+```
 
-The steps below describe a single directive's run.
+- The list is read from the directive as committed on `origin/<Base>`, not from the goal branch. To
+  add or change it after approval, amend the plan on Base, run `friday check`, and push Base; the
+  session picks it up at its next `friday start` (before the next directive, or after a block and
+  `friday unblock`).
+- It applies only to the active directive, only to a single simple command (no `&`, `;`, `|`,
+  backticks, `$(`), and only answers the prompt.
+- Still denied or prompted: the deny list (so privilege escalation, force-push and push to main stay
+  refused even if listed, and root commands on a robot over `ssh` stay a step you do),
+  `friday accept`, `run_only`, the push and commit guards. A pre-approved hardware command still
+  takes the lease and is still refused while another session holds it.
 
-1. **Plan.** `/friday:plan <goal>` in a session on Fable or Opus. It reads the repo, interviews
-   you, and writes directives to `docs/directives/<loop>-<NN>.md` with `Status: proposed`.
-2. **Approve.** Read each directive's goal, steps, Verify and out-of-scope list; approve, amend or
-   drop. Approved directives are committed with `Status: approved`.
-3. **Execute.** `/friday:execute <id>` runs a workflow in the background (watch it with
-   `/workflows`):
-   - **Prepare**: switch to branch `friday/<id>`, `friday start <id>`.
-   - **Implement**: one `implementer` per step, in order; `[heavy]` steps run on Opus.
-   - **Verify**: the `runner` runs the Verify command; on failure an implementer fixes the root
-     cause and it runs again, up to 4 rounds or until the same failure repeats twice.
-   - **Review**: the `verifier` (Opus, read-only, fresh context) checks the diff against the
-     directive; real gaps get one fix round, then Verify and review again.
-   - **Land**: Log entry, `friday finish <id>`, then `friday land <id> --base <base>`, which pushes
-     `friday/<id>` and opens the PR with `gh`. It says plainly when it can't: the push failed, the
-     base branch isn't on origin yet (publish it, then rerun `friday land`), or `gh` is missing or
-     signed out (it prints the compare URL instead).
-
-   The workflow runs one agent at a time, so it never has more than one agent working. Claude Code
-   also caps any workflow at min(16, CPUs - 2) agents at once. Allow the `friday` commands in the
-   project's `.claude/settings.json` so the workflow doesn't wait on a prompt for its own bookkeeping.
-4. **Review the PR** and merge it yourself.
+Details: [spec.md](spec.md) section 5. For dispatch see [fleet.md](fleet.md).
 
 ## Migrating a directive to a goal
 
@@ -141,8 +175,11 @@ or Settings -> General -> Pull Requests. friday does not change repo settings; y
 - A step needs a decision the directive doesn't settle.
 - Verify keeps failing, or review gaps remain after a fix round.
 
-In each case the directive gets `Status: blocked: <reason>` and a Log entry. Fix or answer, set it
-back to `approved`, and run `/friday:execute <id>` again; work already committed on the branch stays.
+In each case the directive gets `Status: blocked: <reason>` and a Log entry. Fix or answer, then
+run `friday unblock <id>` (Status back to `approved` with a Log line, one commit; a blocked goal goes
+back to `running`) and `/friday:execute <id>` again; work already committed on the branch stays. Do
+not edit Status by hand. For a dispatched goal use
+`friday dispatch --goal <g> --resume --unblock <id>`.
 
 ## Without the workflow
 
@@ -153,21 +190,19 @@ fails (up to 3 times, then it stops for you). `friday start <id> --no-gate` turn
 
 ## Hooks
 
+Every rule, with its event, is in [spec.md](spec.md) section 9. In short:
+
 | Hook | Event | Effect |
 |---|---|---|
-| Deny list | PreToolUse, Bash | Refuses sudo, unscoped `rm -rf`, force-push, push to main, `git remote add`, `curl \| sh`, raw disk writes |
+| Deny list | PreToolUse, Bash | Refuses privilege escalation (also after `ssh`), unscoped `rm -rf`, force-push, push to main, `git remote add`, `git clean -f`, `curl \| sh`, raw disk writes |
+| `friday accept` guard | PreToolUse, Bash | Refuses `friday accept` from an agent, in any wrapper |
 | `./run` | PreToolUse, Bash | With `.claude/friday.json`, refuses bare `python`, `uv`, `cmake`, ... and names the `./run` form |
-| Commits | PreToolUse, Bash | While a directive is active: commits need a `Directive: <id>` line and never land on main |
+| Push guard | PreToolUse, Bash | While a directive is active, only an explicit push of the goal's own branch |
+| Commit guard | PreToolUse, Bash | While a directive is active: no commit on main or Base; commits need a `Directive: <id>` line (also enforced by the git `commit-msg` hook) |
+| Pre-approval | PreToolUse, Bash | Allows a command listed in the active directive's `## Allowed commands` |
 | Hardware | PreToolUse, Bash | Commands matching `hardware` patterns ask you and take a lease; another session's lease refuses |
+| Format | PostToolUse, Write/Edit/MultiEdit | Sends a goal or directive file's format errors back to the model |
 | Verify gate | Stop | Described above |
 | Leases | SessionEnd | Releases the session's hardware leases |
 
-The rules are carried over from v0.20's guards and incident-driven rules (tag `v0.20.0`). A hook bug
-fails open and prints an error rather than blocking a session.
-
-## Roadmap
-
-- **Fleet**: `friday dispatch <id>` starts `/friday:execute` in a fresh Remote Control session on
-  the machine that fits the directive's `Node:` line, over Tailscale SSH; sessions report back
-  with cross-session messages. Robots stay SSH targets.
-- **Status page**: the dash, collected from every node and served on the tailnet (`friday dash`).
+A hook bug fails open and prints an error rather than blocking a session.
