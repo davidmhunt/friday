@@ -2,7 +2,7 @@
 
 Concepts
 - Project config: `.claude/friday.json` at the repo root (optional; without it only the
-  deny list applies). Keys: run_wrapper, run_only, hardware, verify.
+  deny list applies). Keys: run_wrapper, run_only, hardware.
 - Directive: `docs/directives/<id>.md`; goal: `docs/goals/<goal>.md`. Both formats are defined
   once, by parse_directive_full / parse_goal and validate_directive / validate_goal below.
   parse_directive is the older header-only reader kept for the hooks, `start` and `verify`.
@@ -30,10 +30,13 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*-\d{2,}$")
 
 # Allow rules every friday repo carries in its tracked .claude/settings.json (a plugin cannot
 # grant permissions). Defined once here; `friday init` merges them, `friday dispatch` checks them.
+# The read-only nodes listing and the dry-runs of dispatch and clean are allowed; the real
+# `dispatch` and `nodes --clean` runs (and `release`) are deliberately left to prompt.
 FRIDAY_ALLOW = [
     f"Bash(friday {c})"
     for c in ("status", "status *", "new *", "check *", "parse *", "start *",
-              "verify", "verify *", "finish *", "commits *", "land *")
+              "verify", "verify *", "finish *", "commits *", "result *", "land *", "init", "session-end", "session-end *",
+              "nodes", "nodes --check", "nodes --clean * --dry-run", "dispatch --goal * --dry-run")
 ]
 
 
@@ -197,7 +200,8 @@ def next_id(root: Path, loop: str) -> str:
 # feeds them back); warnings are reported only.
 GOAL_DIR = Path("docs/goals")
 GOAL_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-DIRECTIVE_KEYS = ("Status", "Goal", "Node", "Deliverable", "Land", "Verify", "Hardware")
+DIRECTIVE_KEYS = ("Status", "Goal", "Node", "Deliverable", "Land", "Accept", "Verify", "Hardware")
+ACCEPTS = ("auto", "user")
 GOAL_KEYS = ("Status", "Base", "Land")
 DELIVERABLES = ("code", "doc", "slides", "external")
 DIRECTIVE_LANDS = ("goal", "pr", "none")
@@ -296,10 +300,22 @@ def _bullets(body: list[tuple[int, str]]) -> list[str]:
     return out
 
 
+def _allowed_items(sec: dict | None) -> list[tuple[int, str, str | None]]:
+    """`## Allowed commands` bullets as (line, bullet text, pattern or None when the bullet does
+    not hold exactly one backticked span)."""
+    out: list[tuple[int, str, str | None]] = []
+    for i, line in (sec["body"] if sec else []):
+        if line.startswith("- "):
+            spans = re.findall(r"`([^`]*)`", line[2:])
+            ok = len(spans) == 1 and line[2:].count("`") == 2 and spans[0].strip()
+            out.append((i, line[2:].strip(), spans[0].strip() if ok else None))
+    return out
+
+
 def parse_directive_full(text: str) -> dict:
     """The parsed shape of a directive file. Keys: id, title, status, goal, node, deliverable,
-    land (default `goal`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
-    (None when there is no `## Acceptance`), headers [(key, value, line)], sections [(name, line)]."""
+    land (default `goal`), accept (default `auto`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
+    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), allowed [str] (patterns in `## Allowed commands`, [] when absent), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     steps_sec = _section(md, "Steps")
@@ -308,13 +324,17 @@ def parse_directive_full(text: str) -> dict:
         # a `[heavy]` inside an inline code span is a mention of the marker, not the marker
         s["heavy"] = "[heavy]" in re.sub(r"`[^`]*`", "", s["text"])
     acc = _section(md, "Acceptance")
+    rev = _section(md, "Review")
     return {
         "id": md["name"], "title": md["title"],
         **{k.lower(): hm.get(k, "") for k in DIRECTIVE_KEYS},
         "land": hm.get("Land", "goal") or "goal",
+        "accept": hm.get("Accept", "auto") or "auto",
         "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"], "line": s["line"]}
                   for s in steps],
         "acceptance": _bullets(acc["body"]) if acc else None,
+        "review": _bullets(rev["body"]) if rev else None,
+        "allowed": [p for _, _, p in _allowed_items(_section(md, "Allowed commands")) if p],
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
     }
@@ -363,7 +383,7 @@ def _check_sections(md: dict, required: tuple, path: str, acceptance: bool) -> l
     Other sections are allowed anywhere before the last required one (`## Log`)."""
     issues: list[Issue] = []
     seen: dict[str, int] = {}
-    once = required + (("Acceptance",) if acceptance else ())
+    once = required + (("Acceptance", "Review") if acceptance else ())
     last = required[-1]
     for s in md["sections"]:
         name, ln = s["name"], s["line"]
@@ -416,12 +436,39 @@ def _check_title(md: dict, stem: str, kind: str, name_re: re.Pattern, path: str)
 def _status_ok(status: str, running_host: bool) -> bool:
     if status in ("proposed", "approved", "done"):
         return True
+    if running_host and status == "awaiting review":   # directives only
+        return True
     if running_host:
         if re.match(r"^running@\S+$", status):
             return True
     elif status == "running":
         return True
     return bool(re.match(r"^blocked:\s*\S", status))
+
+
+def _hook_deny(cmd: str) -> str | None:
+    """The PreToolUse hook's deny list (hooks/friday_hook.py), loaded by path."""
+    import importlib.util
+    hp = Path(__file__).resolve().parent.parent / "hooks" / "friday_hook.py"
+    spec = importlib.util.spec_from_file_location("friday_hook_deny", hp)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.check_deny(cmd)
+
+
+def allowed_pattern_problem(pat: str) -> str | None:
+    """Why an `## Allowed commands` pattern is not acceptable, or None."""
+    if not pat.replace("*", "").strip():
+        return "pattern matches everything; name a command"
+    for bad in ("&&", ";", "|", "`", "$("):
+        if bad in pat:
+            return f"pattern contains `{bad}`; a pattern is one simple command"
+    if re.match(r"^friday\s+accept\b", pat):
+        return "`friday accept` can never be pre-approved"
+    for probe in (pat, pat.replace("*", "x")):
+        if (r := _hook_deny(probe)):
+            return f"pattern matches the hook deny list ({r})"
+    return None
 
 
 def validate_directive(did: str, text: str) -> list[Issue]:
@@ -431,13 +478,13 @@ def validate_directive(did: str, text: str) -> list[Issue]:
     d = parse_directive_full(text)
     hl = {k: ln for k, _, ln in reversed(md["headers"])}   # first line of each key
     issues = _check_title(md, did, "id", ID_RE, path)
-    issues += _check_headers(md, DIRECTIVE_KEYS, ("Land",), path, warn_unknown=True)
+    issues += _check_headers(md, DIRECTIVE_KEYS, ("Land", "Accept"), path, warn_unknown=True)
 
     def bad(key: str, msg: str) -> None:
         issues.append(Issue("error", path, hl.get(key, 1), msg))
 
     if "Status" in hl and not _status_ok(d["status"], running_host=True):
-        bad("Status", f"Status `{d['status']}` is not proposed | approved | running@<host> | done | blocked: <reason>")
+        bad("Status", f"Status `{d['status']}` is not proposed | approved | running@<host> | awaiting review | done | blocked: <reason>")
     if "Goal" in hl and not GOAL_RE.match(d["goal"]):
         bad("Goal", f"Goal `{d['goal']}` is not a goal name ({GOAL_RE.pattern})")
     if "Node" in hl and not re.match(r"^(any|tag:\S+|host:\S+)$", d["node"]):
@@ -445,6 +492,10 @@ def validate_directive(did: str, text: str) -> list[Issue]:
     deliverable_ok = d["deliverable"] in DELIVERABLES
     if "Deliverable" in hl and not deliverable_ok:
         bad("Deliverable", f"Deliverable `{d['deliverable']}` is not one of {' | '.join(DELIVERABLES)}")
+    if "Hardware" in hl and not d["hardware"].strip():
+        bad("Hardware", "Hardware must not be empty (use `none` or a resource name)")
+    if "Accept" in hl and d["accept"] not in ACCEPTS:
+        bad("Accept", f"Accept `{d['accept']}` is not one of {' | '.join(ACCEPTS)}")
     if "Land" in hl and d["land"] not in DIRECTIVE_LANDS:
         bad("Land", f"Land `{d['land']}` is not one of {' | '.join(DIRECTIVE_LANDS)}")
     if d["deliverable"] == "external":
@@ -454,6 +505,8 @@ def validate_directive(did: str, text: str) -> list[Issue]:
             bad("Land" if "Land" in hl else "Deliverable", "Land must be `none` for Deliverable external")
     elif deliverable_ok and "Verify" in hl and not d["verify"]:
         bad("Verify", f"Verify must not be empty for Deliverable {d['deliverable']}")
+    elif deliverable_ok and "Verify" in hl and d["verify"].strip().lower() == "none":
+        bad("Verify", f"Verify `none` is only for Deliverable external, not {d['deliverable']}")
 
     issues += _check_sections(md, DIRECTIVE_SECTIONS, path, acceptance=True)
     acc = _section(md, "Acceptance")
@@ -462,6 +515,22 @@ def validate_directive(did: str, text: str) -> list[Issue]:
             issues.append(Issue("error", path, 1, f"`## Acceptance` is required for Deliverable {d['deliverable']}"))
         elif not d["acceptance"]:
             issues.append(Issue("error", path, acc["line"], "`## Acceptance` needs at least one `- ` bullet"))
+
+    rev = _section(md, "Review")
+    if d["accept"] == "user":
+        if rev is None:
+            issues.append(Issue("error", path, hl.get("Accept", 1), "`## Review` is required with `Accept: user`"))
+        elif not d["review"]:
+            issues.append(Issue("error", path, rev["line"], "`## Review` needs at least one `- ` bullet"))
+    elif d["deliverable"] == "external":
+        issues.append(Issue("warning", path, hl.get("Deliverable", 1),
+                            "Deliverable external should use `Accept: user` (with a `## Review` section)"))
+
+    for ln, text, pat in _allowed_items(_section(md, "Allowed commands")):
+        if pat is None:
+            issues.append(Issue("error", path, ln, f"Allowed commands bullet needs exactly one backticked pattern: {text}"))
+        elif (why := allowed_pattern_problem(pat)):
+            issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
 
     steps_sec = _section(md, "Steps")
     if steps_sec:
@@ -522,6 +591,29 @@ def _stems(folder: Path) -> list[str]:
     return sorted(f.stem for f in folder.glob("*.md") if f.name not in _SKIP)
 
 
+def hardware_verify_warnings(root: Path, rel: str, d: dict) -> list[Issue]:
+    """Warn when Verify matches a `hardware` pattern in .claude/friday.json: Verify is re-run
+    unattended (fix rounds, landing) without the hardware prompt."""
+    verify = d.get("verify") or ""
+    if not verify:
+        return []
+    ln = next((n for k, _, n in reversed(d["headers"]) if k == "Verify"), 1)
+    out = []
+    for resource, patterns in (load_config(root).get("hardware") or {}).items():
+        for pat in patterns:
+            try:
+                hit = re.search(pat, verify)
+            except re.error:
+                continue
+            if hit:
+                out.append(Issue("warning", rel, ln,
+                                 f"Verify matches hardware pattern `{pat}` ({resource}) but is re-run unattended "
+                                 "without the hardware prompt; run the device step once, record it with "
+                                 "`friday result write`, and make Verify a `friday result check`"))
+                break
+    return out
+
+
 def check_repo(root: Path | str, directive: str | None = None, goal: str | None = None) -> list[Issue]:
     """Issues for one directive, one goal (its file, its listed directives' files and the
     cross-checks), or (both None) every goal and directive file. README.md and TEMPLATE.md are
@@ -559,7 +651,9 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
             add([Issue("error", rel, 1, f"directive file {rel} does not exist")])
             return None
         add(validate_directive(did, t))
-        return parse_directive_full(t)
+        d = parse_directive_full(t)
+        add(hardware_verify_warnings(root, rel, d))
+        return d
 
     def own_goal(gid: str) -> dict | None:
         rel = str(GOAL_DIR / f"{gid}.md")

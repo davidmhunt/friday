@@ -22,19 +22,36 @@ user approves the plan.
    - `Verify:` must be a command that exits 0 only when the directive's goal holds. Prefer the
      project's standard check plus a targeted test you name in the steps. A check that can only be
      done by a person at the bench is not a Verify command: set `Hardware:` and say so.
+   - For an expensive or hardware run (training, sweep, bench test), do not put the run in `Verify:`:
+     it is re-run unattended at every fix round and at landing, without the hardware prompt, and
+     `friday check` warns when it matches a `hardware` pattern. Make the run a step that ends with
+     `friday result write <id> ...`, and set `Verify:` to `friday result check <id> --require 'K OP V' --files`
+     plus the project's cheap tests.
    - Pick `Deliverable:` per directive: `code` (build + tests), `doc` (LaTeX or markdown report),
      `slides` (source in the repo, built PDF) or `external` (Google Slides, Claude Docs: use
      `Verify: none` and `Land: none`).
    - For `doc`, `slides` and `external`, write `## Acceptance`: bullets, each a checkable statement
      a reviewer can grade against the deliverable (sections present, figures regenerate, claims
      sourced, audience and length). It is required for those types and needs at least one `- ` bullet.
+   - `Accept: user` (default `auto`) makes the goal wait for the user: the directive ends
+     `awaiting review` and only the user's `friday accept <id>` marks it `done`. Use it where a person
+     must look at the result, always for `external`. It requires `## Review`: bullets saying what to
+     open and what to look for.
    - Tag a step `[heavy]` only when it needs deeper reasoning (a new algorithm, a numerical method,
      an architecture decision), with one line saying why.
+   - `## Allowed commands` (optional section, before `## Log`): list every command the directive
+     needs that would otherwise prompt and nobody will be there to answer: `friday dispatch --goal *`,
+     `friday nodes --clean *`, `friday release *`, hardware commands, `ssh <robot> ...`. One bullet
+     per command, the command in backticks, `*` matching any text, e.g. ``- `friday dispatch --goal *` ``.
+     Keep each pattern as narrow as possible. No chained commands (`&&`, `;`, `|`), never
+     `friday accept <id>`; `friday check` rejects those. Omit the section if nothing is needed.
    - Set `Node:` when the work needs a particular machine (`tag:gpu`, `tag:<board>`), else `any`.
 3. **Check the format.** Run `friday check --goal <goal>` and fix every error before asking for
    approval. Do not show the user files that do not pass.
 4. **Ask for approval.** Show the goal and each directive's goal, steps, Verify and out-of-scope
-   list in a few lines, and ask the user to approve, amend or drop each. On approval set the goal
+   list in a few lines. Show each directive's `## Allowed commands` verbatim, since approving the
+   plan approves those commands to run without a prompt while that directive is active; say so
+   explicitly. Then ask the user to approve, amend or drop each. On approval set the goal
    and its directives to `Status: approved`, re-run `friday check --goal <goal>`, run `friday init`
    (it merges the friday allow rules into `.claude/settings.json`; it does not commit), and commit
    the plan, adding `.claude/settings.json` when `friday init` changed it (message ends `Directive: <id>`; the plan commit may list several). If this machine does not
@@ -49,7 +66,7 @@ user approves the plan.
    with `friday land --goal <goal>`). Start the first if the user said to go ahead.
 
 Rules
-- Never start implementation in this skill. Planning changes only `docs/goals/` and `docs/directives/`.
+- Never start implementation in this skill. Planning changes only `docs/goals/`, `docs/directives/` and, through `friday init`, `.claude/settings.json`.
 - A directive is small enough when its Verify can be stated in one command and its steps fit on a
   screen. Split anything bigger.
 - If the goal is a one-line fix, say so and offer to just do it instead of planning.

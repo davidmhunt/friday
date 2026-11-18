@@ -7,13 +7,15 @@ disable-model-invocation: true
 
 # /friday:nodes
 
+These run plain `friday` commands. If `friday` is not on PATH, tell the user to run friday install (from the plugin's `bin/friday`) and stop.
+
 Read-only. From the repo root, run:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/bin/friday nodes
+friday nodes
 ```
 
-If the user passed `--check`, run `${CLAUDE_PLUGIN_ROOT}/bin/friday nodes --check` instead.
+If the user passed `--check`, run `friday nodes --check` instead.
 
 Summarise in a few lines. Put nodes that need the user first (unreachable, friday missing from
 PATH, setup incomplete), then the healthy ones. Do not change anything.

@@ -343,11 +343,15 @@ def test_launch_line_verbatim():
     line = ff.launch_line(node, "g1", "/w/proj.friday/g1", "laptop", ["g1-01", "g1-02"], "boss")
     run = ("Run the remaining directives of goal g1, in this order, each with the slash command shown:\n"
            "1. /friday:execute g1-01\n2. /friday:execute g1-02\n"
-           "Start the next only when the previous ended done. Stop at the first that blocks.")
+           "Start the next only when the previous ended done or awaiting review. Stop at the first that blocks.")
     report = ("When the directives of goal g1 are finished or one has blocked, send session boss exactly "
               "one message with SendMessage. If the goal landed, the message is "
               "`done g1 PR <url>` (the URL from the goal landing); after sending it, "
-              "run `friday session-end --goal g1` and stop. If a directive blocked, it is "
+              "run `friday session-end --goal g1` and stop. If the last directive ended and some "
+              "directives ended `awaiting review` (the user must run `friday accept <id>` then "
+              "`friday land --goal g1`), the message is `review g1 <ids> PR-pending` "
+              "(the awaiting ids, comma separated); after sending it, do not run session-end "
+              "and stay open. If a directive blocked, it is "
               "`blocked g1 <id>: <reason>`; after sending it, do not run session-end and stay "
               "open. Send no other message.")
     q = shlex.quote

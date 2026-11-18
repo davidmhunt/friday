@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+## 1.0.0 - 2026-11-18
+
+First stable release of friday as a Claude Code plugin: plan with the user, then execute approved
+directives behind deterministic gates (Verify commands, deny list, `./run`, hardware leases).
+Since 1.0.0-alpha.1 it adds allowed-command lists, `friday result`, user-accepted directives,
+`friday commits`, a complete `--help`, and many fixes.
+
+- A directive may list `## Allowed commands` (bullets of one backticked pattern, `*` matches any text). While that
+  directive is active the PreToolUse hook allows a single simple Bash command matching a pattern, so dispatched
+  and overnight runs need no prompt for `friday dispatch`, `nodes --clean`, `release` or hardware commands. The
+  list is read from the directive as committed on `origin/<Base>` (`git show`), and Base is trusted only when the
+  goal file on `origin/<Base>` names it (never the goal branch or a `friday/*` branch), so edits on the goal
+  branch, including its `Base:` line, cannot widen it; while a directive is active the hook also denies
+  `git push` to anything but the goal's own branch (`friday/<id>` for `Land: pr`);
+  deny rules, `friday accept`, the commit guard and hardware leases still win (a pre-approved hardware command
+  still takes the lease). `friday check` rejects `*` alone, chained or substituted patterns, `friday accept` and
+  deny-list matches; `friday parse --json` reports `allowed`. The plan, directive and hardware skills describe it.
+- `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` records an expensive
+  run once in the tracked `results/<id>.json` (metrics, file sha256 and size, command, HEAD, dirty flag, node,
+  time); `friday result check <id> [--require 'K OP V']... [--files]` is the cheap Verify, failing with one line
+  per unmet condition (no record, commit not an ancestor of HEAD, requirement, changed file). `friday check`
+  warns when a Verify matches a `hardware` pattern. Allow rule `friday result *`; the long-jobs,
+  data-artifacts and plan skills describe the run-once, record, cheap-check pattern (advice, no hook enforces it).
+- `Accept: user` directives (default `auto`) need a `## Review` section and end `awaiting review` at
+  `friday finish`; the goal branch is pushed and later directives continue. Only the user's
+  `friday accept <id> [--note TEXT | --reject REASON]` makes one `done` (a hook denies it to agents);
+  `friday land --goal` exits 7 naming directives still awaiting review. `external` directives should use
+  `Accept: user` (a warning). `awaiting review` is its own state in `friday status`, the snapshot and the
+  dash, counted as needing the user; the fleet session reports `review <goal> <ids> PR-pending`.
+- `friday --help` lists every subcommand and flag (`init`, `session-end`, `unblock`, `dispatch --resume/--unblock`,
+  `status --node`) and names `friday install`; `tests/test_cli_surface.py` compares the parser with the help text
+  and checks that every `friday` command in skills and `workflows/execute.js` matches an allow rule.
+- Allow rules gain `friday init` and `friday session-end` (never `friday accept`); the status, nodes, dispatch and
+  clean skills call plain `friday ...` and say to run `friday install` when it is not on PATH.
+- Allow rules also cover `friday nodes`, `nodes --check` and the dry-runs of `nodes --clean` and `dispatch --goal`;
+  `dispatch --goal <g>`, `nodes --clean <node>` and `release <resource>` stay prompted on purpose (amended by the
+  user 2026-11-18); the surface test names them in its `prompted()` list and exempts only those.
+- `friday nodes --check` reports the number of `friday-*` tmux sessions per node.
+- `tailnet` is in `nodes.example.toml` and the docs/fleet.md key table; `friday dash up` mounts the registry file
+  the CLI resolved and fails clearly when there is none.
+- `friday status --node NAME` (with `--json`/`--push`) names the snapshot's node, ahead of the registry,
+  `node.toml` and the hostname.
+- `friday land --goal` refuses (exit 7, naming the ids) unless every directive is `done`, and
+  re-runs Verify for every directive whose Verify is not `none`.
+- `Verify: none` is accepted by `friday check` only for `Deliverable: external`; `friday verify` and the
+  Stop gate skip it and say so. An empty `Hardware:` value is an error; the unread `verify` config key
+  is gone.
+- The commit guard also refuses commits on the goal's `Base`, and names `friday/<goal>`.
+
+- `friday unblock <id>`: a blocked directive goes back to `approved` with a Log line, in one commit on
+  the goal branch; `friday finish --blocked` sets the goal to `blocked: <id>` and `unblock` sets it back to
+  `running`. `dispatch --resume --unblock` now runs it on the node (one commit, not an uncommitted edit).
+
 Goal model: one planning run is a goal with one branch `friday/<goal>` and one PR.
 
 - Plan amendments are commits on the goal's Base; `friday start` merges Base into the goal branch
@@ -80,11 +133,6 @@ tag `v0.20.0` keeps it.
 - Skills: `directive`, `hardware`, `long-jobs`, `data-artifacts` (v0.20 rules 1, 5-7, 9, 11, 15, 18).
 - `bin/friday`: status, new, start, verify, finish, release.
 - Docs: workflow, runtime (`./run` + dev container), migrating from v0.
-
-<!-- Maintainer reminder: bump VERSION in the same commit as the entry
-     below it documents. VERSION drifted for several releases (stuck at
-     0.10.0 through v0.10.1/v0.11.0/v0.12.0) because this wasn't a single
-     atomic step. -->
 
 ## v0.20.0
 

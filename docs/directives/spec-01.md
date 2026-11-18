@@ -1,5 +1,5 @@
 # spec-01: `docs/spec.md` is the single reference, kept in step with the code by tests
-Status: approved
+Status: done
 Goal: v1-final
 Node: any
 Deliverable: doc
@@ -57,3 +57,17 @@ the code disagree on commands, header fields, statuses, exit codes or hook rules
 - The tutorial and recipes (spec-02); the version bump (rel-01).
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 3381fb4 Amend spec-01 and spec-02: document pre-approved commands (gate-03), as the user asked
+- 6a35439 spec-01 step 1: docs/spec.md, the single reference
+- 2dc7bfe spec-01 step 2: tests/test_spec.py keeps docs/spec.md in step with the parser, headers, exit codes and deny list
+- d5fd6c6 spec-01 step 3: workflow.md rewritten for the goal model, unblock, hooks, pre-approval; fleet.md pre-approval
+- c50b030 spec-01 step 4: HANDOFF deleted, README command list and Status, plan and verifier fixes, Built/Link lines dropped
+- 57ca526 spec-01 step 5: CLAUDE.md for this repo
+- 2399a21 spec-01: land --goal behaviour matches execute.js; CLAUDE.md file pointers and start/Status wording
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_docs.py tests/test_spec.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: gaps fixed in second review: 1. /home/david/Documents/claude_temp/friday.friday/v1-final/docs/spec.md lines 374-376 and 384-386 (same claim in docs/workflow.md walkthrough step 5): The spec says the workflow runs 'friday land --goal' only when no directive of the goal is 'awaiting review', and that the goal PR opens by itself only when every directive is 'Accept: auto'. The code works differently. workflows/execute.js skips 'land --goal' only when the current directive is 'Accept: user'. It never checks earlier directives. So if an earlier 'Accept: user' directive was accepted before the last directive finishes, the goal PR does open by itself, which the spec says cannot happen. If the earlier one is still pending, the workflow runs 'land --goal' and it exits 7. The reader's actions still come out right: running 'land --goal' again is harmless, and the spec covers exit 7. But this is a factual error in the section that answers the 'when does the PR open by itself' acceptance bullet. (evidence: workflows/execute.js:296-305: 'if (awaiting) {...return}' where 'awaiting = d.accept === 'user'' (line 273) refers only to the current directive. Then 'if (!isLast) return', then it runs 'friday land --goal' unconditionally. Nothing reads the other directives' statuses.) 2. /home/david/Documents/claude_temp/friday.friday/v1-final/CLAUDE.md line 9: CLAUDE.md says 'lib/friday_core.py' holds the 'parser, header fields, statuses, exit codes, deny list'. The deny list and the exit codes are not there, so a future agent following CLAUDE.md will look in the wrong file. A smaller inaccuracy in the same file: line 34 says 'friday start' writes a directive's Status, but per the spec 'start' commits nothing to the directive. (evidence: 'DENY = [' is at hooks/friday_hook.py:28, 'DISPATCH_EXIT' is in bin/friday:1133 and 'PREPARE_EXIT' is in lib/friday_fleet.py:299. grep finds none of the three in lib/friday_core.py.)

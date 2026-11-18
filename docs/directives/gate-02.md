@@ -1,5 +1,5 @@
 # gate-02: `friday result` records an expensive run once so Verify stays cheap
-Status: approved
+Status: done
 Goal: v1-final
 Node: any
 Deliverable: code
@@ -37,3 +37,16 @@ record and each way the check fails.
 - A second Verify field, caching Verify results, and uploading result files anywhere.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 7beb61f gate-02 step 1: friday result write records a run in results/<id>.json
+- 721c081 gate-02 step 1: document friday result in the README
+- 0ad7f14 gate-02 step 2: friday result check verifies record, ancestry, requirements and file hashes
+- a2561c7 gate-02 step 3: friday check warns when Verify matches a hardware pattern
+- 3336bd5 gate-02 step 4: allow friday result, skills advise run-once/record/cheap-check
+- 8f04960 gate-02 step 5: CHANGELOG for friday result
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_result.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

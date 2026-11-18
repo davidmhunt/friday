@@ -253,3 +253,11 @@ def test_nodes_check_ready_unreachable_untrusted_together(tmp_path):
     assert len(argv) == 4  # one probe per node
     assert all(a.endswith("bash -s") for a in argv)
     assert (tmp_path / "fakessh.stdin").read_text().count('export PATH="$HOME/.local/bin:$PATH"') == 4
+
+
+def test_nodes_check_reports_session_count(tmp_path):
+    fake = FAKE.replace("FRIDAY_PROBE tmux=ok\\n", "FRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE sessions=3\\n", 1)
+    r = _friday(tmp_path, GOOD, "--check", ssh_script=fake)
+    assert "3 friday-* sessions" in r.stdout
+    assert "FRIDAY_PROBE sessions=" in (tmp_path / "fakessh.stdin").read_text()
+    assert "grep -c '^friday-'" in (tmp_path / "fakessh.stdin").read_text()

@@ -10,6 +10,9 @@ Physical devices are single-user, and a wrong command can cost hours at the benc
 - **Every hardware command asks the user.** The project's `.claude/friday.json` lists device
   patterns under `hardware`; a hook turns any matching command into a permission prompt and takes
   a lease on that resource for this session. Expect the prompt; never rephrase a command to dodge it.
+- **Pre-approved is still leased.** A directive may list a hardware command under
+  `## Allowed commands` (read from its Base); the hook then answers `allow` instead of asking,
+  but still takes the lease, and still denies while another session holds it.
 - **One session per device.** If the hook says a resource is held by another session, stop and
   report it. Do not wait in a loop. The user frees a stale lease with `friday release <resource>`.
   Leases also end when the session ends.

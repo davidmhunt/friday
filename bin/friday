@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
-"""friday: directive bookkeeping for the friday plugin. On PATH while the plugin is enabled.
+"""friday: directive bookkeeping for the friday plugin. Put it on PATH with `friday install`.
 
   friday status [--json]            directives in this repo, the active one here, hardware leases; --json: one node snapshot
+  friday status --node NAME         same, with NAME as the node name (first in the identity order; works with --json and --push)
   friday status --push [--to URL]   post this node's snapshot to the dash (URL: the master's [dash] port by default)
+  friday init                       write the friday allow rules into this repo's .claude/settings.json
   friday new <loop>                 print the next free directive id for a loop (e.g. core -> core-04)
   friday start <id> [--no-gate]     checks, goal order, switch to friday/<goal> (friday/<id> for Land pr), write the marker (commits nothing)
   friday verify [<id>]              run the directive's Verify command (default: the active one)
   friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
-                                    append the Log entry, Status -> done (or blocked: R), one commit, clear the marker
+                                    append the Log entry, Status -> done (blocked: R; awaiting review with Accept: user), one commit, clear the marker
+  friday accept <id> [--note TEXT | --reject REASON]
+                                    the user accepts an `awaiting review` directive (done) or rejects it (blocked: REASON)
+  friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
+  friday session-end --goal <g>     close this dispatched session's own tmux session once its goal is done
   friday land <id> [--base <branch>]
                                     by the directive's Land: pr -> push friday/<id> and open its PR (gh);
                                     goal -> push friday/<goal>, no PR; none -> push nothing
   friday land --goal <g>            reverify the goal's directives, mark it done, push friday/<g>, open its PR
   friday commits <id> [--json]      the directive's own commits since its Base (base, commits, untracked); exit 3 when none, 2 on error
+  friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]
+                                    record an expensive run in results/<id>.json (metrics, file hashes, HEAD, node, time)
+  friday result check <id> [--require 'K OP V']... [--files]
+                                    cheap Verify: record exists, commit is an ancestor of HEAD, requirements hold, files keep their hash; exit 1 otherwise
   friday release <resource>|--all   free a hardware lease (or all of them)
   friday check [<id> | --goal <g> | --all]
                                     validate directive/goal files (default --all); exit 1 on any error
@@ -25,6 +35,8 @@
   friday nodes --clean <node> [--dry-run]   remove finished goals' worktrees on a node
   friday dispatch --goal <g> [--node N] [--report-to S] [--dry-run]
                                     check preconditions, pick a node (refusals have their own exit codes)
+  friday dispatch --goal <g> --resume [--unblock ID]...
+                                    resume the goal's session; --unblock ID (repeatable) unblocks that directive first
   friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
   friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
   friday dash [--bind ADDR]... [--no-self]
@@ -48,6 +60,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import friday_core as fc  # noqa: E402
 import friday_fleet as ff  # noqa: E402
+import friday_result as fr  # noqa: E402
 import friday_status as fs  # noqa: E402
 
 
@@ -81,7 +94,7 @@ def cmd_status_push(a) -> int:
     except (fd.DashError, ff.RegistryError) as e:
         print(f"friday: {e}", file=sys.stderr)
         return 1
-    ok, msg = fd.push(fs.collect(), url)
+    ok, msg = fd.push(fs.collect(node_name=getattr(a, "node", None)), url)
     print(msg if ok else f"friday: {msg}", file=None if ok else sys.stderr)
     return 0 if ok else 1
 
@@ -92,7 +105,7 @@ def cmd_status(a) -> int:
     if getattr(a, "to", None):
         sys.exit("friday: --to only goes with --push")
     if getattr(a, "json", False):
-        print(json.dumps(fs.collect(), indent=2))
+        print(json.dumps(fs.collect(node_name=getattr(a, "node", None)), indent=2))
         return 0
     root = _root()
     ds = {d["id"]: fc.parse_directive_full(fc.directive_path(root, d["id"]).read_text())
@@ -126,6 +139,9 @@ def cmd_status(a) -> int:
         print("(no goal)")
         for d in rest:
             row(d["id"], d)
+    waiting = [i for i, d in ds.items() if d["status"].lower() == "awaiting review"]
+    if waiting:
+        print(f"\nawaiting review (needs you): {', '.join(waiting)}  -> friday accept <id>")
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
@@ -256,7 +272,7 @@ def cmd_start(a) -> int:
     goal = fc.parse_goal(fc.goal_path(root, gid).read_text())
     ids = [x["id"] for x in goal["directives"]]
     undone = [e for e in ids[:ids.index(a.id)]
-              if (fc.read_directive(root, e) or {}).get("status") != "done"]
+              if (fc.read_directive(root, e) or {}).get("status", "").lower() not in ("done", "awaiting review")]
     if undone:
         sys.exit(f"friday: {a.id} comes after {', '.join(undone)} in goal {gid}, which must be done first")
     branch = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
@@ -290,7 +306,7 @@ def cmd_start(a) -> int:
             _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
     _install_hook(root)
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
-                                 "gate": not a.no_gate, "base": base})
+                                 "gate": not a.no_gate, "base": base, "goal_base": goal["base"]})
     print(f"base {base}")
     if _run(["git", "check-ignore", "-q", f"runs/{a.id}/notes.md"], root).returncode != 0:
         print("friday: warning: runs/ is not gitignored; add the line `runs/` to .gitignore "
@@ -305,6 +321,9 @@ def cmd_verify(a) -> int:
     if not did:
         sys.exit("friday: no directive given and none active here")
     d = _need(root, did)
+    if d["verify"].strip().lower() == "none":
+        print(f"{did}: Verify none, not run")
+        return 0
     print(f"$ {d['verify']}", flush=True)
     return subprocess.run(d["verify"], shell=True, cwd=root).returncode
 
@@ -349,6 +368,7 @@ def cmd_finish(a) -> int:
     entry.append(f"Independent review: {a.review or 'not recorded'}")
     if a.blocked:
         entry.append(f"Blocked: {a.blocked}")
+    review = bool(not a.blocked and parsed["accept"] == "user")
     text = dp.read_text()
     block = "\n".join(entry) + "\n"
     mm = re.search(r"(?m)^## Log[ \t]*$", text)
@@ -359,10 +379,13 @@ def cmd_finish(a) -> int:
         end = mm.end() + nxt.start() if nxt else len(text)
         text = text[:end].rstrip("\n") + "\n\n" + block + ("\n" + text[end:] if nxt else "")
     dp.write_text(text)
-    status = f"blocked: {a.blocked}" if a.blocked else "done"
+    status = f"blocked: {a.blocked}" if a.blocked else "awaiting review" if review else "done"
     fc.set_status(root, a.id, status)
     add = [str(dp)]
-    if gp is not None and str(gp.relative_to(root)) in dirty:
+    if a.blocked and gp is not None and gp.exists():
+        _set_goal_status(gp, f"blocked: {a.id}")
+        add.append(str(gp))
+    elif gp is not None and str(gp.relative_to(root)) in dirty:
         add.append(str(gp))
     r = _run(["git", "add", *add], root)
     if r.returncode == 0:
@@ -372,6 +395,100 @@ def cmd_finish(a) -> int:
         sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
     if m and m.get("id") == a.id:
         fc.clear_marker(Path.cwd())
+    print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
+    if review:
+        print(f"{a.id} is awaiting review. Open and check:")
+        for b in parsed["review"] or []:
+            print(f"- {b}")
+        print(f"When satisfied, run: friday accept {a.id}")
+        print(f"To send it back:     friday accept {a.id} --reject REASON")
+    return 0
+
+
+def cmd_accept(a) -> int:
+    """The user accepts (-> done) or rejects (-> blocked: REASON) a directive that is awaiting review.
+    On the goal branch, one commit carrying only the directive file (and the goal file on reject)."""
+    root = _root()
+    d = _need(root, a.id)
+    if d["status"].lower() != "awaiting review":
+        sys.exit(f"friday: {a.id} is '{d['status']}', not awaiting review")
+    dp = fc.directive_path(root, a.id)
+    parsed = fc.parse_directive_full(dp.read_text())
+    gid = parsed["goal"]
+    gp = fc.goal_path(root, gid) if gid and fc.GOAL_RE.match(gid) else None
+    br = fc.current_branch(root)
+    want = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
+    if br != want:
+        sys.exit(f"friday: accept runs on branch {want}, not {br}")
+    today = time.strftime("%Y-%m-%d")
+    if a.reject:
+        line, status, sub = f"Rejected by user: {today} {a.reject}", f"blocked: {a.reject}", "blocked"
+    else:
+        line, status, sub = f"Accepted by user: {today} {a.note or ''}".rstrip(), "done", "accepted"
+    text = dp.read_text()
+    mm = re.search(r"(?m)^## Log[ \t]*$", text)
+    if mm is None:
+        text = text.rstrip("\n") + "\n\n## Log\n\n" + line + "\n"
+    else:
+        nxt = re.search(r"(?m)^## ", text[mm.end():])
+        end = mm.end() + nxt.start() if nxt else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + line + "\n" + ("\n" + text[end:] if nxt else "")
+    dp.write_text(text)
+    fc.set_status(root, a.id, status)
+    add = [str(dp.relative_to(root))]
+    if a.reject and gp is not None and gp.exists():
+        _set_goal_status(gp, f"blocked: {a.id}")
+        add.append(str(gp.relative_to(root)))
+    r = _run(["git", "add", "--", *add], root)
+    if r.returncode == 0:
+        r = _run(["git", "commit", "-q", "-m", f"{a.id}: {sub}\n\nDirective: {a.id}", "--", *add], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
+    print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
+    return 0
+
+
+def _set_goal_status(gp: Path, status: str) -> None:
+    import re
+    gp.write_text(re.sub(r"(?m)^Status:.*$", f"Status: {status}", gp.read_text(), count=1))
+
+
+def cmd_unblock(a) -> int:
+    """Set a `blocked:` directive back to approved (a Log line, one commit) and its goal back to running."""
+    import re
+    root = _root()
+    d = _need(root, a.id)
+    if not d["status"].lower().startswith("blocked"):
+        sys.exit(f"friday: {a.id} is '{d['status']}', not blocked")
+    dp = fc.directive_path(root, a.id)
+    parsed = fc.parse_directive_full(dp.read_text())
+    gid = parsed["goal"]
+    gp = fc.goal_path(root, gid) if gid and fc.GOAL_RE.match(gid) else None
+    br = fc.current_branch(root)
+    want = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
+    if br != want:
+        sys.exit(f"friday: unblock runs on branch {want}, not {br}")
+    was = d["status"]
+    text = dp.read_text()
+    line = f"### {time.strftime('%Y-%m-%d')}\nUnblocked: was {was}\n"
+    mm = re.search(r"(?m)^## Log[ \t]*$", text)
+    if mm is None:
+        text = text.rstrip("\n") + "\n\n## Log\n\n" + line
+    else:
+        nxt = re.search(r"(?m)^## ", text[mm.end():])
+        end = mm.end() + nxt.start() if nxt else len(text)
+        text = text[:end].rstrip("\n") + "\n\n" + line + ("\n" + text[end:] if nxt else "")
+    dp.write_text(text)
+    fc.set_status(root, a.id, "approved")
+    add = [str(dp.relative_to(root))]
+    if gp is not None and gp.exists() and fc.parse_goal(gp.read_text())["status"].lower().startswith("blocked"):
+        _set_goal_status(gp, "running")
+        add.append(str(gp.relative_to(root)))
+    r = _run(["git", "add", "--", *add], root)
+    if r.returncode == 0:
+        r = _run(["git", "commit", "-q", "-m", f"{a.id}: unblock\n\nDirective: {a.id}", "--", *add], root)
+    if r.returncode != 0:
+        sys.exit(f"friday: commit failed: {(r.stderr or r.stdout).strip()}")
     print(_run(["git", "rev-parse", "HEAD"], root).stdout.strip())
     return 0
 
@@ -395,7 +512,8 @@ def cmd_land(a) -> int:
     Land goal: push friday/<goal>, no PR. Land none: push nothing.
     Exit 0: done (for pr, last line `PR: <url>`). 3: push failed. 4: pushed, base not on origin.
     5: pushed, no PR because gh is missing or signed out (last line `COMPARE: <url>`).
-    6 (--goal only): a directive's Verify failed on the goal branch; nothing pushed."""
+    6 (--goal only): a directive's Verify failed on the goal branch; nothing pushed.
+    7 (--goal only): a listed directive is not done, e.g. awaiting review (ids printed); nothing run or pushed."""
     import os
     if bool(a.id) == bool(a.goal):
         sys.exit("friday: land takes <id> or --goal <g>")
@@ -483,8 +601,8 @@ def _set_goal_status(path: Path, status: str, log: str | None = None) -> None:
 
 
 def land_goal(gid: str) -> int:
-    """`friday land --goal <g>`: reverify every Land goal directive on friday/<g>, mark the goal
-    done (one commit), push and open or update the goal's PR. Exit codes as in cmd_land, plus 6."""
+    """`friday land --goal <g>`: reverify every directive that is not Verify none on friday/<g>, mark the goal
+    done (one commit), push and open or update the goal's PR. Exit codes as in cmd_land, plus 6 and 7."""
     import os
     import tempfile
     root = _root()
@@ -505,20 +623,23 @@ def land_goal(gid: str) -> int:
             continue
         text = dp.read_text()
         d = fc.parse_directive_full(text)
-        if d["land"] != "goal":
-            continue
         if d["status"] != "done":
             undone.append(f"{x['id']} ({d['status']})")
         rows.append((x["id"], d, text))
     if missing:
         sys.exit(f"friday: goal {gid} lists {', '.join(missing)} with no directive file")
     if undone:
-        sys.exit(f"friday: goal {gid} has directives not done: {', '.join(undone)}")
+        print(f"friday: goal {gid} has directives not done: {', '.join(undone)}", file=sys.stderr)
+        waiting = [x for x in undone if x.endswith("(awaiting review)")]
+        if waiting:
+            print("friday: still awaiting review (the user runs `friday accept <id>`): "
+                  + ", ".join(w.split()[0] for w in waiting), file=sys.stderr)
+        return 7
     results, failed = {}, []
     for did, d, _ in rows:
-        if d["deliverable"] == "external":
-            results[did] = "n/a (external)"
-            print(f"{did}: Verify n/a (external)")
+        if d["verify"].strip().lower() == "none":
+            results[did] = "n/a (none)"
+            print(f"{did}: Verify none, not run")
             continue
         print(f"{did}: $ {d['verify']}", flush=True)
         r = subprocess.run(d["verify"], shell=True, cwd=root, capture_output=True, text=True)
@@ -613,6 +734,24 @@ def cmd_release(a) -> int:
     return 0
 
 
+def cmd_result(a) -> int:
+    root = _root()
+    try:
+        if a.action == "write":
+            p = fr.write(root, a.id, metrics=a.metric or [], files=a.file or [], cmd=a.cmd or "", note=a.note or "")
+            print(f"wrote {p.relative_to(root)}")
+            return 0
+        if a.action == "check":
+            fails = fr.check(root, a.id, requires=a.require or [], files=a.files)
+            for line in fails:
+                print(f"friday result check {a.id}: {line}")
+            return 1 if fails else 0
+    except fr.ResultError as e:
+        print(f"friday result: {e}", file=sys.stderr)
+        return 1
+    return 2
+
+
 def _remote_path(p: str) -> str:
     """Shell word for a remote path; a leading ~ becomes $HOME so it expands on the node."""
     if p == "~":
@@ -660,6 +799,8 @@ def probe_script(node) -> str:
         "echo FRIDAY_PROBE reach=ok",
         'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
         'for t in tmux git; do command -v $t >/dev/null 2>&1 && echo "FRIDAY_PROBE $t=ok" || echo "FRIDAY_PROBE $t=missing"; done',
+        "n=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c '^friday-'); "
+        'echo "FRIDAY_PROBE sessions=${n:-0}"',
         f'[ -e {plug}/.git ] && echo "FRIDAY_PROBE plugin=ok" || echo "FRIDAY_PROBE plugin=missing"',
         'f=$(command -v friday 2>/dev/null)',
         f'if [ -z "$f" ]; then echo "FRIDAY_PROBE friday=missing"',
@@ -710,7 +851,7 @@ def check_node(node) -> tuple:
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
-               f"plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
+               f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
     return summary, fixes
 
 
@@ -1196,14 +1337,14 @@ def resume_checks(root: Path, a) -> dict:
         print(f"  {i}{note}" if note else f"  {i}  [{s}]")
     for u in unblock:
         if a.dry_run:
-            print(f"would reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
+            print(f"would reset {u} to approved in the worktree (one commit)")
             continue
         argv, stdin = ff.ssh_cmd(n, ff.unblock_script(n, gid, repo_name, u))
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
         if r.returncode != 0 or f"FRIDAY_UNBLOCKED {u}" not in r.stdout:
             _refuse("unblock", f"could not reset {u} on {n.name} ({(r.stderr or r.stdout).strip()})",
                     "edit its Status in the worktree by hand")
-        print(f"reset {u} to approved in the worktree (uncommitted; the finish commit carries it)")
+        print(f"reset {u} to approved in the worktree (one commit)")
     return {"node": n, "repo": repo_name, "state": st, "remaining": [i for i, _ in todo],
             "report_to": a.report_to or (rec or {}).get("report_to") or reg.report_to}
 
@@ -1218,7 +1359,7 @@ def resume_restart(root: Path, a) -> int:
         _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
     host = socket.gethostname()
     launch = ff.launch_line(n, gid, st["path"], host, c["remaining"], c["report_to"])
-    kill = f"tmux kill-session -t =friday-{gid}"
+    kill = f"tmux kill-session -t '=friday-{gid}'"
     if a.dry_run:
         if st["session"]:
             print(f"kill: {kill}")
@@ -1372,7 +1513,7 @@ def cmd_parse(a) -> int:
         ids = [x["id"] for x in gd]
         out = {"id": d["id"], "title": d["title"], "status": d["status"], "goal": d["goal"],
                "base": g["base"] if g else None, "node": d["node"], "deliverable": d["deliverable"],
-               "land": d["land"], "verify": d["verify"], "hardware": d["hardware"],
+               "land": d["land"], "accept": d["accept"], "review": d["review"] or [], "verify": d["verify"], "hardware": d["hardware"],
                "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"]} for s in d["steps"]],
                "acceptance": d["acceptance"] or [], "goal_directives": gd,
                "position": ids.index(a.id) + 1 if a.id in ids else None,
@@ -1403,7 +1544,7 @@ def cmd_session_end(a) -> int:
     m = re.search(r"(?m)^Status:\s*(\S+)", gp.read_text())
     if not m or m.group(1) != "done":
         return no(f"goal {a.goal} is '{m.group(1) if m else '?'}', not done")
-    cmd = f"sleep 10; tmux kill-session -t =friday-{a.goal}"
+    cmd = f"sleep 10; tmux kill-session -t '=friday-{a.goal}'"
     subprocess.Popen(["setsid", "sh", "-c", cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
     print(f"session-end: scheduled in 10s: {cmd}")
@@ -1490,8 +1631,15 @@ def dash_compose(action: str) -> int:
         print("friday dash: docker is not installed or not on PATH; install Docker to use `friday dash up`", file=sys.stderr)
         return 1
     compose = ff.PLUGIN_ROOT / "deploy" / "compose.yaml"
+    reg = ff.find_nodes_file()
+    if reg is None and action == "up":
+        print("friday dash: no registry file found (looked for $FRIDAY_NODES, <plugin root>/nodes.toml, "
+              "~/.config/friday/nodes.toml); copy nodes.example.toml to one of them and edit it, then run `friday dash up` again",
+              file=sys.stderr)
+        return 1
     argv = ["docker", "compose", "-f", str(compose)] + (["up", "-d", "--build"] if action == "up" else ["down"])
     env = dict(os.environ)
+    env["FRIDAY_NODES_FILE"] = str(Path(reg).resolve()) if reg else "/dev/null"  # mounted by compose.yaml
     if action == "up":
         token = ""
         if shutil.which("gh"):
@@ -1513,15 +1661,18 @@ def dash_compose(action: str) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(prog="friday", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.set_defaults(f=cmd_status)
+    s = sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.add_argument("--push", action="store_true"); s.add_argument("--to", metavar="URL"); s.add_argument("--node", metavar="NAME"); s.set_defaults(f=cmd_status)
     s = sub.add_parser("init"); s.set_defaults(f=cmd_init)
     s = sub.add_parser("new"); s.add_argument("loop"); s.set_defaults(f=cmd_new)
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("accept"); s.add_argument("id"); s.add_argument("--note", metavar="TEXT"); s.add_argument("--reject", metavar="REASON"); s.set_defaults(f=cmd_accept)
+    s = sub.add_parser("unblock"); s.add_argument("id"); s.set_defaults(f=cmd_unblock)
     s = sub.add_parser("commits"); s.add_argument("id"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_commits)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
+    s = sub.add_parser("result"); s.add_argument("action", choices=["write", "check"]); s.add_argument("id"); s.add_argument("--require", action="append", metavar="'K OP V'"); s.add_argument("--files", action="store_true"); s.add_argument("--metric", action="append", metavar="K=V"); s.add_argument("--file", action="append", metavar="PATH"); s.add_argument("--cmd", metavar="TEXT"); s.add_argument("--note", metavar="TEXT"); s.set_defaults(f=cmd_result)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
     s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")

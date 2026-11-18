@@ -425,7 +425,7 @@ def run_text(goal: str, directives: list) -> str:
     steps = "\n".join(f"{n}. /friday:execute {d}" for n, d in enumerate(directives, 1))
     return (f"Run the remaining directives of goal {goal}, in this order, each with the slash "
             f"command shown:\n{steps}\n"
-            "Start the next only when the previous ended done. Stop at the first that blocks.")
+            "Start the next only when the previous ended done or awaiting review. Stop at the first that blocks.")
 
 
 def report_text(goal: str, report_to: str) -> str:
@@ -433,7 +433,11 @@ def report_text(goal: str, report_to: str) -> str:
     return (f"When the directives of goal {goal} are finished or one has blocked, send session "
             f"{report_to} exactly one message with SendMessage. If the goal landed, the "
             f"message is `done {goal} PR <url>` (the URL from the goal landing); after sending it, "
-            f"run `friday session-end --goal {goal}` and stop. If a directive "
+            f"run `friday session-end --goal {goal}` and stop. If the last directive ended and some "
+            f"directives ended `awaiting review` (the user must run `friday accept <id>` then "
+            f"`friday land --goal {goal}`), the message is `review {goal} <ids> PR-pending` "
+            f"(the awaiting ids, comma separated); after sending it, do not run session-end "
+            f"and stay open. If a directive "
             f"blocked, it is `blocked {goal} <id>: <reason>`; after sending it, do not run "
             f"session-end and stay open. Send no other message.")
 
@@ -511,7 +515,7 @@ git -C "$wt" status --porcelain -- . ':(exclude)runs' 2>/dev/null | sed 's/^/FRI
 
 def unblock_script(node, goal: str, repo_name: str, did: str) -> str:
     """Remote script for `dispatch --resume --unblock <did>`: in the worktree's own copy of the directive,
-    reset a `blocked: ...` Status to `approved` (an uncommitted edit). Prints `FRIDAY_UNBLOCKED <id>`, or
+    run `friday unblock` there (blocked -> approved, one commit). Prints `FRIDAY_UNBLOCKED <id>`, or
     `FRIDAY_NOT_BLOCKED <id> <status>` and changes nothing."""
     import shlex
     wt = remote_path(worktree_path(node, repo_name, goal))
@@ -524,7 +528,10 @@ case "$st" in
   blocked:*) ;;
   *) echo "FRIDAY_NOT_BLOCKED {did} ${{st:-?}}"; exit 0 ;;
 esac
-awk 'BEGIN{{d=0}} !d && /^Status:/ {{print "Status: approved"; d=1; next}} {{print}}' "$f" > "$f.tmp.$$" && cat "$f.tmp.$$" > "$f" && rm -f "$f.tmp.$$"
+cd "$wt" || exit 1
+fr=$(command -v friday || true)
+[ -n "$fr" ] || fr={remote_path(node.plugin_dir)}/bin/friday
+"$fr" unblock {did} >&2 || {{ echo "FRIDAY_UNBLOCK_FAILED {did}"; exit 0; }}
 echo "FRIDAY_UNBLOCKED {did}"
 """
 
@@ -792,7 +799,7 @@ while read -r repo goal wt; do
     if ! idle "$goal"; then echo "FRIDAY_KEPT $id session friday-$goal is not idle"; continue; fi
   fi
   if [ "$DRY" = 1 ]; then
-    [ "$has_session" = 1 ] && echo "FRIDAY_WOULD $id: tmux kill-session -t =friday-$goal"
+    [ "$has_session" = 1 ] && echo "FRIDAY_WOULD $id: tmux kill-session -t '=friday-$goal'"
     echo "FRIDAY_WOULD $id: git worktree remove $wt"
     echo "FRIDAY_WOULD $id: git -C $clone branch -D friday/$goal"
     echo "FRIDAY_WOULD $id: git -C $clone worktree prune"

@@ -6,12 +6,14 @@ disable-model-invocation: true
 
 # /friday:status
 
+These run plain `friday` commands. If `friday` is not on PATH, tell the user to run friday install (from the plugin's `bin/friday`) and stop.
+
 Read-only. From the repo root, run:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/bin/friday status
+friday status
 ```
 
-Summarise the output in a few lines. Put items that need the user first (blocked directives,
+Summarise the output in a few lines. Put items that need the user first (blocked directives, directives awaiting review,
 directives awaiting approval, held hardware leases), then the active directive, then the rest.
 Do not change anything.

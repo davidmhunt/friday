@@ -1,5 +1,5 @@
 # gate-01: A directive with `Accept: user` waits for `friday accept` before its goal can land
-Status: approved
+Status: done
 Goal: v1-final
 Node: any
 Deliverable: code
@@ -51,3 +51,19 @@ then. No agent can run `friday accept`. tests/test_accept_gate.py proves each of
 - New deliverable types.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- a761a9a gate-01 step 1: Accept: auto|user header, awaiting review status, ## Review section; external without Accept: user warns
+- c428b2e gate-01 step 2: friday finish writes awaiting review for Accept: user; friday accept [--note|--reject]
+- fc1bcd9 gate-01 step 2: document friday accept in the README
+- e7b98b1 gate-01 step 3: friday start treats awaiting review as finished for order; land --goal exit 7 names awaiting-review directives
+- 97a9d2d gate-01 step 4: hook denies friday accept (direct, python3, uv run, ssh, bash -c)
+- 6f39531 gate-01 step 5: execute.js pushes and skips land --goal when awaiting review; fleet session reports review <goal> <ids> PR-pending
+- 76d76e1 gate-01 step 6: awaiting review is its own state in friday status, the snapshot and the dash, counted as needing the user
+- 44e9b1c gate-01 step 7: accept is on the user-only list in the surface test; directive and plan skills describe Accept and Review; CHANGELOG
+- 8a138e0 gate-01: execute.js reports awaiting review with bullets and friday accept for Land none and Land pr too
+Notes:
+2026-11-18: Dispatched from thinkpadP15v3 to cpsl-homebase
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_accept_gate.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: gaps fixed in second review: 1. /home/david/Documents/claude_temp/friday.friday/v1-final/workflows/execute.js:273 (and :278): The awaiting-review branch (line 287) is only reached for Land goal. A directive with 'Land: none' returns at line 273, and one with 'Land: pr' returns at 278-281. Both use 'head' = ''{id} done: ...', so the workflow reports the directive as done and never shows the '## Review' bullets or the 'friday accept <id>' command. 'Deliverable: external' must have 'Land: none', and this directive says external directives must use 'Accept: user'. So the main use case for the gate ends with a final message saying it is done, while the file says 'awaiting review' and the goal cannot land. Step 5 says that after finish, an awaiting-review directive ends with the review bullets and the commands the user runs. No test covers Land none or Land pr with Accept: user: test_awaiting_review_branch_skips_land_goal only checks the source text after 'runLand(landCmd'. (evidence: execute.js:272 'const head = ''{id} done: ...''; :273 'if (landMode === 'none') return ''{head} Land none: committed only, nothing pushed.''; :287 'if (d.accept === 'user') {' comes after both early returns. lib/friday_core.py validate_directive requires Land none for external and warns when external lacks Accept: user.)

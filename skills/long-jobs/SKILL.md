@@ -21,3 +21,16 @@ turn re-reads the whole context. Long runs go to the `runner` agent, which is sm
   is bad. Skipping is for isolated faults only.
 - **Report numbers with their source:** the log path and the exact command and commit that
   produced them.
+
+## Run once, record, check cheaply
+
+A training run, sweep or bench test should run once, as its own step, not inside Verify (Verify is
+re-run at every fix round and at landing). After it finishes, record it:
+
+    friday result write <id> --metric acc=0.91 --file runs/<id>/model.pt --cmd "<exact command>"
+
+This writes the tracked `results/<id>.json` (metrics, file hashes, commit, node, time). The
+directive's Verify is then the seconds-long `friday result check <id> --require 'acc >= 0.9' --files`.
+
+This is advice. These two skills (long-jobs, data-artifacts) are guidance only; no hook enforces
+them, and nothing stops a Verify from re-running the whole job.

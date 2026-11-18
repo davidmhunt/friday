@@ -34,6 +34,9 @@ One or two sentences: the result, and how a reader can tell it holds.
 ## Acceptance
 - (required for doc, slides, external) a checkable statement about the deliverable.
 
+## Review
+- (required with `Accept: user`) what the user should open and what to look for.
+
 ## Out of scope
 - ...
 
@@ -49,16 +52,18 @@ value are stripped. Each key once (a duplicate is an error); an unknown key is a
 
 | Key | Required | Allowed values (error otherwise) |
 |---|---|---|
-| Status | yes | `proposed`, `approved`, `running@<host>`, `done`, `blocked: <reason>` (non-empty reason) |
+| Status | yes | `proposed`, `approved`, `running@<host>`, `done`, `awaiting review`, `blocked: <reason>` (non-empty reason) |
 | Goal | yes | a goal name: `^[a-z0-9][a-z0-9-]*$` |
 | Node | yes | `any`, `tag:<x>`, `host:<x>` |
 | Deliverable | yes | `code`, `doc`, `slides`, `external` |
 | Land | no (default `goal`) | `goal`, `pr`, `none` |
+| Accept | no (default `auto`) | `auto`, `user`: with `user` the directive ends `awaiting review` and only the user's `friday accept <id>` makes it `done` |
 | Verify | yes | one shell command, run from the repo root; must not be empty |
 | Hardware | yes | any text: `none`, or the resources touched (hardware commands always ask the user) |
 
 Rules that tie keys together (errors): for `Deliverable: external`, `Verify` must be `none` and
-`Land` must be `none` (an omitted Land defaults to `goal` and so fails).
+`Land` must be `none` (an omitted Land defaults to `goal` and so fails). `external` should use `Accept: user` (a warning
+otherwise). `Accept: user` requires `## Review` with at least one `- ` bullet (an error otherwise).
 
 Sections (`## `; fenced code blocks are not scanned): `Goal`, `Steps`, `Out of scope`, `Log` are
 required, once each, in that order, and `## Log` must be last. Missing, duplicated, out of order, or
@@ -66,6 +71,17 @@ anything after `## Log` is an error. `## Acceptance` is optional for `code`, app
 and may go anywhere before `## Log`. For `doc`, `slides` and `external` it is required and needs at
 least one `- ` bullet (a bullet may continue on indented lines); missing or empty is an error.
 Other sections are allowed before `## Log`.
+
+`## Allowed commands` is optional (at most once, before `## Log`): bullets, each holding one
+backticked command pattern where `*` matches any text. While the directive is active in a
+worktree, the PreToolUse hook allows a Bash command that is one simple command matching a
+pattern, without a prompt. The list is read from the directive as committed on the goal's Base on
+origin (`git show origin/<Base>:docs/directives/<id>.md`), the plan the user approved, so edits on
+the goal branch never widen it. Base is trusted only when the goal file on `origin/<Base>` names the
+same Base, and never when it is the goal branch or a `friday/*` branch. Deny rules, the commit guard, `friday accept <id>` and hardware leases still
+win. `friday check` errors on a pattern that is only `*`, contains `&&`, `;`, `|` or a backtick
+substitution, starts with `friday accept <id>`, or matches the hook's deny list. `friday parse --json`
+returns it as `allowed`.
 
 `## Steps` is a numbered list `1.`, `2.`, ... with no gaps, in order; indented lines continue an item.
 Any other non-blank, unindented line in the section is an error, and so is an empty list. A step
@@ -131,6 +147,12 @@ must name this goal.
   sets Status `done` or `blocked: <reason>`, and makes ONE commit `<id>: record results` (or
   `<id>: blocked`) with the directive and goal files. It refuses when other tracked files are
   uncommitted, and without a base (`--base`, else the marker's). It clears the marker.
+- `Accept: user`: after Verify and the independent review `friday finish <id>` writes
+  `Status: awaiting review`, prints the `## Review` bullets and the accept command, and the goal
+  branch is pushed; later directives still run (`start` treats awaiting review as finished for order).
+  `friday accept <id> [--note TEXT | --reject REASON]` (the user only; a hook denies it for agents)
+  appends `Accepted by user: <date> <note>` and sets `done` (or `blocked: <reason>`) in one commit on
+  the goal branch. `friday land --goal` exits 7 naming directives still awaiting review.
 - A directive adds exactly one bookkeeping commit: the finish record. Steps commit only when they
   changed tracked files (code, docs, data, configs); a step that only reproduces, measures or
   inspects appends findings to the untracked `runs/<id>/notes.md` and commits nothing.
@@ -160,9 +182,9 @@ must name this goal.
 | Deliverable | Source and output | Verify | Land | Log line |
 |---|---|---|---|---|
 | `code` | code and tests in the repo | build + tests | `goal` (or `pr`) | commits, Verify result |
-| `doc` (LaTeX, markdown reports) | source in the repo; built PDF or rendered report | build with no undefined refs, bibliography resolves, figures regenerate from scripts | `goal` | `Built: <path or link to the PDF>`; the PR links it |
-| `slides` | prefer source in the repo: Beamer, Marp, or python-pptx built from results and figures; built PDF in `runs/<id>/` | build, no overflowing text, every figure produced in the repo | `goal` | `Built: runs/<id>/<file>.pdf` |
-| `external` (Google Slides, Claude Docs) | lives outside the repo | `none` | `none` | `Link: <url>`; the verifier grades `## Acceptance`, then the user reviews |
+| `doc` (LaTeX, markdown reports) | source in the repo; built PDF or rendered report | build with no undefined refs, bibliography resolves, figures regenerate from scripts | `goal` | commits, Verify result; the built file's path if you name it in a note |
+| `slides` | prefer source in the repo: Beamer, Marp, or python-pptx built from results and figures; built PDF in `runs/<id>/` | build, no overflowing text, every figure produced in the repo | `goal` | commits, Verify result; the PDF is in `runs/<id>/` |
+| `external` (Google Slides, Claude Docs) | lives outside the repo | `none` | `none` | the link, in a step note; the verifier grades `## Acceptance`, then the user reviews |
 
 `doc`, `slides` and `external` need `## Acceptance` (see above): each bullet is a statement a
 reviewer can grade against the deliverable (sections present, figures regenerate, claims sourced,

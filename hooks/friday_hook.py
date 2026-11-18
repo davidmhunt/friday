@@ -56,6 +56,32 @@ def check_deny(cmd: str) -> str | None:
     return None
 
 
+_SHELLISH = {"ssh", "bash", "sh", "zsh", "dash", "eval", "xargs", "docker", "podman", "run", "watch", "env"}
+
+
+def _runs_accept(cmd: str, depth: int = 0) -> bool:
+    """True when some simple command in `cmd` invokes `friday accept`: directly, through
+    `python3 .../bin/friday`, `uv run`, or as an argument string (ssh host '...', bash -c '...')."""
+    for simple in fc.split_commands(cmd):
+        argv = fc.argv_of(simple)
+        for i, a in enumerate(argv):
+            if Path(a).name in ("friday", "friday.py"):
+                nxt = [x for x in argv[i + 1:] if not x.startswith("-")]
+                if nxt and nxt[0] == "accept":
+                    return True
+            if (depth < 4 and i and re.search(r"\s", a)
+                    and any(Path(x).name in _SHELLISH for x in argv[:i]) and _runs_accept(a, depth + 1)):
+                return True
+    return False
+
+
+def check_accept(cmd: str) -> str | None:
+    if _runs_accept(cmd):
+        return ("`friday accept` is not allowed from an agent session: only the user accepts a directive "
+                "that is awaiting review. Print the review bullets and the command, and stop.")
+    return None
+
+
 def check_run_only(cmd: str, cfg: dict) -> str | None:
     tools = set(cfg.get("run_only") or [])
     wrapper = cfg.get("run_wrapper", "./run")
@@ -71,6 +97,20 @@ def check_run_only(cmd: str, cfg: dict) -> str | None:
             return (f"In this project, builds, tests and scripts run through `{wrapper}` "
                     f"(dev container or native, per machine). Use: {wrapper} {simple.strip()}")
     return None
+
+
+def _goal_and_base(cwd: Path, did: str) -> tuple[str, str]:
+    """The directive's goal id and that goal's Base branch ('' when unreadable)."""
+    root = fc.repo_root(cwd)
+    if not root:
+        return "", ""
+    try:
+        m = re.search(r"(?m)^Goal:\s*(\S+)\s*$", fc.directive_path(root, did).read_text())
+        goal = m.group(1) if m else ""
+        base = fc.parse_goal(fc.goal_path(root, goal).read_text())["base"] if goal else ""
+    except OSError:
+        return "", ""
+    return goal, base.strip()
 
 
 def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
@@ -97,9 +137,12 @@ def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
             continue
         marker = fc.read_marker(target)
         branch = fc.current_branch(target)
+        if marker:
+            goal, base = _goal_and_base(target, marker["id"])
+            if branch in ("main", "master") or (base and branch == base):
+                dest = f"friday/{goal}" if goal else f"friday/{marker['id']}"
+                return "deny", f"Directive {marker['id']} commits go on the goal branch, not {branch}. Create or switch to {dest}."
         if branch in ("main", "master"):
-            if marker:
-                return "deny", f"Directive {marker['id']} commits go on its own branch, not {branch}. Create or switch to friday/{marker['id']}."
             return "ask", f"Commit directly on {branch}?"
     return None
 
@@ -120,6 +163,137 @@ def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     return None
 
 
+def _one_simple_command(cmd: str) -> bool:
+    """True when `cmd` is a single simple command: no chaining, pipes, backgrounding, newlines or
+    substitutions anywhere (quoted or not; conservative)."""
+    c = cmd.strip()
+    if not c or any(x in c for x in ("&", ";", "|", "`", "$(", "<(", ">(", "\n", "\r")):
+        return False
+    return len(fc.split_commands(c)) == 1
+
+
+def _git_show(root: Path, spec: str) -> str | None:
+    r = subprocess.run(["git", "show", spec], cwd=str(root), capture_output=True, text=True, timeout=20)
+    return r.stdout if r.returncode == 0 else None
+
+
+def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
+    """A command matching `## Allowed commands` of the active directive, as committed on
+    origin/<Base> (the plan the user approved), so a goal-branch edit cannot widen it. Base comes from
+    the marker (outside the working tree) and is trusted only when it is not a friday/* branch and the
+    goal file on origin/<Base> names the same Base. None (no decision) on any doubt."""
+    try:
+        marker = fc.read_marker(cwd)
+        root = fc.repo_root(cwd)
+        if not marker or not root or not _one_simple_command(cmd):
+            return None
+        did = marker["id"]
+        base = str(marker.get("goal_base") or "").strip()
+        if not base or base.startswith("friday/") or base.startswith("-"):
+            return None
+        text = _git_show(root, f"origin/{base}:docs/directives/{did}.md")
+        if text is None:
+            return None
+        parsed = fc.parse_directive_full(text)
+        goal = (parsed.get("goal") or "").strip()
+        if not goal or not fc.GOAL_RE.match(goal) or base == f"friday/{goal}":
+            return None
+        gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
+        if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
+            return None
+        c = cmd.strip()
+        for pat in parsed.get("allowed") or []:
+            rx = ".*".join(re.escape(part) for part in pat.split("*"))
+            if re.fullmatch(rx, c, re.S):
+                return "allow", f"pre-approved in {did} (on {base})"
+    except (OSError, subprocess.SubprocessError, KeyError, ValueError):
+        return None
+    return None
+
+
+_PUSH_VALUE_OPTS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--signed", "--recurse-submodules"}
+
+
+def _push_targets(args: list[str], target: Path) -> list[str] | None:
+    """Branch names a `git push` with these args (after `push`) updates; None when not knowable
+    (--all, --mirror, an unreadable current branch or upstream)."""
+    pos, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--all", "--mirror", "--branches"):
+            return None
+        if a in _PUSH_VALUE_OPTS:
+            i += 2
+            continue
+        if a == "--":
+            pos += args[i + 1:]
+            break
+        if not a.startswith("-"):
+            pos.append(a)
+        i += 1
+    cur = fc.current_branch(target)
+    specs = pos[1:]
+    if not specs:
+        if len(pos) == 1:                       # `git push origin`: the current branch
+            return [cur] if cur else None
+        up = fc._git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], target)
+        if not up:
+            return [cur] if cur else None
+        return [up.split("/", 1)[1] if "/" in up else up]
+    out = []
+    for sp in specs:
+        dst = sp.lstrip("+").rsplit(":", 1)[-1]
+        if dst in ("", "HEAD", "@"):
+            if not cur:
+                return None
+            dst = cur
+        out.append(dst[len("refs/heads/"):] if dst.startswith("refs/heads/") else dst)
+    return out
+
+
+def check_push(cmd: str, cwd: Path) -> str | None:
+    """While a directive is active, `git push` may update only the goal's own branch (friday/<id>
+    for `Land: pr`). Judged in the repository the command pushes from (`cd DIR &&`, `git -C DIR`).
+    This keeps origin/<Base> from being edited into a trusted source by the agent."""
+    here = cwd
+    for simple in fc.split_commands(cmd):
+        argv = fc.argv_of(simple)
+        if not argv:
+            continue
+        if argv[0] == "cd":
+            if len(argv) > 1 and argv[1] != "-":
+                here = here / Path(argv[1]).expanduser()
+            continue
+        if len(argv) < 2 or argv[0] != "git":
+            continue
+        rest, target = argv[1:], here
+        while rest and rest[0] in ("-C", "-c") and len(rest) > 1:
+            if rest[0] == "-C":
+                target = target / Path(rest[1]).expanduser()
+            rest = rest[2:]
+        if not rest or rest[0] != "push":
+            continue
+        marker = fc.read_marker(target)
+        if not marker:
+            continue
+        did = marker["id"]
+        goal, _ = _goal_and_base(target, did)
+        ok = {f"friday/{goal}"} if goal else set()
+        try:
+            root = fc.repo_root(target)
+            land = fc.parse_directive_full(fc.directive_path(root, did).read_text()).get("land", "")
+        except (OSError, AttributeError):
+            land = ""
+        if land.strip().lower() == "pr":
+            ok = {f"friday/{did}"}
+        dests = _push_targets(rest[1:], target)
+        if dests is None or not dests or any(d not in ok for d in dests):
+            return (f"While {did} is active, `git push` may only update {' or '.join(sorted(ok)) or 'the goal branch'}"
+                    f" (got {', '.join(dests) if dests else 'an unjudgeable target'}). Push the goal branch explicitly: "
+                    f"git push origin {sorted(ok)[0] if ok else '<goal branch>'}.")
+    return None
+
+
 def pretool(payload: dict) -> None:
     if payload.get("tool_name") != "Bash":
         return
@@ -130,12 +304,19 @@ def pretool(payload: dict) -> None:
     results: list[tuple[str, str]] = []
     if (r := check_deny(cmd)):
         results.append(("deny", r))
+    if (r := check_accept(cmd)):
+        results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
+        results.append(("deny", r))
+    if (r := check_push(cmd, cwd)):
         results.append(("deny", r))
     if (r := check_commit(cmd, cwd)):
         results.append(r)
+    pre = None if any(d == "deny" for d, _ in results) else check_preapproved(cmd, cwd)
     if not any(d == "deny" for d, _ in results) and (r := check_hardware(cmd, cfg, payload.get("session_id", ""))):
-        results.append(r)
+        results.append(("allow", f"{pre[1]}. {r[1]}") if pre and r[0] == "ask" else r)
+    if pre:
+        results.append(pre)
     if results:
         decision = max(results, key=lambda r: DECISION_RANK[r[0]])[0]
         _emit_pretool(decision, " ".join(r for d, r in results if d == decision))
@@ -155,6 +336,9 @@ def stop(payload: dict) -> None:
     root = fc.repo_root(cwd)
     d = fc.read_directive(root, marker["id"]) if root else None
     if not d or not d.get("verify"):
+        return
+    if d["verify"].strip().lower() == "none":
+        print(json.dumps({"systemMessage": f"friday: Verify for {marker['id']} is none, not run."}))
         return
     counter = fc.git_dir(cwd) / "friday-stop-blocks"
     try:

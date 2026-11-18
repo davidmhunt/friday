@@ -72,6 +72,7 @@ Keys of `report_to` and `[dash]` (top level) and of each `[node.<name>]` table:
 | `report_to` | name of the master's session that workers message; optional |
 | `role` | `master`, `worker` or `target`; required |
 | `ssh` | `user@host` or an ssh config alias; required and unique per node |
+| `tailnet` | tailnet device name, only when it differs from the host in `ssh`; the dash matches pushes and builds the master's URL with it; optional |
 | `runtime` | `native` (default) or `container`; passed to the worker as `FRIDAY_RUNTIME` |
 | `tags` | list of labels that `Node: tag:<x>` routes on |
 | `repos` | directory holding the node's repos (`~` allowed); required for master and worker |
@@ -205,6 +206,27 @@ friday dispatch --goal <g> [--node <name>] [--report-to <session>] [--dry-run]
 prepares the worktree over ssh, starts tmux session `friday-<g>` there running `claude` with Remote
 Control, and tells it to run the goal's remaining directives in order and land the goal.
 
+### Pre-approving commands for a dispatched run
+
+A dispatched session has nobody at the prompt, so a command that would ask (a hardware command,
+`friday nodes --clean`, `friday release`, a nested `friday dispatch`) leaves it waiting until you
+attach or `--resume`. Pre-approve what the goal needs in each directive's `## Allowed commands`:
+
+```markdown
+## Allowed commands
+- `ssh ground-bot ./run ros2 topic list`
+- `friday nodes --clean alfred`
+- `./run tools/bench.sh *`
+```
+
+One backticked command per bullet; `*` matches any text; only a single simple command (no `&&`, `;`,
+`|`, backticks or `$(`). The list is read from the directive as committed on `origin/<Base>` (the
+plan you approved), never from the goal branch, so publish it before dispatching. To add a command
+later, commit the amendment on Base, run `friday check`, push Base, and the node picks it up at its
+next `friday start` (or after `--resume`). The deny list still wins: `sudo`, force-push and push to
+main stay refused even if listed, so `sudo` on a target over `ssh` stays a step you do. A
+pre-approved hardware command still takes the lease. See [spec.md](spec.md) section 5.
+
 ### Ending a finished session
 
 `friday session-end --goal <g>` closes the dispatched session's own tmux session `friday-<g>` ten
@@ -215,7 +237,7 @@ After the session sends `done <g> PR <url>` it runs `friday session-end --goal <
 idle Claude is left on the node. After `blocked ...` it does not run it and stays open, so you can
 attach (`tmux attach -t friday-<g>`) or use Remote Control to unblock it.
 
-To close a blocked session by hand, on the node: `tmux kill-session -t =friday-<g>`. The worktree
+To close a blocked session by hand, on the node: `tmux kill-session -t '=friday-<g>'`. The worktree
 and branch stay as they are.
 
 ### Restarting a stopped goal (`--resume`)
@@ -238,8 +260,9 @@ appends a `resume` record to `dispatches.jsonl`. `--dry-run` prints the checks a
 and changes nothing, including `--unblock`.
 
 A directive marked `blocked: <reason>` is listed with its reason and is not resumed on its own.
-Fix the cause, then pass `--unblock <id>`: it resets that directive's Status to `approved` in the
-worktree as an uncommitted edit, and the directive's `friday finish` commit carries it.
+Fix the cause, then pass `--unblock <id>`: it runs `friday unblock <id>` in the
+worktree: the directive's Status goes back to `approved` with a Log line, in one commit (other
+uncommitted files are left alone).
 
 | kind | exit | cause |
 |---|---|---|

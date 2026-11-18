@@ -256,7 +256,8 @@ def test_check_schema_rejects_bad_snapshot(tree):
 def run_cli(t, *args):
     env = {**os.environ, "PATH": os.environ["PATH"] + os.pathsep + str(Path(sys.executable).parent),
            "FRIDAY_NODES": str(t.reg),
-           "FRIDAY_NODE_FILE": str(t.tmp / "no-node.toml")}  # never read the host's ~/.config/friday/node.toml
+           "HOME": str(t.tmp / "home"),  # hermetic: never read the real ~/.config/friday/node.toml
+           "FRIDAY_NODE_FILE": str(t.tmp / "no-node.toml")}
     return subprocess.run([sys.executable, str(CLI), *args], cwd=t.repos / "alpha", capture_output=True,
                           text=True, env=env)
 
@@ -272,6 +273,12 @@ def test_cli_json_matches_schema_and_writes_nothing(tree):
     after = subprocess.run(["git", "-C", str(tree.repos / "alpha"), "status", "--porcelain"],
                            capture_output=True, text=True).stdout
     assert before == after
+
+
+def test_cli_status_node_flag_names_the_snapshot(tree):
+    r = run_cli(tree, "status", "--json", "--node", "boxy")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["node"] == "boxy"
 
 
 def test_plain_status_unchanged(tree):

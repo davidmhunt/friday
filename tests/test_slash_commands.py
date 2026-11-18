@@ -30,7 +30,7 @@ def parser_flags():
 def friday_commands(body):
     """Every `friday ...` invocation in a body, as (subcommand, flags)."""
     cmds = []
-    for m in re.finditer(r"bin/friday ([^`\n]+)", body):
+    for m in re.finditer(r"(?:^|`)friday ([^`\n]+)", body, re.M):
         words = m.group(1).split()
         cmds.append((words[0], [w for w in words[1:] if w.startswith("--")]))
     return cmds
@@ -43,7 +43,7 @@ def test_skills_parse():
         assert "user-invoked" in fm["description"].lower()
         assert fm["disable-model-invocation"] == "true"
         assert ("argument-hint" in fm) or n not in ARGUMENT
-        assert "${CLAUDE_PLUGIN_ROOT}/bin/friday" in body
+        assert "run friday install" in body
 
 
 def test_commands_exist_in_parser():
@@ -63,7 +63,7 @@ def test_dispatch_and_clean_dry_run_then_ask():
         _, body = frontmatter(n)
         dry = body.index("--dry-run")
         ask = body.lower().index("ask the user")
-        real = [m.start() for m in re.finditer(r"bin/friday [^`\n]*", body)
+        real = [m.start() for m in re.finditer(r"(?:^|`)friday [^`\n]*", body, re.M)
                 if "--dry-run" not in m.group(0)]
         assert real, n
         assert dry < ask < real[0], n

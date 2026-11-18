@@ -7,11 +7,14 @@ disable-model-invocation: true
 
 # /friday:dispatch <goal>
 
+
 The argument is the goal id; pass it as `--goal`. If it is missing, ask for it. From the repo root:
 
-1. Run `${CLAUDE_PLUGIN_ROOT}/bin/friday dispatch --goal <goal> --dry-run`.
+1. Run `friday dispatch --goal <goal> --dry-run`.
 2. Show the plan (chosen node, directives) in a few lines.
 3. Ask the user whether to go ahead. Stop unless they say yes in this session.
-4. Only then run `${CLAUDE_PLUGIN_ROOT}/bin/friday dispatch --goal <goal>` and summarise the result.
+4. Only then run `friday dispatch --goal <goal>` and summarise the result.
 
 If the CLI refuses (non-zero exit), show its one-line `fix:` and stop. Do not work around the refusal.
+
+These run plain `friday` commands. If `friday` is not on PATH, tell the user to run friday install (from the plugin's `bin/friday`) and stop.
