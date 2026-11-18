@@ -1,4 +1,4 @@
-# hook-01: The hook ignores quoted heredoc text, and friday reports merged branches left on origin
+# hook-01: Heredoc text stays fully scanned (documented), and friday reports merged branches left on origin
 Status: approved
 Goal: attention
 Node: any
@@ -8,32 +8,31 @@ Verify: uv run --with pytest pytest -q tests/test_hook_parsing.py && uv run --wi
 Hardware: none
 
 ## Goal
-The PreToolUse checks (deny list, the accept rule, commit and push guards) judge what a command
-runs, not text it passes as data: the body of a quoted heredoc (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) is
-not scanned, while an unquoted heredoc's `$(...)` and backticks still are, because the shell runs
-them. Found when a `gh pr create --body-file - <<'EOF'` whose PR text named the accept command
-was refused. And GitHub stays tidy: friday reports merged goal branches left on origin.
+The PreToolUse checks keep scanning every heredoc body in full. Two review rounds showed that
+exempting quoted heredocs can hide real commands in unusual inputs, so the user chose fail-safe
+false positives over a parser making security decisions (amended 2026-11-18). Long text that
+names a guarded command goes in a file passed with `--body-file`/`-F`, and the docs say so. And
+GitHub stays tidy: friday reports merged goal branches left on origin.
 
 ## Steps
-1. lib/friday_core.py `split_commands`, failing closed (amended by the user 2026-11-18 after the
-   review showed general heredoc parsing can hide real commands): skip a heredoc body only
-   when the delimiter is quoted and a plain word (`<<'W'`, `<<"W"`, `<<-'W'`, W matching
-   `[A-Za-z_][A-Za-z0-9_]*`) followed by whitespace, a newline or one of `;|&`; the exact closing
-   line is found; and the `<<` is not inside `$[`, `${`, `$((` or `((`. Anything else, including
-   every unquoted heredoc, is scanned in full as today.
+1. lib/friday_core.py `split_commands`: remove the heredoc exemption added on this goal branch
+   (`_strip_heredocs`, `_heredoc_at` and their callers), so every heredoc body is scanned as
+   before hook-01. docs/spec.md known limits, skills/directive/SKILL.md and the PR/commit advice in
+   workflows/execute.js (if any) say: text naming a guarded command goes in a file passed with
+   `--body-file`/`-F`, not a heredoc.
 2. Branch hygiene: `friday init` reports whether the GitHub repo deletes head branches on merge
    (`gh api repos/<owner>/<repo> --jq .delete_branch_on_merge`) and prints the command to turn it
    on; it changes nothing. `friday status` lists `origin/friday/*` branches whose PR is merged,
    with `git push origin --delete <branch>` for each; it deletes nothing. Both skip quietly when
    `gh` is unavailable or signed out.
-3. tests/test_hook_parsing.py: quoted heredoc text naming the accept command, `sudo` and
-   backticks passes; the same in an unquoted heredoc's substitution is still refused; a real
-   accept command after the heredoc is still refused; the fail-closed cases are still scanned
-   (`<<EOF+`, `<<EOF@`, `<<'EOF'+`, `<<EOF$x`, `$[1<<EOF]`, `${x:-<<EOF}`, a missing closing line); init and status report from a fake `gh`.
+3. tests/test_hook_parsing.py: a quoted heredoc whose text names the accept command is still
+   refused (the documented limit); the same text in a file passed with `--body-file` passes;
+   the reviewer's earlier fail-open inputs are refused; init and status report from a fake `gh`.
    Spec and CHANGELOG.
 
 ## Out of scope
 - Deleting branches or changing repository settings.
+- Any heredoc exemption.
 
 ## Log
 
