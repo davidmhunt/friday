@@ -4,12 +4,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import json
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import friday_core as fc  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 FRIDAY = ROOT / "bin" / "friday"
 CODES = {"goal": 10, "format": 11, "directives": 12, "land-pr": 13, "unpushed": 14,
-         "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19}
+         "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19, "settings": 27}
 
 NODES = """
 report_to = "boss"
@@ -104,7 +108,8 @@ def make_repo(tmp, name, files):
 
 @pytest.fixture
 def env(tmp_path):
-    files = {"docs/goals/g1.md": GOAL,
+    files = {".claude/settings.json": json.dumps({"permissions": {"allow": fc.FRIDAY_ALLOW}}),
+             "docs/goals/g1.md": GOAL,
              "docs/directives/g1-01.md": directive("g1-01"),
              "docs/directives/g1-02.md": directive("g1-02")}
     repo = make_repo(tmp_path, "proj", files)
@@ -185,6 +190,18 @@ def test_source_ref_prefers_goal_branch(env):
     assert "origin/friday/g1" in out
     edit(env, "docs/directives/g1-02.md", directive("g1-02") + "\nmore\n")  # main moves, goal branch not
     assert dispatch(env, "--dry-run")[0] == CODES["unpushed"]
+
+
+def test_settings_rules_missing_refused_then_ok(env):
+    allow = [r for r in fc.FRIDAY_ALLOW if r != "Bash(friday land *)"]
+    edit(env, ".claude/settings.json", json.dumps({"permissions": {"allow": allow}}))
+    rc, out, err = dispatch(env, "--dry-run")
+    assert rc == CODES["settings"] and "friday land *" in err and "friday init" in err
+    (env.repo / ".claude/settings.json").unlink()
+    commit_push(env)
+    assert dispatch(env, "--dry-run")[0] == CODES["settings"]  # no file at all
+    edit(env, ".claude/settings.json", json.dumps({"permissions": {"allow": fc.FRIDAY_ALLOW}}))
+    assert dispatch(env, "--dry-run")[0] == 0
 
 
 def test_plugin_not_pushed(env):

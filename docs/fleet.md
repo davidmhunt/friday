@@ -239,6 +239,7 @@ Each refusal prints one line and a fix on stderr and exits with its own code.
 | node | 18 | `--node` names a missing node or a target |
 | unreachable | 19 | the chosen node did not answer over ssh |
 | report-to | 20 | no `--report-to` and no `report_to` in the registry |
+| settings | 27 | the source ref's `.claude/settings.json` lacks a friday allow rule; run `friday init`, commit and push |
 
 The node itself can also refuse (the dispatch command exits with the node's code):
 

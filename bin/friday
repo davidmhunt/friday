@@ -847,7 +847,8 @@ def cmd_nodes(a) -> int:
 # Exit codes of `friday dispatch` refusals (0 = ok). Each has a one-line fix on stderr.
 DISPATCH_EXIT = {"goal": 10, "format": 11, "directives": 12, "land-pr": 13, "unpushed": 14,
                  "plugin": 15, "registry": 16, "route": 17, "node": 18, "unreachable": 19, "report-to": 20,
-                 "no-record": 21, "no-worktree": 22, "goal-done": 23, "busy": 24, "blocked": 25, "unblock": 26}
+                 "no-record": 21, "no-worktree": 22, "goal-done": 23, "busy": 24, "blocked": 25, "unblock": 26,
+                 "settings": 27}
 
 
 def _refuse(kind: str, msg: str, fix: str):
@@ -911,6 +912,19 @@ def dispatch_preconditions(root: Path, gid: str, node_name: str | None) -> dict:
     if _git_out(["diff", "--quiet", ref, "--", *paths], root)[0] != 0:
         _refuse("unpushed", f"goal or directive files differ from {ref}",
                 f"publish the committed files to {ref.removeprefix('origin/')} on origin")
+
+    # the source ref's tracked settings allow friday's own commands (unattended sessions need them)
+    rc, txt = _git_out(["show", f"{ref}:.claude/settings.json"], root)
+    try:
+        allow = json.loads(txt)["permissions"]["allow"] if rc == 0 else []
+        allow = allow if isinstance(allow, list) else []
+    except (ValueError, KeyError, TypeError):
+        allow = []
+    lacking = [r for r in fc.FRIDAY_ALLOW if r not in allow]
+    if lacking:
+        _refuse("settings", f".claude/settings.json on {ref} lacks {len(lacking)} friday allow rule(s): "
+                + ", ".join(lacking),
+                "run `friday init`, then commit and push .claude/settings.json to " + ref.removeprefix("origin/"))
 
     # the friday plugin's own HEAD is on its origin (the node checks out that commit)
     plug = Path(os.environ.get("FRIDAY_PLUGIN_ROOT") or ff.PLUGIN_ROOT)
