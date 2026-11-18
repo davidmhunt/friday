@@ -1,5 +1,5 @@
 # hook-01: Heredoc text stays fully scanned (documented), and friday reports merged branches left on origin
-Status: approved
+Status: done
 Goal: attention
 Node: any
 Deliverable: code
@@ -64,3 +64,19 @@ Blocked: review gaps remain: /home/david/Documents/claude_temp/friday/lib/friday
 
 ### 2026-11-18
 Unblocked: was blocked: review gaps remain: /home/david/Documents/claude_temp/friday/lib/friday_core.py:805-806 (_heredoc_at earlier-opener guard), used by _strip_heredocs and so by split_commands, check_accept and check_deny: Step 1 requires every unquoted heredoc to be scanned in full. The new guard only looks for an earlier '<<' on the same physical line as the quoted opener. The scanner never tracks where an unquoted heredoc's body ends, so a quoted opener on a line inside an unquoted heredoc's body is still taken as a real heredoc. The scanner then skips from that line down to the quoted delimiter, and that span includes the rest of the unquoted body. bash expands ''(...)' and backticks there, so they run without being judged. Fixing commit 9a5e881 patched the same-line and ';' forms that were reported, but the same fail-open class stays open one line later.
+
+### 2026-11-18
+Commits:
+- b894714 hook-01: split_commands skips quoted heredoc bodies, scans substitutions in unquoted ones
+- cebbe6f hook-01: friday init reports delete_branch_on_merge, status lists merged friday/* branches left on origin
+- f641912 hook-01: tests for heredoc parsing and init/status branch reports; deny list skips quoted heredoc bodies; spec and CHANGELOG
+- 626f74b hook-01: heredoc scan skips comments and arithmetic, reads partly quoted delimiters; tests
+- 9e4dcbe hook-01: split_commands skips only quoted plain-word heredoc bodies, fails closed on everything else
+- f063703 hook-01: tests for the fail-closed heredoc cases; spec and CHANGELOG describe the narrowed rule
+- 9a5e881 hook-01: heredoc skip fails closed after an earlier opener on the line and after ) comments
+- 2228fbb hook-01: drop the heredoc exemption, heredoc bodies are scanned in full; docs say use --body-file
+- 394ec82 hook-01: tests expect heredoc text refused and a body file to pass; fail-closed cases kept
+Notes:
+step 2: init/status branch hygiene already in bin/friday (cebbe6f, kept through merges); fake-gh tests pass. No change. Remaining 3 failures in tests/test_hook_parsing.py are stale exemption tests for step 3.
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_hook_parsing.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
