@@ -19,7 +19,7 @@ From any session that loads the plugin (including over Remote Control), these ru
 | Slash command | CLI form |
 |---|---|
 | `/friday:status` | `friday status` |
-| `/friday:nodes` | `friday nodes --check` |
+| `/friday:nodes [--check]` | `friday nodes` (lists the registry; with `--check` it probes each node over ssh) |
 | `/friday:dispatch <goal>` | `friday dispatch --goal <goal>`: runs `--dry-run` first, shows it, runs for real after you say yes |
 | `/friday:clean <node>` | `friday nodes --clean <node>`: runs `--dry-run` first, shows it, runs for real after you say yes |
 

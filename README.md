@@ -46,7 +46,7 @@ Slash commands for the same CLI forms, from any session with the plugin loaded (
 | Slash command | CLI form |
 |---|---|
 | `/friday:status` | `friday status` |
-| `/friday:nodes` | `friday nodes --check` |
+| `/friday:nodes [--check]` | `friday nodes` (lists the registry; with `--check` it probes each node over ssh) |
 | `/friday:dispatch <goal>` | `friday dispatch --goal <goal>` (shows `--dry-run` first, runs after you say yes) |
 | `/friday:clean <node>` | `friday nodes --clean <node>` (shows `--dry-run` first, runs after you say yes) |
 
