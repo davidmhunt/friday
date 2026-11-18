@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-11-18
+
+Attention release: sessions waiting on a prompt are visible in status, the dash and `friday nodes --waiting`; accepting a directive refuses uncommitted work; merged branches are reported.
+
+### Added
+
+- A session stopped on a permission prompt, dialog or question is recorded by a `Notification` hook and
+  cleared when it moves on. `friday status` and the dash show it as needing the user, with the prompt
+  text and the attach command. Nothing answers the prompt.
+- `friday nodes --waiting`: one line per session waiting on a prompt across the registry (node, goal,
+  directive, age, message); exit 0 none, 10 some, 2 a node unreachable. Allowed without a prompt.
+
+- `friday init` reports whether the GitHub repo deletes head branches on merge and prints the command to turn
+  it on; `friday status` lists `origin/friday/*` branches whose PR is merged with the `git push origin --delete`
+  command for each. Neither changes anything; both skip quietly without `gh`.
+
+### Changed
+
+- Heredoc bodies stay fully scanned by the PreToolUse checks (fail closed). Long text that names a guarded
+  command goes in a file passed with `--body-file`/`-F`, not a heredoc; the spec says so.
+- `friday accept <id>` and `--reject` exit 8 and change nothing while tracked files are modified or staged
+  (untracked files do not count); they list the files and print the `git commit -am` command that commits
+  them as the directive's work, then the accept command to rerun.
+
 ## 1.0.0 - 2026-11-18
 
 First stable release of friday as a Claude Code plugin: plan with the user, then execute approved

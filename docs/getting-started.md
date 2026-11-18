@@ -23,7 +23,7 @@ Clone the repo, add the clone as a local marketplace, install the plugin from it
 `friday` on your PATH:
 
 ```bash
-git clone -b v1 https://github.com/davidmhunt/friday ~/src/friday
+git clone https://github.com/davidmhunt/friday ~/src/friday
 ```
 
 ```text
@@ -36,7 +36,7 @@ python3 ~/src/friday/bin/friday install      # once per machine: links ~/.local/
 friday --help                                # make sure ~/.local/bin is on PATH
 ```
 
-Use `-b v1` until 1.0 is on main. To update, run `git pull` in the clone, then
+To update, run `git pull` in the clone, then
 `/plugin marketplace update friday`. `friday uninstall` removes the link again.
 
 Do not edit files in the clone while a session uses it; its hooks run from there.
@@ -219,7 +219,10 @@ You can see where things stand with `friday status` (in a shell, or ask Claude t
 A directive with `Accept: user` (and a `## Review` section listing what to open and what to look
 for) does not finish on its own. It ends `awaiting review`: the branch is pushed and later
 directives continue. Open what `## Review` names, then type the command yourself (an agent cannot
-run it):
+run it). If you changed tracked files during the review (a fix, a re-route), accept refuses with
+exit 8 and changes nothing: it lists the files and prints the
+`git commit -am "<id>: review changes" -m "Directive: <id>"` to run first, which makes your work
+part of the directive. Untracked files do not block it.
 
 ```bash
 friday accept note-01                    # or: friday accept note-01 --reject "why"

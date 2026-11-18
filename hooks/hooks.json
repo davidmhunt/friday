@@ -6,6 +6,11 @@
         "hooks": [
           { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" pretool", "timeout": 20 }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" waiting-clear", "timeout": 10 }
+        ]
       }
     ],
     "PostToolUse": [
@@ -14,12 +19,32 @@
         "hooks": [
           { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" posttool", "timeout": 20 }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" waiting-clear", "timeout": 10 }
+        ]
       }
     ],
     "Stop": [
       {
         "hooks": [
           { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" stop", "timeout": 1900 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" notification", "timeout": 20 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/friday_hook.py\" waiting-clear", "timeout": 10 }
         ]
       }
     ],

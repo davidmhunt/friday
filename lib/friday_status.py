@@ -21,6 +21,7 @@ holds any snapshot to it. Top-level keys:
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import os
@@ -84,6 +85,7 @@ SCHEMA = {
         "step": STR_OR_NULL,
         "waiting": bool,
         "waiting_line": STR_OR_NULL,
+        "waiting_age": NUM_OR_NULL,
         "snippet": [str],
     }],
     "errors": [{"where": str, "error": str}],
@@ -233,8 +235,23 @@ def make_snippet(pane: str) -> list[str]:
     return [ln.rstrip()[:SNIPPET_WIDTH] for ln in lines]
 
 
+def fmt_age(secs) -> str:
+    s = max(0, int(secs))
+    return f"{s}s" if s < 90 else f"{round(s / 60)}m" if s < 5400 else f"{round(s / 3600)}h"
+
+
+def read_waiting_record(goal: str) -> dict | None:
+    """The hook's `<goal>.json` record of a session stopped on a prompt, or None."""
+    try:
+        rec = json.loads((fc.waiting_dir() / f"{goal}.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
 def session_state(name: str, created, cwd: str | None, pane: str,
-                  marker: dict | None = None, snippet: list[str] | None = None) -> dict:
+                  marker: dict | None = None, snippet: list[str] | None = None,
+                  record: dict | None = None, now: float | None = None) -> dict:
     """One `sessions[]` entry for tmux session `name`, from its pane text and its cwd.
 
     - directive: the `id` in the friday marker (`<git dir>/friday-active`) of `cwd`, else null.
@@ -242,7 +259,9 @@ def session_state(name: str, created, cwd: str | None, pane: str,
     - phase: the running workflow's name from its status line (e.g. `execute`); `started` when
       there is a marker but no workflow line; null when neither.
     - step: the status line's `done/total` (e.g. `3/4`), else null.
-    - waiting / waiting_line: detect_waiting() over the pane.
+    - waiting / waiting_line / waiting_age: the hook's record `<state>/friday/waiting/<goal>.json`
+      (message, seconds since it was written) when there is one, else detect_waiting() over the
+      pane (waiting_age null). `record` may be passed in (tests).
     - snippet: make_snippet(pane), redacted; `snippet` may be passed in (tests).
     `marker` may be passed in (tests); otherwise it is read from `cwd`.
     """
@@ -266,7 +285,16 @@ def session_state(name: str, created, cwd: str | None, pane: str,
         goal = name[len("friday-"):]
     wf, step = detect_workflow(lines)
     phase = wf or ("started" if directive else None)
-    waiting, line = detect_waiting(lines)
+    if record is None and goal:
+        record = read_waiting_record(goal)
+    if record and record.get("message") is not None:
+        waiting, line = True, redact(str(record["message"]))[:SNIPPET_WIDTH] or "waiting for input"
+        t = record.get("time")
+        age = (max(0.0, (time.time() if now is None else now) - t)
+               if isinstance(t, (int, float)) and not isinstance(t, bool) else None)
+    else:
+        waiting, line = detect_waiting(lines)
+        age = None
     return {
         "name": name,
         "created": created,
@@ -277,6 +305,7 @@ def session_state(name: str, created, cwd: str | None, pane: str,
         "step": step,
         "waiting": waiting,
         "waiting_line": line,
+        "waiting_age": age,
         "snippet": list(snippet) if snippet is not None else make_snippet(pane),
     }
 

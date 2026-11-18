@@ -11,6 +11,7 @@
   friday finish <id> [--verify T] [--review T] [--base SHA] [--blocked R]
                                     append the Log entry, Status -> done (blocked: R; awaiting review with Accept: user), one commit, clear the marker
   friday accept <id> [--note TEXT | --reject REASON]
+                                    exit 8 while tracked files are uncommitted (prints the commit command)
                                     the user accepts an `awaiting review` directive (done) or rejects it (blocked: REASON)
   friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
   friday session-end --goal <g>     close this dispatched session's own tmux session once its goal is done
@@ -29,6 +30,8 @@
   friday parse <id> --json          parsed directive as JSON (exit 1 on errors, 2 if file missing)
   friday parse --goal <g> --json    parsed goal as JSON (same exit codes)
   friday nodes [--check]            list the fleet registry; --check probes each node over ssh
+  friday nodes --waiting            one line per session waiting on a prompt, across the registry;
+                                    exit 0 none, 10 some, 2 a node unreachable
   friday nodes --setup <node> [--yes]
                                     set the node's first-run prompt skips in ~/.claude/settings.json and
                                     install the friday-push.timer systemd user timer (30 s status push)
@@ -142,6 +145,16 @@ def cmd_status(a) -> int:
     waiting = [i for i, d in ds.items() if d["status"].lower() == "awaiting review"]
     if waiting:
         print(f"\nawaiting review (needs you): {', '.join(waiting)}  -> friday accept <id>")
+    for ws in fs.collect_sessions([]):
+        if ws["waiting"]:
+            age = f" ({fs.fmt_age(ws['waiting_age'])})" if ws["waiting_age"] is not None else ""
+            print(f"\nwaiting on you: {ws['goal'] or ws['name']}{age}: \"{ws['waiting_line']}\"  "
+                  f"-> tmux attach -t '={ws['name']}'")
+    merged = _merged_origin_branches(root)
+    if merged:
+        print("\nmerged branches left on origin (friday deletes nothing):")
+        for b in merged:
+            print(f"  git push origin --delete {b}")
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
@@ -158,9 +171,58 @@ def _install_hook(root: Path) -> None:
               "guard not installed", file=sys.stderr)
 
 
+def _gh_slug(root: Path) -> tuple[str, str] | None:
+    """(gh command, owner/repo) when origin is a GitHub repo and gh is installed and signed in; else None."""
+    import re
+    gh = os.environ.get("FRIDAY_GH", "gh")
+    url = _run(["git", "remote", "get-url", "origin"], root)
+    if url.returncode != 0:
+        return None
+    m = re.match(r"^(?:git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+?)(?:\.git)?/?$",
+                 url.stdout.strip())
+    if not m or _run([gh, "auth", "status"], root).returncode != 0:
+        return None
+    return gh, m.group(1)
+
+
+def _report_delete_branch_on_merge(root: Path) -> None:
+    """friday init: say whether GitHub deletes head branches on merge; print the command to turn it on."""
+    found = _gh_slug(root)
+    if not found:
+        return
+    gh, slug = found
+    r = _run([gh, "api", f"repos/{slug}", "--jq", ".delete_branch_on_merge"], root)
+    if r.returncode != 0:
+        return
+    if r.stdout.strip() == "true":
+        print(f"friday init: {slug} deletes head branches on merge")
+    elif r.stdout.strip() == "false":
+        print(f"friday init: {slug} keeps head branches after merge; to delete them automatically run:\n"
+              f"  gh api -X PATCH repos/{slug} -F delete_branch_on_merge=true")
+
+
+def _merged_origin_branches(root: Path) -> list[str]:
+    """origin/friday/* branches (as of the last fetch) whose PR is merged. Empty when gh is unavailable."""
+    found = _gh_slug(root)
+    if not found:
+        return []
+    gh, slug = found
+    refs = _run(["git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/friday/"], root)
+    out = []
+    for ref in refs.stdout.split():
+        branch = ref.removeprefix("origin/")
+        r = _run([gh, "pr", "list", "-R", slug, "--state", "merged", "--head", branch,
+                  "--json", "number", "--jq", "length"], root)
+        if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
+            out.append(branch)
+    return out
+
+
 def cmd_init(a) -> int:
     _install_hook(_root())
-    return _init_settings(a)
+    rc = _init_settings(a)
+    _report_delete_branch_on_merge(_root())
+    return rc
 
 
 def _init_settings(a) -> int:
@@ -420,6 +482,16 @@ def cmd_accept(a) -> int:
     want = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
     if br != want:
         sys.exit(f"friday: accept runs on branch {want}, not {br}")
+    dirty = [l[3:] for l in _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines() if l.strip()]
+    if dirty:
+        print(f"friday: tracked files are uncommitted; commit them as {a.id}'s work first (nothing changed):", file=sys.stderr)
+        for pth in dirty:
+            print(f"  {pth}", file=sys.stderr)
+        again = f"friday accept {a.id}" + (f" --reject {shlex.quote(a.reject)}" if a.reject else "")
+        print("Then run:", file=sys.stderr)
+        print(f'  git commit -am "{a.id}: review changes" -m "Directive: {a.id}"', file=sys.stderr)
+        print(f"  {again}", file=sys.stderr)
+        return 8
     today = time.strftime("%Y-%m-%d")
     if a.reject:
         line, status, sub = f"Rejected by user: {today} {a.reject}", f"blocked: {a.reject}", "blocked"
@@ -1087,6 +1159,38 @@ def cmd_nodes_clean(a, reg) -> int:
     return 1 if clean["error"] else 0
 
 
+def waiting_on_node(n) -> list | None:
+    """Sessions waiting on a prompt on node `n`, from its `friday status --json`; None if unreachable."""
+    argv, stdin = ff.ssh_cmd(n, "friday status --json\n")
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+        snap = json.loads(r.stdout) if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    if not isinstance(snap, dict) or not isinstance(snap.get("sessions"), list):
+        return None
+    return [s for s in snap["sessions"] if isinstance(s, dict) and s.get("waiting")]
+
+
+def cmd_nodes_waiting(reg) -> int:
+    found, down = 0, False
+    for n in reg.nodes.values():
+        if n.role not in ("master", "worker"):
+            continue
+        got = waiting_on_node(n)
+        if got is None:
+            print(f"{n.name}: unreachable")
+            down = True
+            continue
+        for s in got:
+            age = s.get("waiting_age")
+            msg = " ".join(str(s.get("waiting_line") or "waiting for input").split())
+            print(f"{n.name} {s.get('goal') or s.get('name')} {s.get('directive') or '-'} "
+                  f"{fs.fmt_age(age) if isinstance(age, (int, float)) else '?'} {msg}")
+            found += 1
+    return 2 if down else 10 if found else 0
+
+
 def cmd_nodes(a) -> int:
     path = ff.find_nodes_file()
     if path is None:
@@ -1103,6 +1207,8 @@ def cmd_nodes(a) -> int:
         return cmd_nodes_setup(a, reg)
     if a.clean:
         return cmd_nodes_clean(a, reg)
+    if a.waiting:
+        return cmd_nodes_waiting(reg)
     if a.dry_run:
         print("friday: --dry-run applies to --clean")
         return 2
@@ -1675,7 +1781,7 @@ def main() -> int:
     s = sub.add_parser("result"); s.add_argument("action", choices=["write", "check"]); s.add_argument("id"); s.add_argument("--require", action="append", metavar="'K OP V'"); s.add_argument("--files", action="store_true"); s.add_argument("--metric", action="append", metavar="K=V"); s.add_argument("--file", action="append", metavar="PATH"); s.add_argument("--cmd", metavar="TEXT"); s.add_argument("--note", metavar="TEXT"); s.set_defaults(f=cmd_result)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
     s = sub.add_parser("parse"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_parse)
-    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true")
+    s = sub.add_parser("nodes"); s.add_argument("--check", action="store_true"); s.add_argument("--waiting", action="store_true")
     s.add_argument("--setup", metavar="NODE"); s.add_argument("--yes", action="store_true")
     s.add_argument("--clean", metavar="NODE"); s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_nodes)
     s = sub.add_parser("dispatch"); s.add_argument("--goal", required=True); s.add_argument("--node"); s.add_argument("--report-to"); s.add_argument("--dry-run", action="store_true"); s.add_argument("--resume", action="store_true"); s.add_argument("--unblock", action="append", metavar="ID"); s.set_defaults(f=cmd_dispatch)

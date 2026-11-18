@@ -1,5 +1,5 @@
 # rel-02: Release 1.1.0, installed from main
-Status: approved
+Status: done
 Goal: attention
 Node: any
 Deliverable: code
@@ -26,3 +26,11 @@ on 2026-11-18. tests/test_release.py proves it.
 - Tagging, merging v1 into main, deleting `v1`: the user does these.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- f0fbad5 rel-02: version 1.1.0, changelog section
+- 34f1755 rel-02: docs clone main, drop the -b v1 note
+- 4471cc1 rel-02: release tests check marketplace version and no -b v1 clone in docs
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_release.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

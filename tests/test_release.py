@@ -54,3 +54,18 @@ def test_path_step_is_not_conditional():
         text = (ROOT / path).read_text().lower()
         assert "if you cloned" not in text, path
         assert "bin/friday install" in text, path
+
+
+def test_marketplace_version_matches_plugin_version():
+    mp = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
+    versions = [mp["version"]] if "version" in mp else []
+    versions += [p["version"] for p in mp["plugins"] if "version" in p]
+    for v in versions:
+        assert v == _plugin()["version"]
+
+
+def test_docs_do_not_clone_branch_v1():
+    paths = [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
+    bad = [str(p.relative_to(ROOT)) for p in paths
+           if re.search(r"git clone\b[^\n]*(-b|--branch)[ =]v1\b", p.read_text())]
+    assert not bad, bad

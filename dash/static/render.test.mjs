@@ -70,3 +70,10 @@ test("an awaiting-review directive is its own state and counts as needing the us
   assert.match(items[0].text, /friday accept x-01/);
   assert.match(text(r.renderNeeds(st)), /awaiting review/);
 });
+
+test("a waiting session is a needs-you item with its prompt and the attach command", () => {
+  const w = r.needsYou(state).find((i) => i.kind === "waiting");
+  assert.match(w.where + " " + w.text, /^laptop g1: waiting on "Proceed\? \(y\/n\)"/);
+  assert.match(w.attach, /^ssh laptop -t tmux attach -t '=friday-g1'$/);
+  assert.match(text(r.renderNeeds(state)), /tmux attach -t '=friday-/);
+});

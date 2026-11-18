@@ -254,7 +254,7 @@ how an unattended or dispatched run gets past the commands that would otherwise 
   user's own Claude Code permissions. The friday allow rules in `.claude/settings.json`
   (`friday init` merges them) cover `status`, `new`, `check`, `parse`, `start`, `verify`,
   `finish`, `commits`, `result`, `land`, `init`, `session-end`, `nodes`, `nodes --check`,
-  `nodes --clean <node> --dry-run` and `dispatch --goal <g> --dry-run`. A real `dispatch`, a real
+  `nodes --waiting`, `nodes --clean <node> --dry-run` and `dispatch --goal <g> --dry-run`. A real `dispatch`, a real
   `nodes --clean` and `release` are prompted on purpose and run unattended only when a directive
   lists them. `friday accept` can never be allowed.
 - While a directive is active, `git push` may update only the goal's own branch (`friday/<goal>`,
@@ -291,13 +291,13 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 
 | Command | What it does | Exit codes |
 |---|---|---|
-| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo, the active one, awaiting-review ones, leases. `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
-| `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing | 0; 1 unreadable settings file |
+| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo, the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
+| `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing. Reports whether the GitHub repo deletes head branches on merge and prints the `gh api -X PATCH` command to turn it on (changes nothing; skipped when `gh` is missing or signed out) | 0; 1 unreadable settings file |
 | `friday new <loop>` | print the next free directive id for a loop (`core` -> `core-04`) | 0 |
 | `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base, set the goal `running`, install the guard, write the marker, print `base <sha>`. Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
 | `friday verify [<id>]` | run the directive's `Verify` (default: the active one); `none` is skipped | Verify's own exit code; 0 for `none`; 1 no directive |
 | `friday finish <id> [--verify TEXT] [--review TEXT] [--base SHA] [--blocked REASON]` | append the Log entry (commits, notes, Verify, review) and set Status: `done`, `awaiting review` (`Accept: user`) or `blocked: REASON` (goal also blocked); one commit; clear the marker. `--base SHA` lists commits since SHA instead of using `friday commits` | 0; 1 other tracked files uncommitted, commit failed |
-| `friday accept <id> [--note TEXT] [--reject REASON]` | the user accepts an `awaiting review` directive (`done`) or rejects it (`blocked: REASON`, goal blocked); one commit; must run on the directive's branch. Denied to agents | 0; 1 not awaiting review, wrong branch |
+| `friday accept <id> [--note TEXT] [--reject REASON]` | the user accepts an `awaiting review` directive (`done`) or rejects it (`blocked: REASON`, goal blocked); one commit; must run on the directive's branch. Refuses, changing nothing, while any tracked file is modified or staged: lists them and prints the `git commit -am` to run first; untracked files do not count. Denied to agents | 0; 1 not awaiting review, wrong branch; 8 tracked files uncommitted |
 | `friday unblock <id>` | a `blocked:` directive back to `approved` with a Log line, and a blocked goal to `running`; one commit; on the directive's branch | 0; 1 not blocked, wrong branch |
 | `friday commits <id> [--json]` | the directive's own commits and `untracked` commits (section 6); `--json` gives `base`, `commits`, `untracked` | 0 commits found; 3 none; 2 cannot say (no goal, no Base branch, no merge-base) |
 | `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR with a table of directives. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh` missing or signed out; prints `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
@@ -307,6 +307,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday check [<id> \| --goal G \| --all]` | validate goal and directive files (default all) | 0; 1 any error |
 | `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive | 0; 1 the file has errors; 2 file missing |
 | `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash | 0; 1 no registry, or a master or worker failed the check |
+| `friday nodes --waiting` | one line per session waiting on a prompt across the registry's master and worker nodes (node, goal, directive, age, message), read from each node's `friday status --json` over ssh | 0 none waiting; 10 some waiting; 2 a node unreachable |
 | `friday nodes --setup NODE [--yes]` | set the node's first-run prompt skips in its `~/.claude/settings.json`, write its `node.toml`, link `friday`, install the 30 s push timer; asks y/N (`--yes` skips, required without a terminal) | 0; 1 refused or failed |
 | `friday nodes --clean NODE [--dry-run]` | remove finished goals' worktrees, branches, tmux sessions and trust entries on a node; `--dry-run` only plans | 0; 1 error; `--dry-run` without `--clean` exits 2 |
 | `friday dispatch --goal G [--node N] [--report-to S] [--dry-run]` | check, pick a node, prepare a worktree there and start a tmux session `friday-<G>` running the goal's directives; records it. `--dry-run` changes nothing | 0; 10-27 a refusal on the master (table below); 30-36 a refusal by the node; 1 launch failed |
@@ -413,7 +414,7 @@ beats `allow`.
 
 | Rule | Effect |
 |---|---|
-| Deny list | deny the commands listed in the next table |
+| Deny list | deny the commands listed in the next table. Every heredoc body is scanned like any other text, so text that names a guarded command (a PR body that mentions the accept command or `sudo`) is refused even in a quoted heredoc; put such text in a file and pass it with `--body-file` or `-F` instead |
 | `friday accept` guard | deny `friday accept` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
 | Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`), including `--all`, `--mirror` and an unjudgeable target |
@@ -557,3 +558,6 @@ the user. How machines and projects appear, the API and the Docker deployment:
 - **A PR's Base branch must exist on origin**, or `friday land` exits 4.
 - **`--no-verify` skips the commit guard**; `friday commits` shows the commit as `untracked`.
 - **A hook failure fails open.**
+- **Heredoc text is scanned in full.** The hooks do not parse heredocs, so a body that names a guarded
+  command is refused even when the delimiter is quoted. Put such text (a PR or commit message) in a file
+  and pass it with `--body-file` or `-F`.

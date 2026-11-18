@@ -36,7 +36,7 @@ FRIDAY_ALLOW = [
     f"Bash(friday {c})"
     for c in ("status", "status *", "new *", "check *", "parse *", "start *",
               "verify", "verify *", "finish *", "commits *", "result *", "land *", "init", "session-end", "session-end *",
-              "nodes", "nodes --check", "nodes --clean * --dry-run", "dispatch --goal * --dry-run")
+              "nodes", "nodes --check", "nodes --waiting", "nodes --clean * --dry-run", "dispatch --goal * --dry-run")
 ]
 
 
@@ -766,11 +766,15 @@ def clear_marker(cwd: Path | str) -> None:
 _SEPARATORS = ("&&", "||", ";", "|", "\n", "&")
 
 
+_SUBST = r"\$\(([^()]*)\)|`([^`]*)`"
+
+
 def split_commands(line: str) -> list[str]:
     """Split a shell line into simple commands on && || ; | & and newlines, outside quotes.
-    Command substitutions $(...) and backticks are returned as extra commands too."""
+    Command substitutions $(...) and backticks are returned as extra commands too.
+    Heredoc bodies are scanned like any other text (fail closed)."""
     parts, buf, quote, i = [], [], None, 0
-    subs = re.findall(r"\$\(([^()]*)\)|`([^`]*)`", line)
+    subs = re.findall(_SUBST, line)
     while i < len(line):
         c = line[i]
         if quote:
@@ -826,6 +830,12 @@ def lease_dir() -> Path:
     d = base / "friday" / "leases"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def waiting_dir() -> Path:
+    """`~/.local/state/friday/waiting/`: one `<goal>.json` per session stopped on a prompt."""
+    base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return base / "friday" / "waiting"
 
 
 def lease_holder(resource: str, now: float | None = None) -> dict | None:
