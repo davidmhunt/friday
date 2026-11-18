@@ -12,6 +12,7 @@
                                     by the directive's Land: pr -> push friday/<id> and open its PR (gh);
                                     goal -> push friday/<goal>, no PR; none -> push nothing
   friday land --goal <g>            reverify the goal's directives, mark it done, push friday/<g>, open its PR
+  friday commits <id> [--json]      the directive's own commits since its Base (base, commits, untracked); exit 3 when none, 2 on error
   friday release <resource>|--all   free a hardware lease (or all of them)
   friday check [<id> | --goal <g> | --all]
                                     validate directive/goal files (default --all); exit 1 on any error
@@ -1239,6 +1240,26 @@ def _msgs(issues, level: str) -> list[str]:
     return [f"{i.path}:{i.line}: {i.message}" for i in issues if i.level == level]
 
 
+def cmd_commits(a) -> int:
+    root = _root()
+    try:
+        r = fc.directive_commits(root, a.id)
+    except ValueError as e:
+        print(f"friday: {e}", file=sys.stderr)
+        return 2
+    if a.json:
+        print(json.dumps({"base": r["base"],
+                          "commits": [{"sha": s, "subject": m} for s, m in r["commits"]],
+                          "untracked": [{"sha": s, "subject": m, "files": f} for s, m, f in r["untracked"]]}, indent=2))
+    else:
+        print(f"base {r['base']}")
+        for s, m in r["commits"]:
+            print(f"{s} {m}")
+        for s, m, _f in r["untracked"]:
+            print(f"untracked {s} {m}")
+    return 0 if r["commits"] else 3
+
+
 def cmd_parse(a) -> int:
     import json
     root = _root()
@@ -1421,6 +1442,7 @@ def main() -> int:
     s = sub.add_parser("start"); s.add_argument("id"); s.add_argument("--no-gate", action="store_true"); s.set_defaults(f=cmd_start)
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
+    s = sub.add_parser("commits"); s.add_argument("id"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_commits)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
     s = sub.add_parser("release"); s.add_argument("resource", nargs="?"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_release)
     s = sub.add_parser("check"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--all", action="store_true"); s.set_defaults(f=cmd_check)
