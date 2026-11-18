@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-11-18
+
+Attention release: sessions waiting on a prompt are visible in status, the dash and `friday nodes --waiting`; accepting a directive refuses uncommitted work; merged branches are reported.
+
 ### Added
 
 - A session stopped on a permission prompt, dialog or question is recorded by a `Notification` hook and

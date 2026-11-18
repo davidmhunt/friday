@@ -1,7 +1,7 @@
 {
   "name": "friday",
   "displayName": "friday",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Plan with the user, then execute approved directives behind deterministic gates: Verify commands, a deny list, ./run, hardware leases.",
   "author": { "name": "David Hunt", "url": "https://github.com/davidmhunt" },
   "repository": "https://github.com/davidmhunt/friday",
