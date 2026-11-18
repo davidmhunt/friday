@@ -439,6 +439,69 @@ IDLE_SH = r"""idle() {
 }"""
 
 
+def resume_script(node, goal: str, repo_name: str) -> str:
+    """Read-only remote script for `dispatch --resume`: inspects `<repos>/<repo>.friday/<goal>`.
+
+    Prints `FRIDAY_RESUME_MISSING <path>` when there is no worktree, else
+    `FRIDAY_RESUME branch=<b> goalstatus=<word|-> session=<0|1> idle=<0|1|-> path=<abs path>` and one
+    `FRIDAY_DIRTY <porcelain line>` per uncommitted file (ignoring `runs/`). Nothing is changed.
+    """
+    import shlex
+    wt = remote_path(worktree_path(node, repo_name, goal))
+    g = shlex.quote(goal)
+    return f"""set -u
+wt={wt}
+[ -e "$wt/.git" ] || {{ echo "FRIDAY_RESUME_MISSING $wt"; exit 0; }}
+wt=$(cd "$wt" && pwd -P)
+{IDLE_SH}
+branch=$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null || echo "(detached)")
+session=0; idl=-
+if tmux has-session -t "=friday-"{g} 2>/dev/null; then
+  session=1
+  if idle {g}; then idl=1; else idl=0; fi
+fi
+gs=$(sed -n 's/^Status:[[:space:]]*//p' "$wt/docs/goals/"{g}".md" 2>/dev/null | head -n 1)
+echo "FRIDAY_RESUME branch=$branch goalstatus=${{gs:--}} session=$session idle=$idl path=$wt"
+git -C "$wt" status --porcelain -- . ':(exclude)runs' 2>/dev/null | sed 's/^/FRIDAY_DIRTY /'
+"""
+
+
+def parse_resume(text: str) -> dict:
+    """Parse `resume_script` output: {"missing": path|None, "branch", "goalstatus", "session", "idle",
+    "path", "dirty": [porcelain lines]}."""
+    import re
+    out = {"missing": None, "branch": None, "goalstatus": "-", "session": False, "idle": None,
+           "path": None, "dirty": []}
+    for line in text.splitlines():
+        if line.startswith("FRIDAY_RESUME_MISSING "):
+            out["missing"] = line.split(" ", 1)[1]
+        elif line.startswith("FRIDAY_DIRTY "):
+            out["dirty"].append(line[len("FRIDAY_DIRTY "):])
+        elif line.startswith("FRIDAY_RESUME "):
+            m = re.match(r"FRIDAY_RESUME branch=(\S*) goalstatus=(\S*) session=([01]) idle=(\S*) path=(.*)$", line)
+            if m:
+                out.update(branch=m.group(1), goalstatus=m.group(2), session=m.group(3) == "1",
+                           idle=None if m.group(4) == "-" else m.group(4) == "1", path=m.group(5))
+    return out
+
+
+def latest_dispatch(goal: str):
+    """The newest `dispatches.jsonl` record for `goal` (any kind), or None."""
+    import json
+    p = dispatches_path()
+    if not p.is_file():
+        return None
+    last = None
+    for line in p.read_text().splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(r, dict) and r.get("goal") == goal:
+            last = r
+    return last
+
+
 def inventory_script(node) -> str:
     """The one remote script that inventories goal worktrees and stray clones under `node.repos`.
 
