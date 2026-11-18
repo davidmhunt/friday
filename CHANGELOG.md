@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- `friday accept <id>` and `--reject` exit 8 and change nothing while tracked files are modified or staged
+  (untracked files do not count); they list the files and print the `git commit -am` command that commits
+  them as the directive's work, then the accept command to rerun.
+
 ## 1.0.0 - 2026-11-18
 
 First stable release of friday as a Claude Code plugin: plan with the user, then execute approved
