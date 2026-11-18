@@ -3,6 +3,30 @@
 `friday dash` runs on the master and collects a status snapshot from every node in the registry
 ([fleet.md](fleet.md)). It is read-only: it serves state, it never acts on a repo or a node.
 
+## How machines and projects get on the page
+
+- **Machines are the registry's nodes.** Every `[node.<name>]` in `nodes.toml` ([fleet.md](fleet.md))
+  is a machine card on the page. A node in the registry that has not reported shows as missing, with
+  the fix on its card.
+- **A node appears once its timer pushes.** `friday nodes --setup <name>` writes
+  `~/.config/friday/node.toml` on the node (`name`, `repos`, `dash` URL, taken from the registry and
+  the master's `[dash] port`) and installs `friday-push.timer`, which runs `friday status --push`
+  every 30 s. The first accepted push turns the card from missing to ok.
+- **Projects are the friday repos under the node's `repos` folder.** The `repos` key of the node
+  (and its `<repo>.friday/<goal>` worktrees) is scanned on every push. A friday repo is a git repo
+  with `docs/goals` or `docs/directives`; other folders there are ignored.
+- **`friday nodes --check`** prints one `dash:` line per node (ok, stale, missing or not running)
+  with its fix.
+
+Adding a new machine takes three commands:
+
+1. Add it to `nodes.toml` on the master: a `[node.<name>]` block with `role`, `ssh`, `repos` and
+   `plugin_dir` (see `nodes.example.toml`).
+2. `friday nodes --setup <name>` on the master: confirm with y, and it sets up the node and its push
+   timer.
+3. Open the page (`http://<master tailnet name>:8787`). The machine shows within about 30 s; if it
+   does not, run `friday nodes --check`.
+
 ## How it works
 
 - **Push.** Each node runs `friday status --push` every 30 s (a systemd user timer) and POSTs its
