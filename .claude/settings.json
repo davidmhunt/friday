@@ -10,7 +10,10 @@
       "Bash(friday verify)",
       "Bash(friday verify *)",
       "Bash(friday finish *)",
-      "Bash(friday land *)"
+      "Bash(friday land *)",
+      "Bash(friday init)",
+      "Bash(friday session-end)",
+      "Bash(friday session-end *)"
     ]
   }
 }
