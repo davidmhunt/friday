@@ -77,9 +77,9 @@ backticked command pattern where `*` matches any text. While the directive is ac
 worktree, the PreToolUse hook allows a Bash command that is one simple command matching a
 pattern, without a prompt. The list is read from the directive as committed on the goal's Base
 (`git show <Base>:docs/directives/<id>.md`), the plan the user approved, so edits on the goal
-branch never widen it. Deny rules, the commit guard, `friday accept` and hardware leases still
+branch never widen it. Deny rules, the commit guard, `friday accept <id>` and hardware leases still
 win. `friday check` errors on a pattern that is only `*`, contains `&&`, `;`, `|` or a backtick
-substitution, starts with `friday accept`, or matches the hook's deny list. `friday parse --json`
+substitution, starts with `friday accept <id>`, or matches the hook's deny list. `friday parse --json`
 returns it as `allowed`.
 
 `## Steps` is a numbered list `1.`, `2.`, ... with no gaps, in order; indented lines continue an item.

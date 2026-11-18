@@ -40,11 +40,11 @@ user approves the plan.
    - Tag a step `[heavy]` only when it needs deeper reasoning (a new algorithm, a numerical method,
      an architecture decision), with one line saying why.
    - `## Allowed commands` (optional section, before `## Log`): list every command the directive
-     needs that would otherwise prompt and nobody will be there to answer: `friday dispatch`,
-     `friday nodes --clean`, `friday release`, hardware commands, `ssh <robot> ...`. One bullet
+     needs that would otherwise prompt and nobody will be there to answer: `friday dispatch --goal *`,
+     `friday nodes --clean *`, `friday release *`, hardware commands, `ssh <robot> ...`. One bullet
      per command, the command in backticks, `*` matching any text, e.g. ``- `friday dispatch --goal *` ``.
      Keep each pattern as narrow as possible. No chained commands (`&&`, `;`, `|`), never
-     `friday accept`; `friday check` rejects those. Omit the section if nothing is needed.
+     `friday accept <id>`; `friday check` rejects those. Omit the section if nothing is needed.
    - Set `Node:` when the work needs a particular machine (`tag:gpu`, `tag:<board>`), else `any`.
 3. **Check the format.** Run `friday check --goal <goal>` and fix every error before asking for
    approval. Do not show the user files that do not pass.
