@@ -1,5 +1,5 @@
 # review-02: The plan changes only on Base, `friday start` merges Base in, and git refuses stray commits during a directive
-Status: blocked: review gaps remain: /home/david/Documents/claude_temp/friday/tests/test_plan_on_base.py:169-180 (test_restart_after_amendment_ignores_the_goal_status_flip): The regression test added for the earlier gap does not test the fix. It amends main with 'git commit --no-verify -qam amend'. Because '-a' stages every tracked change, it also commits friday's uncommitted 'Status: running' flip of docs/goals/core.md onto main, which 'git switch main' carried over. When the test switches back to friday/core the tree is clean, so '_merge_base' never sees the dirty goal file and the new 'ignore' path in bin/friday:214-218 never runs. The test also commits the goal Status change onto Base, which friday never does. So the restart-after-amendment behaviour (the directive's promise that 'an amendment to the running directive takes effect when it restarts') still has no test that would catch the original bug coming back.
+Status: approved
 Goal: review-range
 Node: any
 Deliverable: code
@@ -68,3 +68,4 @@ Commits:
 Verify: Verify passed: uv run --with pytest pytest -q tests/test_plan_on_base.py && uv run --with pytest pytest -q && claude plugin validate .
 Independent review: not recorded
 Blocked: review gaps remain: /home/david/Documents/claude_temp/friday/tests/test_plan_on_base.py:169-180 (test_restart_after_amendment_ignores_the_goal_status_flip): The regression test added for the earlier gap does not test the fix. It amends main with 'git commit --no-verify -qam amend'. Because '-a' stages every tracked change, it also commits friday's uncommitted 'Status: running' flip of docs/goals/core.md onto main, which 'git switch main' carried over. When the test switches back to friday/core the tree is clean, so '_merge_base' never sees the dirty goal file and the new 'ignore' path in bin/friday:214-218 never runs. The test also commits the goal Status change onto Base, which friday never does. So the restart-after-amendment behaviour (the directive's promise that 'an amendment to the running directive takes effect when it restarts') still has no test that would catch the original bug coming back.
+Unblocked 2026-11-18: re-run to fix the restart-after-amendment test gap named above.
