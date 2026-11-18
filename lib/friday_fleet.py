@@ -57,6 +57,43 @@ def find_nodes_file() -> Path | None:
     return None
 
 
+NODE_FILE = Path.home() / ".config" / "friday" / "node.toml"
+NODE_KEYS = ("name", "repos", "dash")
+
+
+def node_file_path() -> Path:
+    env = os.environ.get("FRIDAY_NODE_FILE")
+    return Path(env).expanduser() if env else NODE_FILE
+
+
+def load_node_file(path=None):
+    """Read this node's identity file: (name, repos, dash_url), or None when absent.
+
+    Missing keys come back as "". A malformed file is a RegistryError naming it."""
+    p = Path(path) if path else node_file_path()
+    if not p.is_file():
+        return None
+    try:
+        data = tomllib.loads(p.read_text())
+    except OSError as e:
+        raise RegistryError(f"cannot read {p}: {e}") from e
+    except tomllib.TOMLDecodeError as e:
+        raise RegistryError(f"{p}: invalid TOML: {e}") from e
+    unknown = sorted(set(data) - set(NODE_KEYS))
+    if unknown:
+        raise RegistryError(f"{p}: unknown key(s) {', '.join(unknown)}; "
+                            f"allowed: {', '.join(NODE_KEYS)}")
+    out = []
+    for key in NODE_KEYS:
+        val = data.get(key, "")
+        if not isinstance(val, str):
+            raise RegistryError(f"{p}: '{key}' must be a string")
+        out.append(val.strip())
+    if not out[0]:
+        raise RegistryError(f"{p}: missing key 'name'")
+    return tuple(out)
+
+
 def _str(name: str, key: str, val) -> str:
     if not isinstance(val, str) or not val.strip():
         raise RegistryError(f"node '{name}': '{key}' must be a non-empty string")
