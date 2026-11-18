@@ -1,5 +1,5 @@
 # review-01: `friday commits <id>` is the directive's change set; review and finish use it
-Status: approved
+Status: done
 Goal: review-range
 Node: any
 Deliverable: code
@@ -49,3 +49,14 @@ workflows/execute.js use it. tests/test_directive_commits.py proves each case.
 - The v1-final directives themselves; v1-final takes this by merging v1 into its goal branch.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 8bb2f5f review-01: status --json test ignores the host's node.toml so it passes on a set-up machine
+- 4892d98 review-01: tests for friday commits; CHANGELOG names the fix-02 symptom
+- 3d28132 review-01: review prompts use friday commits; untracked lines are the gap, review_base dropped
+- 1cb83e7 review-01: finish logs the directive's own commits; start prints the merge-base
+- eb75d92 review-01: friday commits <id> prints the directive's own change set
+- b045545 review-01: directive_commits finds a directive's own commits since its Base
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_directive_commits.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

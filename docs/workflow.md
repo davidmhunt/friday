@@ -101,6 +101,15 @@ Then `friday check --all` passes, `/friday:execute bench-01` works on branch `fr
 and `friday land --goal bench-warnings` opens the PR. `Land:` is optional in the directive (it
 defaults to `goal`).
 
+## Amending an approved plan
+
+Amendments to an approved goal are commits on its Base, checked with `friday check`. They reach the
+goal branch at the next `friday start`, which merges Base into `friday/<goal>` (or `friday/<id>` for
+`Land: pr`) before the directive; a conflict aborts the merge and start exits non-zero. An amendment
+to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
+git hook (installed by `friday init` and `friday start`, removed by `friday uninstall`) refuses commits
+without `Directive: <id>`; `git commit --no-verify` overrides it deliberately.
+
 ## Commit rules
 
 A directive adds as few commits to its goal branch as the work needs:

@@ -102,6 +102,10 @@ Each node has `repos`. For a goal `<g>` in repo `<repo>`:
   `origin/friday/<g>` when that exists, otherwise from the goal's Base (`origin/<Base>`).
 - Your checkout on the node is never touched: no checkout, reset or stash happens in it.
 
+Plan amendments to a dispatched goal are commits on its Base (checked with `friday check`); the node
+picks them up at its next `friday start`, which merges Base into the goal branch. An amendment to the
+running directive takes effect when it restarts.
+
 To change where work happens, change `repos` for that node. It must be trusted by `claude` (see below).
 
 Every remote command starts with `export PATH="$HOME/.local/bin:$PATH"`. Non-interactive ssh does not

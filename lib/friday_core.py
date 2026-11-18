@@ -33,7 +33,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*-\d{2,}$")
 FRIDAY_ALLOW = [
     f"Bash(friday {c})"
     for c in ("status", "status *", "new *", "check *", "parse *", "start *",
-              "verify", "verify *", "finish *", "land *")
+              "verify", "verify *", "finish *", "commits *", "land *")
 ]
 
 
@@ -58,6 +58,69 @@ def git_dir(cwd: Path | str) -> Path | None:
 
 def current_branch(cwd: Path | str) -> str | None:
     return _git(["symbolic-ref", "--quiet", "--short", "HEAD"], Path(cwd))
+
+
+def _ref_exists(root: Path, ref: str) -> bool:
+    return _git(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], root) is not None
+
+
+def directive_commits(root: Path | str, did: str) -> dict:
+    """The directive's own change set: {"base", "commits": [(sha, subject)], "untracked":
+    [(sha, subject, files)]}. Base is the merge-base of the goal's Base (local branch, else
+    origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
+    `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
+    record commits. `untracked` are non-merge commits with no `Directive:` line that touch
+    anything outside docs/goals/ and docs/directives/. Raises ValueError when it cannot say."""
+    root = Path(root)
+    try:
+        parsed = parse_directive_full(directive_path(root, did).read_text())
+    except OSError as e:
+        raise ValueError(f"cannot read directive {did}: {e}")
+    gid = parsed["goal"]
+    try:
+        base_name = parse_goal(goal_path(root, gid).read_text())["base"]
+    except OSError as e:
+        raise ValueError(f"cannot read goal {gid!r} of {did}: {e}")
+    if not base_name:
+        raise ValueError(f"goal {gid} has no Base")
+    for ref in (base_name, f"origin/{base_name}"):
+        if _ref_exists(root, ref):
+            base_ref = ref
+            break
+    else:
+        raise ValueError(f"base branch '{base_name}' exists neither locally nor as origin/{base_name}")
+    tip = "HEAD"
+    if parsed["land"] == "pr" and _ref_exists(root, f"friday/{did}"):
+        tip = f"friday/{did}"
+    base = _git(["merge-base", base_ref, tip], root)
+    if not base:
+        raise ValueError(f"no merge-base of {base_ref} and {tip}")
+    log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", f"{base}..{tip}"], root)
+    if log is None:
+        raise ValueError(f"git log {base}..{tip} failed")
+    records = {f"{did}: {w}" for w in ("blocked", "unblock", "record results", "accepted")}
+    trailer = re.compile(rf"(?m)^Directive:\s*{re.escape(did)}\s*$")
+    anytrailer = re.compile(r"(?m)^Directive:\s*\S")
+    commits: list[tuple[str, str]] = []
+    untracked: list[tuple[str, str, list[str]]] = []
+    for rec in log.split("\x01"):
+        rec = rec.strip("\n")
+        if not rec:
+            continue
+        sha, _, msg = rec.partition("\x00")
+        subject = msg.strip().splitlines()[0] if msg.strip() else ""
+        if subject in records:
+            continue
+        if trailer.search(msg):
+            commits.append((sha, subject))
+        elif not anytrailer.search(msg):
+            files = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha], root)
+            if files is None:
+                raise ValueError(f"git diff-tree {sha} failed")
+            fl = files.splitlines()
+            if not all(f.startswith(("docs/goals/", "docs/directives/")) for f in fl):
+                untracked.append((sha, subject, fl))
+    return {"base": base, "commits": commits, "untracked": untracked}
 
 
 # ---------------------------------------------------------------- config
@@ -711,3 +774,102 @@ def list_leases() -> list[dict]:
         if h:
             out.append(h)
     return out
+
+
+# ---------------------------------------------------------------- git commit-msg guard
+HOOK_TAG = "# friday-commit-msg-hook"
+COMMIT_MSG_HOOK = '''#!/usr/bin/env python3
+''' + HOOK_TAG + '''
+# Installed by `friday init` / `friday start`; removed by `friday uninstall`.
+# While a directive is active in this worktree, refuse commits without `Directive: <id>`.
+import json, os, re, subprocess, sys
+
+def git(*a):
+    r = subprocess.run(["git", *a], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+msgfile = sys.argv[1] if len(sys.argv) > 1 else ""
+local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commit-msg.local")
+if os.path.isfile(local) and os.access(local, os.X_OK):
+    rc = subprocess.run([local, *sys.argv[1:]]).returncode
+    if rc:
+        sys.exit(rc)
+
+gd = git("rev-parse", "--absolute-git-dir")
+try:
+    marker = json.load(open(os.path.join(gd, "friday-active")))
+    did = marker["id"]
+except (OSError, ValueError, KeyError, TypeError):
+    sys.exit(0)
+try:
+    msg = open(msgfile, errors="replace").read()
+except OSError:
+    sys.exit(0)
+msg = "\\n".join(l for l in msg.splitlines() if not l.startswith("#"))
+named = re.findall(r"(?m)^Directive:[ \\t]*(\\S+)[ \\t]*$", msg)
+if did in named:
+    sys.exit(0)
+
+def goal_of(x):
+    top = git("rev-parse", "--show-toplevel")
+    try:
+        t = open(os.path.join(top, "docs", "directives", x + ".md")).read()
+    except OSError:
+        return None
+    m = re.search(r"(?m)^Goal:[ \\t]*(\\S+)", t)
+    return m.group(1) if m else None
+
+staged = git("diff", "--cached", "--name-only").splitlines()
+if staged and all(f.startswith(("docs/goals/", "docs/directives/")) for f in staged):
+    g = goal_of(did)
+    if g and any(goal_of(n) == g for n in named):
+        sys.exit(0)
+
+sys.stderr.write(
+    f"friday: directive {did} is active in this worktree, so every commit needs the line\\n"
+    f"    Directive: {did}\\n"
+    f"as the last line of its message (git commit -m 'what changed' -m 'Directive: {did}').\\n"
+    f"To commit without it on purpose: git commit --no-verify\\n")
+sys.exit(1)
+'''
+
+
+def hooks_dir(root: Path | str) -> Path:
+    p = _git(["rev-parse", "--git-path", "hooks"], Path(root))
+    d = Path(p)
+    return d if d.is_absolute() else Path(root) / d
+
+
+def install_commit_hook(root: Path | str) -> str:
+    """Install friday's commit-msg; an existing foreign one becomes commit-msg.local. Idempotent.
+    Returns "installed", "unchanged" or "blocked" (a foreign hook and a commit-msg.local both exist)."""
+    d = hooks_dir(root)
+    hook, local = d / "commit-msg", d / "commit-msg.local"
+    if hook.is_file() and not hook.is_symlink():
+        text = hook.read_text(errors="replace")
+        if HOOK_TAG in text:
+            if text == COMMIT_MSG_HOOK and os.access(hook, os.X_OK):
+                return "unchanged"
+        elif local.exists():
+            return "blocked"
+        else:
+            hook.rename(local)
+    elif hook.exists() or hook.is_symlink():
+        if local.exists():
+            return "blocked"
+        hook.rename(local)
+    d.mkdir(parents=True, exist_ok=True)
+    hook.write_text(COMMIT_MSG_HOOK)
+    hook.chmod(0o755)
+    return "installed"
+
+
+def uninstall_commit_hook(root: Path | str) -> bool:
+    d = hooks_dir(root)
+    hook, local = d / "commit-msg", d / "commit-msg.local"
+    if not (hook.is_file() and HOOK_TAG in hook.read_text(errors="replace")):
+        return False
+    hook.unlink()
+    if local.exists():
+        local.rename(hook)
+    return True

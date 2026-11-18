@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """friday's hooks: one script, one subcommand per event. Standard library only.
 
-  pretool      PreToolUse on Bash: deny list, ./run enforcement, commit trailer, hardware gate
+  pretool      PreToolUse on Bash: deny list, ./run enforcement, no commits on main, hardware gate
   stop         Stop: while a directive is active in this worktree, its Verify: must pass
   session-end  SessionEnd: release this session's hardware leases
   posttool     PostToolUse on Write|Edit|MultiEdit: a goal/directive file's own format errors go
@@ -73,57 +73,34 @@ def check_run_only(cmd: str, cfg: dict) -> str | None:
     return None
 
 
-def _commit_message(argv: list[str], cwd: Path) -> str | None:
-    """Text of -m/--message/-F/--file args of a `git commit` argv, or None when an editor would open."""
-    def from_file(path: str) -> str:
-        try:
-            return (cwd / path).read_text() if path != "-" else ""
-        except OSError:
-            return ""
-
-    msgs, i, saw = [], 0, False
-    while i < len(argv):
-        a = argv[i]
-        if a in ("-m", "--message") and i + 1 < len(argv):
-            msgs.append(argv[i + 1]); saw = True; i += 2; continue
-        if a in ("-F", "--file") and i + 1 < len(argv):
-            msgs.append(from_file(argv[i + 1])); saw = True; i += 2; continue
-        if a.startswith("--message="):
-            msgs.append(a.split("=", 1)[1]); saw = True
-        elif a.startswith("--file="):
-            msgs.append(from_file(a.split("=", 1)[1])); saw = True
-        elif a.startswith("-m") and len(a) > 2:
-            msgs.append(a[2:]); saw = True
-        elif a.startswith("-F") and len(a) > 2:
-            msgs.append(from_file(a[2:])); saw = True
-        elif a in ("--no-edit", "-C", "-c", "--reuse-message", "--reedit-message", "--amend"):
-            saw = saw or a != "--amend"
-        i += 1
-    return "\n".join(msgs) if saw else None
-
-
 def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
-    """Agent commits during a directive carry a `Directive: <id>` trailer and never land on main."""
-    marker = fc.read_marker(cwd)
+    """A commit never lands on main/master during a directive. The repository judged is the one the
+    command commits in (`cd DIR && git commit`, `git -C DIR commit`), not the session's cwd. The
+    `Directive:` trailer is enforced by the commit-msg git hook for every committer."""
+    here = cwd
     for simple in fc.split_commands(cmd):
         argv = fc.argv_of(simple)
+        if not argv:
+            continue
+        if argv[0] == "cd":
+            if len(argv) > 1 and argv[1] != "-":
+                here = here / Path(argv[1]).expanduser()
+            continue
         if len(argv) < 2 or argv[0] != "git":
             continue
-        rest = argv[1:]
+        rest, target = argv[1:], here
         while rest and rest[0] in ("-C", "-c") and len(rest) > 1:   # git -C dir commit ...
+            if rest[0] == "-C":
+                target = target / Path(rest[1]).expanduser()
             rest = rest[2:]
         if not rest or rest[0] != "commit":
             continue
-        branch = fc.current_branch(cwd)
+        marker = fc.read_marker(target)
+        branch = fc.current_branch(target)
         if branch in ("main", "master"):
             if marker:
                 return "deny", f"Directive {marker['id']} commits go on its own branch, not {branch}. Create or switch to friday/{marker['id']}."
             return "ask", f"Commit directly on {branch}?"
-        if marker:
-            msg = _commit_message(rest[1:], cwd)
-            if msg is not None and not re.search(rf"(?m)^Directive:\s*{re.escape(marker['id'])}\s*$", msg):
-                return "deny", (f"Commits for directive {marker['id']} end with the trailer line "
-                                f"`Directive: {marker['id']}` (add -m \"Directive: {marker['id']}\").")
     return None
 
 
