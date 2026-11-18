@@ -136,7 +136,10 @@ exit code, so DRC runs after you route, in `fab-01`.
 - Open sheet `power_io`: D5 and R12 sit between `STATUS_LED` and GND and the values are right.
 - Open the board with layers `F.Cu` and `F.Silkscreen`: D5 and R12 are within 5 mm of J2 and
   inside `Edge.Cuts`, and the D5 silkscreen label is readable.
-- Route `STATUS_LED` yourself on `F.Cu` and run DRC in the editor before you accept.
+- Route `STATUS_LED` yourself on `F.Cu` and run DRC in the editor. Then commit the routed
+  board on the goal branch, with `Directive: led-01` as the last line of the message, before you
+  accept: `friday accept` commits only the directive file, and `fab-01` will not start while
+  tracked files are uncommitted.
 
 ## Out of scope
 - Routing, moving existing footprints, other sheets, and the fabrication files.
@@ -173,6 +176,7 @@ DRC on the routed board is clean, `fab/fab-01.zip` holds the Gerber and drill fi
 ```
 
 Plan it with `/friday:plan`, approve it and push Base. Run `/friday:execute`: `led-01` places the
-parts, runs ERC and DRC, and ends `awaiting review`. Open the sheet and layers it names, route
-the net, then `friday accept led-01` yourself. `fab-01` then exports the
+parts, runs ERC, and ends `awaiting review`. Open the sheet and layers it names, route the net,
+commit the routed board on the goal branch (last line `Directive: led-01`), then
+`friday accept led-01` yourself. `fab-01` runs DRC on that routed board and exports the
 files from the board you accepted; the goal lands as a PR, which you merge.
