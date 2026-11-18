@@ -140,3 +140,16 @@ def test_status_lists_merged_origin_branches_only(tmp_path):
     assert "friday/open" not in r.stdout
     after = subprocess.run(["git", "-C", str(repo), "for-each-ref"], capture_output=True, text=True).stdout
     assert before == after  # status deleted nothing
+
+
+def test_non_heredoc_double_angle_does_not_hide_commands():
+    cases = [
+        "echo $((1<<EOF))\nfriday accept hook-01\nEOF",
+        "# <<'EOF'\nfriday accept hook-01\nEOF",
+        "echo hi # <<EOF\nfriday accept hook-01",
+        "(( x = 1<<2 ))\nfriday accept hook-01\n2",
+        "cat <<E'OF'\nx\nEOF\nfriday accept hook-01",
+    ]
+    for cmd in cases:
+        assert "friday accept hook-01" in fc.split_commands(cmd), cmd
+        assert refused(cmd), cmd

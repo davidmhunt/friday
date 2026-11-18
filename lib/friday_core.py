@@ -766,7 +766,7 @@ def clear_marker(cwd: Path | str) -> None:
 _SEPARATORS = ("&&", "||", ";", "|", "\n", "&")
 
 
-_HEREDOC = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|\\([A-Za-z0-9_]+)|([A-Za-z0-9_]+))")
+_HEREDOC = re.compile(r"<<(-?)[ \t]*((?:'[^'\n]*'|\"[^\"\n]*\"|\\[^\s]|[A-Za-z0-9_.-])+)")
 _SUBST = r"\$\(([^()]*)\)|`([^`]*)`"
 
 
@@ -806,11 +806,28 @@ def _strip_heredocs(line: str) -> tuple[str, list[str]]:
                     live.append("\n".join(body))
             pending = []
             continue
+        if c == "#" and (i == 0 or line[i - 1] in " \t\n;&|("):
+            j = line.find("\n", i)
+            j = len(line) if j < 0 else j
+            out.append(line[i:j]); i = j
+            continue
+        if line.startswith("((", i) and (i == 0 or line[i - 1] in " \t\n;&|$("):
+            depth, j = 0, i
+            while j < len(line):
+                depth += (line[j] == "(") - (line[j] == ")")
+                j += 1
+                if depth == 0:
+                    break
+            if depth == 0 and line[j - 2:j] == "))":
+                out.append(line[i:j]); i = j
+                continue
         if line.startswith("<<", i) and not line.startswith("<<<", i):
             m = _HEREDOC.match(line, i)
             if m:
-                delim = next(g for g in m.groups()[1:] if g is not None)
-                pending.append((bool(m.group(1)), delim, m.group(5) is None))
+                word = m.group(2)
+                delim = re.sub(r"'([^']*)'|\"([^\"]*)\"|\\(.)",
+                               lambda x: next(g for g in x.groups() if g is not None), word)
+                pending.append((bool(m.group(1)), delim, delim != word))
                 out.append(m.group(0)); i = m.end()
                 continue
             out.append("<<"); i += 2
