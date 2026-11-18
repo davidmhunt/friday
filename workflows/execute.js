@@ -270,13 +270,22 @@ const LAND_MEANING = {
 const AWAITING_END = 'if any directive of the goal is awaiting review, the goal is PR-pending'
 const head = `${id} done: ${external ? 'Verify n/a (external)' : 'Verify passed'}, review clean.`
 
-if (landMode === 'none') return `${head} Land none: committed only, nothing pushed.`
+const awaiting = d.accept === 'user'
+const reviewBullets = (Array.isArray(d.review) ? d.review : []).map(b => `- ${b}`).join('\n')
+const awaitHead = `${id} awaiting review: ${external ? 'Verify n/a (external)' : 'Verify passed'}, review clean.`
+const acceptLine = `Open and check:\n${reviewBullets}\nYou run: friday accept ${id}`
+
+if (landMode === 'none') {
+  if (awaiting) return `${awaitHead} Land none: committed only, nothing pushed. ${acceptLine}`
+  return `${head} Land none: committed only, nothing pushed.`
+}
 
 const land = await runLand(landCmd, 'land')
 if (!land) return `${head} The landing step returned nothing. Run \`${landCmd}\` yourself.`
 
 if (landMode === 'pr') {
   const meaning = LAND_MEANING[land.exit_code] || `friday land exited ${land.exit_code}`
+  if (awaiting) return `${awaitHead} ${meaning}. ${lastLines(land.output)}${land.exit_code ? ` To retry: ${landCmd}` : ''}\n${acceptLine}`
   return `${head} ${meaning}. ${lastLines(land.output)}${land.exit_code ? ` To retry: ${landCmd}` : ''}`
 }
 
@@ -284,11 +293,10 @@ if (landMode === 'pr') {
 if (land.exit_code !== 0) {
   return `${head} ${LAND_MEANING[land.exit_code] || `friday land exited ${land.exit_code}`}. ${lastLines(land.output)} To retry: ${landCmd}`
 }
-if (d.accept === 'user') {
+if (awaiting) {
   // Awaiting review: the goal branch is pushed, `land --goal` is skipped, the user accepts, the run moves on.
-  const bullets = (Array.isArray(d.review) ? d.review : []).map(b => `- ${b}`).join('\n')
   const goalLand = `friday land --goal ${d.goal}`
-  return `${id} awaiting review: ${external ? 'Verify n/a (external)' : 'Verify passed'}, review clean. Pushed ${branch}; the goal is not landed. Open and check:\n${bullets}\nYou run: friday accept ${id}   then: ${goalLand}${isLast ? '' : `\nNext: /friday:execute ${nextId || '(none)'}`}${isLast ? `\nLast directive of goal ${d.goal}: ${AWAITING_END}` : ''}`
+  return `${id} awaiting review: ${external ? 'Verify n/a (external)' : 'Verify passed'}, review clean. Pushed ${branch}; the goal is not landed. ${acceptLine}   then: ${goalLand}${isLast ? '' : `\nNext: /friday:execute ${nextId || '(none)'}`}${isLast ? `\nLast directive of goal ${d.goal}: ${AWAITING_END}` : ''}`
 }
 if (!isLast) {
   return `${head} Pushed ${branch}; next: /friday:execute ${nextId || '(none)'}`

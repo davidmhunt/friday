@@ -76,10 +76,20 @@ def test_no_prompt_asks_for_an_echoed_exit_code():
 
 
 def test_awaiting_review_branch_skips_land_goal():
-    i = SRC.index("if (d.accept === 'user')")
+    i = SRC.index("if (awaiting) {\n  // Awaiting")
     j = SRC.index("const goalCmd", i)
     block = SRC[i:j]
-    assert "friday accept ${id}" in block and "friday land --goal ${d.goal}" in block
-    assert "runLand" not in block and "d.review" in block
+    assert "acceptLine" in block and "friday land --goal ${d.goal}" in block
+    assert "runLand" not in block
+    assert "friday accept ${id}" in SRC and "d.review" in SRC
     # the push (friday land <id>) happens before this branch
     assert SRC.index("const land = await runLand(landCmd") < i
+
+
+def test_awaiting_review_reported_for_land_none_and_pr():
+    none_i = SRC.index("if (landMode === 'none') {")
+    none_block = SRC[none_i:SRC.index("const land = await", none_i)]
+    assert "if (awaiting) return" in none_block and "acceptLine" in none_block
+    pr_i = SRC.index("if (landMode === 'pr') {")
+    pr_block = SRC[pr_i:SRC.index("// Land goal", pr_i)]
+    assert "if (awaiting) return" in pr_block and "acceptLine" in pr_block
