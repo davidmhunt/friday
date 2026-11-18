@@ -1,5 +1,5 @@
 # review-range: A directive's review covers exactly its own commits, however often it restarts
-Status: running
+Status: done
 Base: v1
 Land: pr
 
@@ -18,3 +18,4 @@ changes only on Base, and git refuses stray commits while a directive is active.
 
 ## Log
 - 2026-11-18: Landed: 1 directive(s) reverified on friday/review-range; PR into v1.
+- 2026-11-18: Landed: 2 directive(s) reverified on friday/review-range; PR into v1.
