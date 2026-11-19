@@ -1,5 +1,5 @@
 # scope-01: Goals cover a whole capability, and related work extends the open goal instead of opening a new PR
-Status: approved
+Status: done
 Goal: field-fixes
 Node: any
 Deliverable: code
@@ -40,3 +40,14 @@ self-merged within minutes (approved by the user 2026-11-18). tests/test_goal_sc
 - Draft PRs, merging PRs automatically, or a standing maintenance goal.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 6d4f90d Extend field-fixes (approved by the user): review-03 (#21) and scope-01 (larger goals, fewer PRs)
+- 6fe62fb plan skill: goals are capabilities; find open goals and extend them
+- 11cb875 status: report each goal's PR state (none|open|merged) with URL; dash shows it
+- 1cce647 docs: a goal is a capability extended by Base amendments while its PR is open
+- 4e2de73 docs: reword
+- b15ddc6 tests: goal scope (plan skill rule, per-goal PR state, land with open PR); changelog
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_goal_scope.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
