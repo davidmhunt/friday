@@ -27,8 +27,11 @@ Work is a **goal**, split into **directives**, split into **steps**.
 | Directive | `docs/directives/<id>.md` | the goal branch; `friday/<id>` when `Land: pr` | its `Verify:` command passes and an independent verifier agrees with its steps and `## Acceptance` | commits on the goal branch (`Land: goal`), its own PR (`pr`), nothing (`none`) |
 | Step | a numbered item of `## Steps` | the goal branch | covered by the directive's Verify | one commit, only if tracked files changed |
 
-- A goal is one planning run (`/friday:plan`), one approval, one branch and one PR. Its **Base** is
-  the branch the PR targets and the branch where the plan lives (section 6).
+- A goal is one user-visible capability (typically 3 to 10 directives), one branch and one PR. It
+  may span several planning runs (`/friday:plan`): while its PR is open, related work, follow-ups
+  and small fixes extend it as directives added by Base amendments (section 6), and the plan skill
+  proposes a new goal only for unrelated work. Its **Base** is the branch the PR targets and the
+  branch where the plan lives (section 6).
 - Directives of a goal run in the listed order, one at a time. Parallelism is across goals
   (separate branches, worktrees or machines), never within a goal.
 - A directive has a **Deliverable** (`code`, `doc`, `slides`, `external`) that decides how it is

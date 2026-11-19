@@ -5,8 +5,10 @@ independent verifier finds no gaps. You review PRs, not steps.
 
 ## The model: goal, directive, step
 
-A **goal** (`docs/goals/<goal>.md`) is one planning run, one approval, one branch `friday/<goal>`
-and one PR into its Base. It orders **directives** (`docs/directives/<id>.md`); each has a
+A **goal** (`docs/goals/<goal>.md`) is one user-visible capability (typically 3 to 10 directives), one
+branch `friday/<goal>` and one PR into its Base. It may span several planning runs: while its PR is
+open, related work extends it as directives added by Base amendments (`friday status` shows each
+goal's PR state, and `/friday:plan` looks for an open goal first). It orders **directives** (`docs/directives/<id>.md`); each has a
 `Verify:` command, a `Deliverable` (code, doc, slides, external) and numbered **steps**. Every step
 that changes tracked files is one commit, and each directive adds one record commit.
 

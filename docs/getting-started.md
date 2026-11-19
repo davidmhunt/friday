@@ -185,7 +185,9 @@ Execution reads the approved plan, including `## Allowed commands`, from `origin
 
 Later amendments go on Base too. To change an approved goal (a step, the Verify command, an
 `## Allowed commands` list, a new directive), commit the change on Base, run `friday check`, and
-push Base. Never edit the plan on the goal branch. The running goal merges Base into its branch at
+push Base. The same route extends a goal with related work while its PR is open: a goal is a
+capability, not one planning run, and `/friday:plan` offers to add to an open goal (see
+`friday status`) before opening a new one. Never edit the plan on the goal branch. The running goal merges Base into its branch at
 the next `friday start`, and an amendment to the directive that is running takes effect when it
 restarts.
 
