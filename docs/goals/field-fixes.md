@@ -1,5 +1,5 @@
 # field-fixes: Fixes from the first real use: execute order, notes, hardware approval, batches, dispatch
-Status: approved
+Status: done
 Base: v1
 Land: pr
 
@@ -29,3 +29,4 @@ new rule: related work extends the open goal (approved by the user).
 7. scope-01: Goals cover a whole capability, and related work extends the open goal instead of opening a new PR
 
 ## Log
+- 2026-11-18: Landed: 7 directive(s) reverified on friday/field-fixes; PR into v1.

@@ -3,7 +3,7 @@ export const meta = {
   description: 'Execute one approved friday directive on the goal model: parse it, implement each step on the goal branch, gate on Verify (skipped for external), independent review incl. Acceptance, land by the Land field',
   whenToUse: 'After the user approves a directive in docs/directives/. Pass the directive id, e.g. /friday:execute gm-03',
   phases: [
-    { title: 'Prepare', detail: 'friday parse --json, friday start --no-gate (goal branch, order, base); no commit' },
+    { title: 'Prepare', detail: 'friday start --no-gate first (goal branch, order, merges Base) and its HEAD sha, then friday parse --json; a parse failure runs friday finish --blocked; no commit' },
     { title: 'Implement', detail: 'one implementer per step, in order, labelled step n/total' },
     { title: 'Verify', detail: 'run Verify; fix and rerun until it passes or stops making progress (skipped for external)' },
     { title: 'Review', detail: 'independent Opus verifier grades the steps and ## Acceptance over this directive\'s commits' },
@@ -30,10 +30,11 @@ const PARSE = {
 }
 const START = {
   type: 'object',
-  required: ['started', 'output'],
+  required: ['started', 'output', 'sha'],
   properties: {
     started: { type: 'boolean', description: 'false if friday start refused' },
     output: { type: 'string', description: 'friday start output verbatim when it refused, else empty' },
+    sha: { type: 'string', description: 'git rev-parse HEAD after start (the merge); empty when it refused' },
   },
 }
 const STEP = {
@@ -150,32 +151,34 @@ async function verifyLoop(d, label) {
 
 // ---------------------------------------------------------------- prepare
 phase('Prepare')
-const parsed = await agent(
-  `Run \`friday parse ${id} --json\` (the session's current directory is the repo root). Return its exit code and its stdout verbatim (do not summarise or reformat). Change nothing. ${ALONE}`,
-  { agentType: 'friday:runner', schema: PARSE, label: `parse ${id}`, phase: 'Prepare' },
-)
-if (!parsed) return `${id} not started: the parse step returned nothing`
-let d
-try {
-  d = JSON.parse(parsed.stdout)
-} catch (e) {
-  return `${id} not started: friday parse gave invalid JSON (exit ${parsed.exit_code})`
-}
-if (parsed.exit_code !== 0 || !d || typeof d !== 'object') {
-  const errs = d && Array.isArray(d.errors) && d.errors.length ? d.errors.join('; ') : `friday parse exited ${parsed.exit_code}`
-  return `${id} not started: ${errs}`
-}
-if (Array.isArray(d.errors) && d.errors.length) return `${id} not started: ${d.errors.join('; ')}`
-if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
-  return `${id} not started: Status is "${d.status}", not approved`
-}
-
 const st = await agent(
-  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n${ALONE}\nCommit nothing.`,
+  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch, merges Base into the goal branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n3. Run \`git rev-parse HEAD\` (after the merge) and return its output as sha.\n${ALONE}\nCommit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
 if (!st.started) return `${id} not started: ${st.output}`
+const sha = String(st.sha || '').trim()
+
+// The sha is in the prompt so a resumed run reuses a cached parse only when HEAD is unchanged.
+const parsed = await agent(
+  `Run \`friday parse ${id} --json\` (the session's current directory is the repo root; the goal branch is at commit ${sha}). Return its exit code and its stdout verbatim (do not summarise or reformat). Change nothing. ${ALONE}`,
+  { agentType: 'friday:runner', schema: PARSE, label: `parse ${id} @ ${sha.slice(0, 8)}`, phase: 'Prepare' },
+)
+if (!parsed) return await block('the parse step returned nothing')
+let d
+try {
+  d = JSON.parse(parsed.stdout)
+} catch (e) {
+  return await block(`friday parse gave invalid JSON (exit ${parsed.exit_code})`)
+}
+if (parsed.exit_code !== 0 || !d || typeof d !== 'object') {
+  const errs = d && Array.isArray(d.errors) && d.errors.length ? d.errors.join('; ') : `friday parse exited ${parsed.exit_code}`
+  return await block(`parse failed: ${errs}`)
+}
+if (Array.isArray(d.errors) && d.errors.length) return await block(`parse failed: ${d.errors.join('; ')}`)
+if (!(d.status === 'approved' || String(d.status).startsWith('running@'))) {
+  return await block(`Status is "${d.status}", not approved`)
+}
 log(`${id}: ${d.steps.map(s => `${s.n}. ${s.text.slice(0, 60)}`).join(' | ')}`)
 
 // ---------------------------------------------------------------- implement
@@ -184,7 +187,7 @@ for (const s of d.steps) {
   const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}/${d.steps.length}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
   if (s.heavy) opts.model = 'opus'
   const r = await agent(
-    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` and do not commit.`,
+    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` (plain lines or \`- \` bullets, never \`#\` headings) and do not commit.`,
     opts,
   )
   if (!r) return await block(`step ${s.n} agent did not return`)

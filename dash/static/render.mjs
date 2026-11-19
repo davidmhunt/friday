@@ -180,7 +180,8 @@ export function renderProjects(state) {
   const ps = projects(state), sess = allSessions(state);
   return h("section", { cls: "view", id: "view-projects" }, h("h2", {}, "Projects"),
     ps.length ? ps.map((p) => h("div", { cls: "project-detail" }, projectCard(p, state),
-      p.goals.map((g) => [h("h3", {}, "Goal " + (g.id || "(no goal)") + ": " + g.title + " [" + g.status + "]"),
+      p.goals.map((g) => [h("h3", {}, "Goal " + (g.id || "(no goal)") + ": " + g.title + " [" + g.status + "]",
+        g.pr ? [" ", g.pr_url ? h("a", { href: g.pr_url, rel: "noopener" }, "PR " + g.pr) : h("span", { cls: "badge" }, "PR " + g.pr)] : null),
         h("div", { cls: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ["directive", "title", "status", "deliverable", "runs on"].map((x) => h("th", {}, x)))),
           h("tbody", {}, (g.directives || []).map((d) => {
             const host = runningHost(d.status), s = sess.find((x) => x.directive === d.id);

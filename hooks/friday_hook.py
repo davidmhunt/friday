@@ -6,7 +6,7 @@
   session-end  SessionEnd: release this session's hardware leases
   notification Notification: a friday session stopped on a prompt; record it for status and the dash
   waiting-clear PreToolUse/PostToolUse/UserPromptSubmit: the session moved on; drop that record
-  posttool     PostToolUse on Write|Edit|MultiEdit: a goal/directive file's own format errors go
+  posttool     PostToolUse on Bash: record session approval of a hardware resource; on Write|Edit|MultiEdit: a goal/directive file's own format errors go
                back to the model (stderr, exit 2); warnings and clean files are silent
 
 Every decision is deterministic and explained in its reason, so the agent learns the fix from
@@ -152,20 +152,58 @@ def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
     return None
 
 
-def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
-    hw = cfg.get("hardware") or {}
-    for resource, patterns in hw.items():
-        if not any(re.search(p, cmd) for p in patterns):
+def _session_approved(cfg: dict, resource: str) -> bool:
+    return (cfg.get("hardware_approval") or {}).get(resource) == "session"
+
+
+def record_session_approval(payload: dict) -> None:
+    """PostToolUse on Bash: the command ran, so the user allowed it. For each `session` resource it
+    matched whose lease this session holds, mark the lease approved (it ends with the lease)."""
+    session = payload.get("session_id") or ""
+    cmd = (payload.get("tool_input") or {}).get("command") or ""
+    if not session or not cmd:
+        return
+    cfg = fc.load_config(fc.repo_root(Path(payload.get("cwd") or ".")))
+    for resource, patterns in (cfg.get("hardware") or {}).items():
+        if not _session_approved(cfg, resource) or not any(re.search(p, cmd) for p in patterns):
             continue
         holder = fc.lease_holder(resource)
+        if holder and holder.get("session") == session and not holder.get("approved"):
+            fc.take_lease(resource, session, holder.get("note", ""), approved=True)
+
+
+def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
+    hw = cfg.get("hardware") or {}
+    first = {}
+    for r, pats in hw.items():
+        pos = [m.start() for p in pats if (m := re.search(p, cmd))]
+        if pos:
+            first[r] = min(pos)
+    matched = sorted(first, key=first.get)         # resources in the order they appear in the command
+    if not matched:
+        return None
+    holders = {r: fc.lease_holder(r) for r in matched}
+    for resource in matched:                       # another session's lease wins, for every resource
+        holder = holders[resource]
         if holder and holder.get("session") != session:
             age = int((time.time() - holder["time"]) / 60)
             return "deny", (f"Hardware `{resource}` is held by another session on {holder.get('host')} "
                             f"({age} min ago: {holder.get('note', '')}). Wait, or ask the user to run "
                             f"`friday release {resource}`.")
-        fc.take_lease(resource, session, cmd)
-        return "ask", f"Hardware `{resource}`: this command touches a physical device. Lease taken for this session."
-    return None
+    if session and _one_simple_command(cmd) and all(
+            holders[r] and holders[r].get("approved") and _session_approved(cfg, r) for r in matched):
+        for resource in matched:
+            fc.take_lease(resource, session, cmd, approved=True)   # refresh the TTL, keep the approval
+        return "allow", f"{', '.join(matched)} approved for this session"
+    for resource in matched:
+        h = holders[resource]
+        fc.take_lease(resource, session, cmd, approved=bool(h and h.get("approved")))
+    resource = matched[0]
+    reason = (f"Hardware `{resource}`: this command touches a physical device. Lease taken and "
+              f"held for this session; this approval covers this command only.")
+    if (cfg.get("hardware_approval") or {}).get(resource) == "session":
+        reason += f" Approving it once approves `{resource}` for the rest of the session."
+    return "ask", reason
 
 
 def _one_simple_command(cmd: str) -> bool:
@@ -175,6 +213,33 @@ def _one_simple_command(cmd: str) -> bool:
     if not c or any(x in c for x in ("&", ";", "|", "`", "$(", "<(", ">(", "\n", "\r")):
         return False
     return len(fc.split_commands(c)) == 1
+
+
+def _unsafe_batch(cmd: str) -> bool:
+    """True when `cmd` holds text the pattern check cannot see: command or process substitution or a
+    heredoc anywhere (quoted or not; conservative), or an unquoted `&` that backgrounds (`&&`, `>&`,
+    `&>` and `2>&1` are not backgrounding)."""
+    if any(x in cmd for x in ("`", "$(", "<(", ">(", "<<")):
+        return True
+    quote, i = None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            i += 1
+        elif c == "&":
+            if cmd.startswith("&&", i):
+                i += 1
+            elif not ((i > 0 and cmd[i - 1] in "<>") or cmd.startswith("&>", i)):
+                return True
+        i += 1
+    return False
 
 
 def _git_show(root: Path, spec: str) -> str | None:
@@ -190,7 +255,7 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
-        if not marker or not root or not _one_simple_command(cmd):
+        if not marker or not root or not cmd.strip() or _unsafe_batch(cmd):
             return None
         did = marker["id"]
         base = str(marker.get("goal_base") or "").strip()
@@ -206,11 +271,19 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
         gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
         if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
             return None
-        c = cmd.strip()
-        for pat in parsed.get("allowed") or []:
-            rx = ".*".join(re.escape(part) for part in pat.split("*"))
-            if re.fullmatch(rx, c, re.S):
-                return "allow", f"pre-approved in {did} (on {base})"
+        simples = fc.split_commands(cmd)
+        rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
+               for pat in parsed.get("allowed") or []]
+        used: list[str] = []
+        for simple in simples:
+            hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
+            if hit is None:
+                return None
+            if hit not in used:
+                used.append(hit)
+        if simples:
+            pats = ", ".join(f"`{p}`" for p in used)
+            return "allow", f"pre-approved in {did} (on {base}): every command matches {pats}"
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None
@@ -451,6 +524,9 @@ def waiting_clear(payload: dict) -> None:
 # ------------------------------------------------------------------ posttool
 def posttool(payload: dict) -> int:
     """Validate one edited goal/directive file (no cross-checks). Returns the exit code."""
+    if payload.get("tool_name") == "Bash":
+        record_session_approval(payload)
+        return 0
     fp = (payload.get("tool_input") or {}).get("file_path")
     if payload.get("tool_name") not in ("Write", "Edit", "MultiEdit") or not fp:
         return 0

@@ -1,5 +1,5 @@
 # exec-02: `/friday:execute` merges Base before it parses, so amendments and new directives are seen (fixes #18)
-Status: approved
+Status: done
 Goal: field-fixes
 Node: any
 Deliverable: code
@@ -32,3 +32,12 @@ parse. tests/test_execute_order.py and tests/test_execute_prompts.py prove it.
 - `friday parse` reading from `origin/<Base>` directly (start's merge already brings it in).
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 8052ae2 execute: start (merge Base) before parse; parse prompt carries the HEAD sha; parse failure runs finish --blocked
+- 8fcc256 spec: execute Prepare runs start before parse
+- 00f431a tests: execute starts before parse; CLI start brings in Base-only and amended directives; CHANGELOG (#18)
+- 775a17d tests: execute stub matches parse label with HEAD sha; parse failure now blocks after start
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_execute_prompts.py tests/test_execute_order.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

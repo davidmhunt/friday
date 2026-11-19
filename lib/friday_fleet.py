@@ -310,6 +310,57 @@ def remote_path(p: str) -> str:
     return shlex.quote(p)
 
 
+_PLUGIN_PY = """
+import json, os, subprocess
+want = os.path.realpath(os.path.expanduser(os.environ["FRIDAY_P"]))
+state, where = "none", ""
+try:
+    out = subprocess.run(["claude", "plugin", "list", "--json"], capture_output=True, text=True, timeout=30).stdout
+    for p in json.loads(out):
+        if str(p.get("id", "")).startswith("friday@"):
+            where = str(p.get("readFromFolder") or p.get("installPath") or "")
+            if not p.get("enabled"):
+                state = "disabled"
+            elif where and os.path.realpath(os.path.expanduser(where)) == want:
+                state = "same"
+            else:
+                state = "other"
+            break
+except Exception:
+    state, where = "unknown", ""
+print("FRIDAY_PROBE install=" + state)
+print("FRIDAY_PROBE install_dir=" + where)
+"""
+
+
+def plugin_install_lines(node) -> str:
+    """Shell lines that print `FRIDAY_PROBE install=<none|disabled|same|other|unknown>` and
+    `install_dir=<dir>`: whether `friday@` is installed and enabled for the user, and from which
+    directory (`same` means the node's plugin_dir)."""
+    import shlex
+    return (f"if command -v python3 >/dev/null 2>&1; then FRIDAY_P={remote_path(node.plugin_dir)} "
+            f"python3 -c {shlex.quote(_PLUGIN_PY)} 2>/dev/null; else echo 'FRIDAY_PROBE install=unknown'; fi")
+
+
+def parse_plugin_install(text: str) -> tuple:
+    """(state, dir) from probe output; state is `unknown` when the lines are missing."""
+    got = dict(l[len("FRIDAY_PROBE "):].split("=", 1) for l in text.splitlines()
+               if l.startswith("FRIDAY_PROBE ") and "=" in l)
+    return got.get("install", "unknown"), got.get("install_dir", "")
+
+
+def probe_plugin_install(node, timeout: int = 60) -> str:
+    """Ask `node` whether friday is installed from its plugin_dir. Returns the state string;
+    any failure is `unknown` (callers then keep `--plugin-dir`)."""
+    import subprocess
+    argv, stdin = ssh_cmd(node, plugin_install_lines(node) + "\n")
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    return parse_plugin_install(r.stdout)[0] if r.returncode == 0 else "unknown"
+
+
 def worktree_path(node, repo_name: str, goal: str) -> str:
     """The worktree path as the node's shell will see it (still with a leading `~` if repos has one)."""
     return f"{node.repos.rstrip('/')}/{repo_name}.friday/{goal}"
@@ -443,15 +494,20 @@ def report_text(goal: str, report_to: str) -> str:
 
 
 def launch_line(node, goal: str, worktree: str, master_host: str, directives: list,
-                report_to: str) -> str:
-    """The one command that starts the worker session in tmux on `node`. Every value is quoted."""
+                report_to: str, installed: str = "") -> str:
+    """The one command that starts the worker session in tmux on `node`. Every value is quoted.
+
+    `installed` is the probe state (see plugin_install_lines): `same` means friday is installed
+    and enabled from the node's plugin_dir, so `--plugin-dir` is omitted (hooks and skills load once).
+    """
     import shlex
     q = shlex.quote
+    plugin_flag = [] if installed == "same" else ["--plugin-dir", remote_path(node.plugin_dir)]
     return " ".join([
         "tmux new -d -s", q(f"friday-{goal}"), "-c", q(worktree),
         "env", q(f"FRIDAY_RUNTIME={node.runtime}"), q(f"FRIDAY_DISPATCHED_FROM={master_host}"),
         "claude --model opus --permission-mode auto --remote-control",
-        "--name", q(f"{goal}.{node.name}"), "--plugin-dir", remote_path(node.plugin_dir),
+        "--name", q(f"{goal}.{node.name}"), *plugin_flag,
         "--append-system-prompt", q(report_text(goal, report_to)),
         q(run_text(goal, directives))])
 

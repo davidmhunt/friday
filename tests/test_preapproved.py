@@ -294,3 +294,54 @@ def test_push_guard_allows_goal_branch_for_land_goal(tmp_path, monkeypatch):
 def test_push_without_a_directive_is_not_guarded(repo):
     fc.marker_path(repo).unlink()
     assert pre(repo, "git push origin wip")[0] is None
+
+
+BATCH_ALLOWED = ["ssh robot *", "ssh radar2 *", "grep *"]
+
+
+@pytest.fixture
+def batch_repo(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, BATCH_ALLOWED)
+    (r / ".claude" / "friday.json").write_text(json.dumps(
+        {"hardware": {"robot": [r"\bssh robot\b"], "radar2": [r"\bssh radar2\b"]}}))
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    return r
+
+
+BATCH = "ssh robot uname\nssh robot uptime\nssh robot df\ngrep -c x out.log"
+
+
+def test_newline_batch_allowed(batch_repo):
+    d, why = pre(batch_repo, BATCH)
+    assert d == "allow" and "pre-approved in core-01" in why
+    assert "`ssh robot *`" in why and "`grep *`" in why
+
+
+def test_batch_with_one_unmatched_line_asks(batch_repo):
+    assert pre(batch_repo, BATCH.replace("ssh robot df", "echo hi"))[0] != "allow"
+    assert pre(batch_repo, BATCH + "\necho hi")[0] != "allow"
+
+
+@pytest.mark.parametrize("line", ["grep $(id) f", "grep `id` f", "grep x <(ls)", "grep x >(cat)", "grep x <<EOF"])
+def test_substitution_or_heredoc_in_any_line_not_allowed(batch_repo, line):
+    assert pre(batch_repo, f"ssh robot uname\n{line}\nssh robot df")[0] != "allow"
+    assert pre(batch_repo, f"{line}\nssh robot df")[0] != "allow"
+
+
+@pytest.mark.parametrize("cmd", ["ssh robot uname &", "ssh robot uname & ssh robot df", "ssh robot uname\ngrep x f &"])
+def test_backgrounding_not_allowed(batch_repo, cmd):
+    assert pre(batch_repo, cmd)[0] != "allow"
+
+
+def test_batch_takes_a_lease_for_each_resource(batch_repo):
+    assert fc.lease_holder("robot") is None and fc.lease_holder("radar2") is None
+    d, why = pre(batch_repo, "ssh robot uname\nssh radar2 uptime\ngrep x f")
+    assert d == "allow"
+    assert fc.lease_holder("robot")["session"] == "s1"
+    assert fc.lease_holder("radar2")["session"] == "s1"
+
+
+def test_batch_lease_held_elsewhere_denies(batch_repo):
+    fc.take_lease("radar2", "other", "x")
+    d, why = pre(batch_repo, "ssh robot uname\nssh radar2 uptime\ngrep x f")
+    assert d == "deny" and "held by another session" in why and "radar2" in why

@@ -1177,7 +1177,7 @@ const parse = Object.assign({
 }, scenario.parse || {})
 const defaults = {
   'parse g-02': { exit_code: scenario.parse_exit || 0, stdout: scenario.parse_stdout || JSON.stringify(parse) },
-  'start g-02': { started: true, output: '' },
+  'start g-02': { started: true, output: '', sha: 'abcdef0123456789' },
   'step 1/1': { status: 'done', summary: 'ok', commit: 'c1', question: '' },
   'initial verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
   'after review verify 1': { passed: true, exit_code: 0, signature: '', tail: '' },
@@ -1191,9 +1191,10 @@ const defaults = {
 }
 const responses = Object.assign({}, defaults, scenario.responses || {})
 const agent = async (prompt, opts) => {
-  calls.push({ label: opts.label, prompt })
-  if (!(opts.label in responses)) throw new Error('unexpected agent label: ' + opts.label)
-  return responses[opts.label]
+  const key = opts.label.replace(/ @ \w*$/, '')
+  calls.push({ label: key, prompt })
+  if (!(key in responses)) throw new Error('unexpected agent label: ' + opts.label)
+  return responses[key]
 }
 const logs = []
 ;(async () => {
@@ -1221,13 +1222,13 @@ needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is mi
 
 
 @needs_node
-def test_execute_parse_errors_stop_before_start(tmp_path):
+def test_execute_parse_errors_block_after_start(tmp_path):
     out = _run_execute(
         tmp_path, parse_exit=1,
         parse_stdout=json.dumps({"errors": ["no Goal field", "bad Land"]}),
     )
-    assert out["result"] == "g-02 not started: no Goal field; bad Land"
-    assert out["labels"] == ["parse g-02"]
+    assert out["result"] == "g-02 is blocked and needs you: parse failed: no Goal field; bad Land"
+    assert out["labels"] == ["start g-02", "parse g-02", "record block"]
 
 
 @needs_node

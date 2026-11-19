@@ -1,5 +1,5 @@
 # review-03: Upstream commits merged in by `friday start` never count against a directive (fixes #21)
-Status: approved
+Status: done
 Goal: field-fixes
 Node: any
 Deliverable: code
@@ -32,3 +32,12 @@ tests/test_directive_commits.py proves it.
 - Changing how `friday start` merges.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 6d4f90d Extend field-fixes (approved by the user): review-03 (#21) and scope-01 (larger goals, fewer PRs)
+- 04a0a1f directive_commits: exclude commits that reached the branch through a Base merge
+- 74c3627 test: merging an unrelated branch still surfaces its commits as untracked
+- 9fc7e2b test: teammate commit merged by friday start is not untracked; CHANGELOG (#21)
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_directive_commits.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

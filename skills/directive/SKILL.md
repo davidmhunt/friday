@@ -6,7 +6,7 @@ user-invocable: false
 
 # Goal and directive formats
 
-A goal is one planning run: one branch `friday/<goal>` and one PR into its Base. It lists
+A goal is one user-visible capability, possibly several planning runs (extended by Base amendments while its PR is open): one branch `friday/<goal>` and one PR into its Base. It lists
 directives, each one an independently verified chunk of work. Both are tracked in git and are the
 record of why a change was made, so keep them accurate. `friday check [<id> | --goal <g> | --all]`
 validates them (exit 1 on any error; warnings do not fail). Fix every error before asking for

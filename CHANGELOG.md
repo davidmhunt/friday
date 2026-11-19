@@ -18,6 +18,38 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
   it on; `friday status` lists `origin/friday/*` branches whose PR is merged with the `git push origin --delete`
   command for each. Neither changes anything; both skip quietly without `gh`.
 
+- A goal is one user-visible capability (typically 3 to 10 directives, one PR) and related work extends the
+  open goal as a Base amendment instead of opening a new PR. The plan skill starts by finding open goals;
+  `friday status` (and `--json`, and the dash) reports each goal's PR as `none|open|merged` with its URL,
+  skipped quietly without `gh`; `friday land --goal` on an open PR updates it and says so (scope-01).
+
+### Fixed
+
+- `friday commits` (and the review and `friday finish`) no longer lists a teammate's upstream commits, merged in by
+  `friday start`, as untracked; commits reachable from Base or `origin/<Base>`, or through a Base merge, are
+  excluded, while untagged code commits on the goal branch and commits of an unrelated merged branch still show (#21).
+
+- `friday dispatch` and `--resume` launch without `--plugin-dir` when the node has `friday@` installed and enabled
+  from its `plugin_dir`, so hooks and skills load once; otherwise `--plugin-dir` is kept, and `friday nodes --check`
+  warns when the plugin is installed from a different directory (two copies). `nodes --check` also reports whether
+  the node prompts for reads outside the working directories and the plugin install state (disp-01).
+
+- A Bash call of several commands (newlines, `&&`, `||`, `;`, `|`) is pre-approved when every command in it
+  matches a pattern in the directive's `## Allowed commands`; command or process substitution, a heredoc or
+  `&` backgrounding anywhere refuses it. Leases are taken for every hardware resource any part touches, and
+  one held by another session denies (#17).
+
+- Hardware prompts say the lease lasts the session but the approval covers this command only; a resource set to
+  `"session"` under `hardware_approval` in `.claude/friday.json` is approved once per session (#15). Agents are told
+  to write one simple command per hardware query so pre-approval applies.
+
+- `/friday:execute` runs `friday start` (which merges Base) before `friday parse`, so a directive added or
+  amended on Base runs from its current text (#18). The parse prompt carries the post-merge HEAD sha, so a
+  resumed run reuses a cached parse only when the goal branch has not moved; a parse failure runs
+  `friday finish --blocked` with the errors.
+- `friday finish` demotes `#` heading lines in `runs/<id>/notes.md` to `####` (fenced blocks untouched), so notes can no
+  longer break the directive's Log for `friday check` and `friday parse` (#14).
+
 ### Changed
 
 - Heredoc bodies stay fully scanned by the PreToolUse checks (fail closed). Long text that names a guarded

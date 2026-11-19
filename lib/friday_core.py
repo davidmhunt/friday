@@ -98,9 +98,21 @@ def directive_commits(root: Path | str, did: str) -> dict:
     base = _git(["merge-base", base_ref, tip], root)
     if not base:
         raise ValueError(f"no merge-base of {base_ref} and {tip}")
-    log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", f"{base}..{tip}"], root)
+    # Best-effort fetch so origin/<Base> is current; offline or no remote just keeps the local refs.
+    _git(["fetch", "--quiet", "origin", base_name], root)
+    base_refs = [r for r in (base_name, f"origin/{base_name}") if _ref_exists(root, r)]
+    # Commits that reached the branch through a Base merge are not the directive's: anything on a
+    # Base ref, and anything reachable from the second parent of a merge whose second parent is on Base.
+    excl = list(base_refs)
+    merges = _git(["rev-list", "--merges", "--parents", tip, "--not", *base_refs], root) or ""
+    for line in merges.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and any(
+                _git(["merge-base", "--is-ancestor", parts[2], r], root) is not None for r in base_refs):
+            excl.append(parts[2])
+    log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", tip, "--not", *excl], root)
     if log is None:
-        raise ValueError(f"git log {base}..{tip} failed")
+        raise ValueError(f"git log {tip} failed")
     records = {f"{did}: {w}" for w in ("blocked", "unblock", "record results", "accepted")}
     trailer = re.compile(rf"(?m)^Directive:\s*{re.escape(did)}\s*$")
     anytrailer = re.compile(r"(?m)^Directive:\s*\S")
@@ -132,9 +144,46 @@ def load_config(root: Path | None) -> dict:
         return {}
     p = root / ".claude" / "friday.json"
     try:
-        return json.loads(p.read_text())
+        cfg = json.loads(p.read_text())
     except (OSError, ValueError):
         return {}
+    if not isinstance(cfg, dict):
+        return {}
+    ha = cfg.get("hardware_approval")
+    if "hardware_approval" in cfg:
+        # invalid entries are rejected (dropped, so the resource stays `command`); `friday check` reports them
+        hw = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
+        cfg["hardware_approval"] = ({r: m for r, m in ha.items() if r in hw and m in APPROVAL_MODES}
+                                    if isinstance(ha, dict) else {})
+    return cfg
+
+
+APPROVAL_MODES = ("command", "session")
+
+
+def config_issues(root: Path | None) -> list[Issue]:
+    """Errors for a bad `hardware_approval` in .claude/friday.json: a value other than `command`
+    or `session`, or a resource that is not a key of `hardware`."""
+    if root is None:
+        return []
+    rel = ".claude/friday.json"
+    try:
+        cfg = json.loads((root / rel).read_text())
+    except (OSError, ValueError):
+        return []
+    if not isinstance(cfg, dict) or "hardware_approval" not in cfg:
+        return []
+    ha = cfg["hardware_approval"]
+    if not isinstance(ha, dict):
+        return [Issue("error", rel, 1, "hardware_approval must be an object: resource -> command|session")]
+    known = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
+    out = []
+    for res, mode in ha.items():
+        if res not in known:
+            out.append(Issue("error", rel, 1, f"hardware_approval names unknown resource `{res}` (not in hardware)"))
+        if mode not in APPROVAL_MODES:
+            out.append(Issue("error", rel, 1, f"hardware_approval `{res}` is {mode!r}; use command or session"))
+    return out
 
 
 # ---------------------------------------------------------------- directives
@@ -636,6 +685,7 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
         except OSError:
             return None
 
+    add(config_issues(root))
     goals: dict[str, dict | None] = {}
 
     def load_goal(gid: str) -> dict | None:
@@ -849,10 +899,13 @@ def lease_holder(resource: str, now: float | None = None) -> dict | None:
     return lease
 
 
-def take_lease(resource: str, session: str, note: str = "") -> None:
+def take_lease(resource: str, session: str, note: str = "", approved: bool = False) -> None:
     p = lease_dir() / f"{resource}.json"
-    p.write_text(json.dumps({"resource": resource, "session": session, "host": socket.gethostname(),
-                             "time": time.time(), "note": note[:200]}))
+    lease = {"resource": resource, "session": session, "host": socket.gethostname(),
+             "time": time.time(), "note": note[:200]}
+    if approved:
+        lease["approved"] = True
+    p.write_text(json.dumps(lease))
 
 
 def release_leases(session: str | None = None, resource: str | None = None) -> list[str]:
