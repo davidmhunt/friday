@@ -902,6 +902,20 @@ for k, v in (("workflow", "skipWorkflowUsageWarning"), ("auto", "skipAutoPermiss
 """
 
 
+_READS_PY = """
+import json, os
+try:
+    d = json.load(open(os.path.expanduser("~/.claude/settings.json")))
+    perm = d.get("permissions") if isinstance(d, dict) else None
+except Exception:
+    perm = None
+perm = perm if isinstance(perm, dict) else {}
+blocked = [k for k in ("blockReadsOutsideWorkingDirectories", "blockFileToolReadsOutsideWorkingDirectories")
+           if perm.get(k) is True]
+print("FRIDAY_PROBE reads_outside=" + ("blocked:" + ",".join(blocked) if blocked else "ok"))
+"""
+
+
 def probe_script(node) -> str:
     if node.role == "target":
         return "echo FRIDAY_PROBE reach=ok\n"
@@ -921,6 +935,7 @@ def probe_script(node) -> str:
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
         f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
+        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_READS_PY)} 2>/dev/null; fi",
         ff.plugin_install_lines(node),
     ]) + "\n"
 
@@ -962,6 +977,12 @@ def check_node(node) -> tuple:
     for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
+    reads = got.get("reads_outside", "unknown")
+    if reads.startswith("blocked"):
+        fixes.append(f"warning: {node.name} blocks reads outside the working directories "
+                     f"(permissions.{reads.split(':', 1)[-1].replace(',', ', permissions.')}), so a session that reads another repo will "
+                     f"prompt; have the directive copy what it needs into the goal branch, or allow the read on the node "
+                     f"(docs/fleet.md, Directives that need another repo)")
     inst = got.get("install", "unknown")
     if inst == "other":
         fixes.append(f"warning: friday is installed from {got.get('install_dir', '?')}, not plugin_dir "
@@ -970,7 +991,7 @@ def check_node(node) -> tuple:
         fixes.append(f"warning: friday is installed but disabled on {node.name}; dispatch keeps --plugin-dir")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}, "
-               f"plugin install {inst}")
+               f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}")
     return summary, fixes
 
 
