@@ -141,12 +141,16 @@ def _redirect_targets(simple: str) -> tuple[list[str], bool]:
             j = i + 1
             if j < len(simple) and simple[j] == ">":
                 j += 1
+            amp = j < len(simple) and simple[j] == "&"
+            if j < len(simple) and simple[j] in "|&":
+                j += 1                      # >| (clobber) and >& (fd dup, or file when not a number or -)
             while j < len(simple) and simple[j] in " \t":
                 j += 1
             k = j
             while k < len(simple) and simple[k] not in " \t;&|<>":
                 k += 1
-            targets.append(simple[j:k])
+            t = simple[j:k]
+            targets.append("&" + t if amp and (t.isdigit() or t == "-") else t)
             i = max(k, i + 1) - 1
         i += 1
     return targets, heredoc

@@ -1026,7 +1026,7 @@ def _drop_single_quoted(line: str) -> str:
     while i < len(line):
         c = line[i]
         if c == "\\" and i + 1 < len(line):
-            out.append(line[i:i + 2]); i += 2
+            out.append("  "); i += 2        # an escaped character is literal: `\`` and `\$(` run nothing
             continue
         if c == '"':
             dq = not dq
@@ -1063,6 +1063,9 @@ def split_commands(line: str) -> list[str]:
             buf.append(c); buf.append(line[i + 1]); i += 2
             continue
         sep = next((s for s in _SEPARATORS if line.startswith(s, i)), None)
+        if sep in ("|", "&") and buf and buf[-1] == ">":
+            buf.append(c); i += 1           # `>|` and `>&` are redirect operators, not separators
+            continue
         if sep:
             parts.append("".join(buf)); buf = []; i += len(sep)
             continue
