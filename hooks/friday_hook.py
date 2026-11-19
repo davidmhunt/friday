@@ -174,25 +174,31 @@ def record_session_approval(payload: dict) -> None:
 
 def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     hw = cfg.get("hardware") or {}
-    for resource, patterns in hw.items():
-        if not any(re.search(p, cmd) for p in patterns):
-            continue
-        holder = fc.lease_holder(resource)
+    matched = [r for r, pats in hw.items() if any(re.search(p, cmd) for p in pats)]
+    if not matched:
+        return None
+    holders = {r: fc.lease_holder(r) for r in matched}
+    for resource in matched:                       # another session's lease wins, for every resource
+        holder = holders[resource]
         if holder and holder.get("session") != session:
             age = int((time.time() - holder["time"]) / 60)
             return "deny", (f"Hardware `{resource}` is held by another session on {holder.get('host')} "
                             f"({age} min ago: {holder.get('note', '')}). Wait, or ask the user to run "
                             f"`friday release {resource}`.")
-        if holder and session and holder.get("approved") and _session_approved(cfg, resource):
+    if session and _one_simple_command(cmd) and all(
+            holders[r] and holders[r].get("approved") and _session_approved(cfg, r) for r in matched):
+        for resource in matched:
             fc.take_lease(resource, session, cmd, approved=True)   # refresh the TTL, keep the approval
-            return "allow", f"{resource} approved for this session"
-        fc.take_lease(resource, session, cmd)
-        reason = (f"Hardware `{resource}`: this command touches a physical device. Lease taken and "
-                  f"held for this session; this approval covers this command only.")
-        if (cfg.get("hardware_approval") or {}).get(resource) == "session":
-            reason += f" Approving it once approves `{resource}` for the rest of the session."
-        return "ask", reason
-    return None
+        return "allow", f"{', '.join(matched)} approved for this session"
+    for resource in matched:
+        h = holders[resource]
+        fc.take_lease(resource, session, cmd, approved=bool(h and h.get("approved")))
+    resource = matched[0]
+    reason = (f"Hardware `{resource}`: this command touches a physical device. Lease taken and "
+              f"held for this session; this approval covers this command only.")
+    if (cfg.get("hardware_approval") or {}).get(resource) == "session":
+        reason += f" Approving it once approves `{resource}` for the rest of the session."
+    return "ask", reason
 
 
 def _one_simple_command(cmd: str) -> bool:

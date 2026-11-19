@@ -93,3 +93,22 @@ def test_bad_hardware_approval_fails_friday_check(repo):
                          capture_output=True, text=True)
     assert out.returncode != 0
     assert "hardware_approval" in out.stdout + out.stderr
+
+
+def _approve_radar(repo):
+    run("pretool", repo, "flash it", "s1")
+    run("posttool", repo, "flash it", "s1")
+
+
+def test_chained_command_not_allowed_under_session_approval(repo):
+    _approve_radar(repo)
+    for c in ("flash; rm -rf ./build", "flash && echo hi", "flash | tee x"):
+        assert run("pretool", repo, c, "s1")["permissionDecision"] == "ask"
+    assert run("pretool", repo, "flash again", "s1")["permissionDecision"] == "allow"
+
+
+def test_other_session_lease_on_second_resource_denies(repo):
+    run("pretool", repo, "train x", "s2")
+    _approve_radar(repo)
+    d = run("pretool", repo, "flash && train y", "s1")
+    assert d["permissionDecision"] == "deny"
