@@ -78,7 +78,7 @@ Other sections are allowed before `## Log`.
 `## Rules` is optional (before `## Log`): `- ` bullets, at least one when the section is present
 (an error otherwise). Put a constraint that holds for the whole directive there ("use Read, Grep, Edit
 and Write, not cat, grep or sed in Bash"), never inside one step's text: the execute workflow puts
-the rules into every implementer, verify-fix and reviewer prompt, and the reviewer treats a broken
+the rules into every implementer, verify-fix, runner and reviewer prompt, and the reviewer treats a broken
 rule as a gap. A goal file may carry `## Rules` too, and `.claude/friday.json` `rules` holds the
 repo-wide ones; `friday parse --json` returns all three merged as `rules`.
 
