@@ -18,10 +18,11 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
 
 1. **Plan.** `/friday:plan <goal>` in a session on Fable or Opus. It reads the repo, interviews
    you, runs `friday init`, and commits the goal file and its directives (`Status: proposed`) on the
-   goal's Base.
+   goal branch `friday/<goal>` (created from Base; never on Base) and pushes it.
 2. **Approve.** Read each directive's goal, steps, Verify, `## Allowed commands` and out-of-scope
    list; approve, amend or drop. Approved files are committed with `Status: approved`, once for the
-   whole goal.
+   whole goal. If any directive has `## Allowed commands`, you run `friday approve --goal <g>` to publish
+   the plan for pre-approval.
 3. **Execute.** `/friday:execute <id>` for the first directive; it runs a workflow in the background
    (watch it with `/workflows`):
    - **Prepare**: `friday start <id> --no-gate` switches to the goal branch `friday/<goal>` (created
@@ -106,10 +107,10 @@ Details: [spec.md](spec.md) section 5. For dispatch see [fleet.md](fleet.md).
 
 ## Amending an approved plan
 
-Amendments to an approved goal are commits on its Base, checked with `friday check`. They reach the
-goal branch at the next `friday start`, which merges Base into `friday/<goal>` (or `friday/<id>` for
-`Land: pr`) before the directive; a conflict aborts the merge and start exits non-zero. An amendment
-to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
+Amendments to an approved goal are commits on its goal branch `friday/<goal>`, checked with
+`friday check` and pushed; run `friday approve --goal <g>` again when `## Allowed commands` changed.
+`friday start` still merges Base into the goal branch before each directive; a conflict aborts the
+merge and start exits non-zero. An amendment to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
 git hook (installed by `friday init` and `friday start`, removed by `friday uninstall`) refuses commits
 without `Directive: <id>`; `git commit --no-verify` overrides it deliberately.
 

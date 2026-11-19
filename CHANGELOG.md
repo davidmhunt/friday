@@ -4,6 +4,12 @@
 
 ### Added
 
+- Plans live on the goal branch `friday/<goal>`, never on Base, so main stays protected. `friday approve
+  --goal <g>` (user-only; the hook denies it for agents) runs `friday check` and pushes the plan to
+  `friday-plan/<g>` on origin; pre-approval of `## Allowed commands` reads only that ref, and the hook
+  denies agent pushes to `friday-plan/*`. Goals already planned on Base keep working without
+  pre-approval. The plan skill and docs describe the new flow.
+
 - `friday check` warns on `## Allowed commands` patterns that pre-approve any remote command
   (`ssh <host> *`, a remote `bash -c *`) or a remote build or install (#23). The plan skill keeps target
   directives thin and routes iterative robot work to a worker goal; docs/fleet.md has a "Targets and

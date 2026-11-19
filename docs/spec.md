@@ -220,7 +220,7 @@ errors, and every earlier directive of its goal is `done` or `awaiting review`.
 | Who | May |
 |---|---|
 | The user | approve a goal and its directives (`proposed` -> `approved`); run `friday accept` (the only way out of `awaiting review`); merge PRs; run the prompted commands (`friday release`, a real `friday dispatch`, a real `friday nodes --clean`) unless a directive pre-approves them; run `sudo` and other denied commands |
-| `/friday:plan` | write goal and directive files as `proposed`, run `friday init`, commit the plan on Base |
+| `/friday:plan` | write goal and directive files as `proposed`, run `friday init`, commit the plan on the goal branch `friday/<goal>` and push it; ask the user to run `friday approve --goal <g>` when a directive has `## Allowed commands` |
 | Commands | write `Status` and `## Log`: `start` (goal `approved` -> `running`), `finish`, `accept`, `unblock`, `land --goal` (goal `done` and a Log line). Each writes one commit with a `Directive: <id>` or `Goal: <g>` line |
 | Agents in a run | edit code, docs and data inside a step's scope, and `runs/<id>/notes.md`; never `Status` or `## Log` by hand; never `friday accept` (the PreToolUse hook denies it, also through `ssh`, `bash -c`, `uv run`) |
 
@@ -242,12 +242,13 @@ how an unattended or dispatched run gets past the commands that would otherwise 
 
 - **Format.** Bullets each holding exactly one backticked pattern. `*` matches any text; the whole
   command must match. A pattern is one simple command.
-- **Where the list is read from.** The hook reads the directive as committed on `origin/<Base>`
-  (`git show origin/<Base>:docs/directives/<id>.md`), the plan the user approved, never the working
-  tree. `<Base>` comes from the active marker, is trusted only when the goal file on `origin/<Base>`
-  names the same Base, and is never a `friday/*` branch. So editing the directive or the goal's
-  `Base:` on the goal branch cannot widen the list. To change the list, amend the plan on Base and
-  push it (section 6); `friday start` fetches `origin/<Base>`, the hook never does.
+- **Where the list is read from.** The hook reads the directive as committed on the ref
+  `friday-plan/<goal>` on origin (`git show origin/friday-plan/<goal>:docs/directives/<id>.md`), the
+  plan the user approved, never the working tree. Only `friday approve --goal <g>`, a user-only
+  command, pushes that ref (the hook denies agent pushes to `friday-plan/*`). Without the ref
+  nothing is pre-approved and commands prompt as usual. So editing the directive on the goal branch
+  cannot widen the list. To change the list, amend the plan on the goal branch and run
+  `friday approve --goal <g>` again (section 6); the hook never fetches.
 - **Scope.** Only the active directive's list applies (the marker names it), only to a command
   command line whose every simple command matches a pattern. The line is split on newlines, `&&`,
   `||`, `;` and `|`; each part must match. It is never pre-approved when it contains command or
@@ -281,13 +282,15 @@ how an unattended or dispatched run gets past the commands that would otherwise 
 
 ## 6 Plan amendments and a directive's change set
 
-**Amending a running goal's plan.** The plan lives on the goal's Base. To change an approved goal
-or directive (steps, Verify, `## Allowed commands`, a new directive), commit the change on Base,
-check it with `friday check`, and push Base. Never edit the plan on the goal branch: `friday start`
-merges Base into the goal branch before each directive (`origin/<Base>` after a fetch with a 30 s
-limit; a failed fetch warns and uses the local Base). A merge conflict aborts the merge and `start`
-exits non-zero. The running session sees an amendment only at its next `friday start`: before the
-next directive, or when the current directive is restarted (for example after a block and
+**Amending a running goal's plan.** The plan lives on the goal branch `friday/<goal>`, created from
+Base by the plan skill; agents never commit to Base. To change an approved goal or directive (steps,
+Verify, `## Allowed commands`, a new directive), commit the change on the goal branch, check it with
+`friday check`, push the branch, and when `## Allowed commands` changed run `friday approve --goal
+<g>` again (the published `friday-plan/<g>` does not follow the branch). `friday start` still merges
+Base into the goal branch before each directive (`origin/<Base>` after a fetch with a 30 s limit; a
+failed fetch warns and uses the local Base) for upstream changes; a merge conflict aborts the merge
+and `start` exits non-zero. The running session sees an amendment only at its next `friday start`:
+before the next directive, or when the current directive is restarted (for example after a block and
 `friday unblock`). An amendment to the running directive does not reach the session that is
 executing it. While a directive is active, the `commit-msg` git hook refuses a commit without
 `Directive: <id>`, except a commit that only touches goal and directive files and names a directive
@@ -441,7 +444,7 @@ beats `allow`.
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
 | Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`) or of explicit `refs/tags/<name>` refs that the directive's `## Allowed commands` lists (section 5); `--all`, `--mirror`, `--tags`, `--follow-tags` and an unjudgeable target stay denied |
 | Commit guard | while a directive is active, deny `git commit` on main, master or the goal's Base (create or switch to `friday/<goal>`); with no directive active, ask before a commit directly on main or master. The repository judged is the one the command commits in (`cd DIR && git commit`, `git -C DIR commit`) |
-| Pre-approval | allow a command line (a batch) when every simple command in it matches the active directive's `## Allowed commands` as committed on `origin/<Base>` (section 5) |
+| Pre-approval | allow a command line (a batch) when every simple command in it matches the active directive's `## Allowed commands` as committed on `origin/friday-plan/<goal>` (section 5) |
 | Hardware | a command matching a `hardware` pattern of `.claude/friday.json`: deny when another session holds the resource's lease; otherwise take the lease and ask the user (allow when pre-approved or session-approved). The ask reason says the lease is held for this session and the approval covers this command only (when the resource is `session` in `hardware_approval`, that approving it once approves the rest of the session). Allow reasons: `<resource> approved for this session`, or the pre-approval reason. Pre-approval matches a batch when every simple command matches (one hardware command per line, no substitution; leases for every resource any part touches, in order); session approval still covers a single simple command only |
 
 The deny list, each rule traced to an incident or a hard rule:
@@ -571,8 +574,8 @@ the user. How machines and projects appear, the API and the Docker deployment:
   check belongs in `friday result` (run once, check cheaply).
 - **friday's git and `gh` calls time out after 180 s**; the Base fetch in `friday start` after
   30 s (it then warns and uses the local Base).
-- **Pre-approval reads `origin/<Base>` as last fetched.** A plan amendment that is not pushed, or
-  not yet fetched by a `friday start`, is not seen by the hook.
+- **Pre-approval reads `origin/friday-plan/<goal>` as last fetched.** A plan amendment that the user
+  has not published with `friday approve --goal <g>`, or not yet fetched, is not seen by the hook.
 - **Goal directives run in sequence.** Parallel directives within a goal are not built.
 - **A dispatched goal runs on one node** and cannot move to another.
 - **Parallelism is across goals**, not within one: separate branches, worktrees or machines. A

@@ -104,9 +104,9 @@ Each node has `repos`. For a goal `<g>` in repo `<repo>`:
   `origin/friday/<g>` when that exists, otherwise from the goal's Base (`origin/<Base>`).
 - Your checkout on the node is never touched: no checkout, reset or stash happens in it.
 
-Plan amendments to a dispatched goal are commits on its Base (checked with `friday check`); the node
-picks them up at its next `friday start`, which merges Base into the goal branch. An amendment to the
-running directive takes effect when it restarts.
+Plan amendments to a dispatched goal are commits on its goal branch (checked with `friday check`,
+pushed; run `friday approve --goal <g>` again when `## Allowed commands` changed); the node
+picks them up at its next fetch. An amendment to the running directive takes effect when it restarts.
 
 To change where work happens, change `repos` for that node. It must be trusted by `claude` (see below).
 
@@ -217,8 +217,8 @@ friday never changes that setting.
 
 ## Dispatching
 
-Approve the goal and its first remaining directive, commit the goal and directive files, and publish
-them to `origin` (`friday/<g>` if it exists there, else the Base). Run `friday dispatch` from the repo you want dispatched: the goal and its origin come from the
+Approve the goal and its first remaining directive, commit the goal and directive files on
+`friday/<g>`, and push that branch to `origin`. Run `friday dispatch` from the repo you want dispatched: the goal and its origin come from the
 current checkout. Then:
 
 ```
@@ -243,10 +243,12 @@ attach or `--resume`. Pre-approve what the goal needs in each directive's `## Al
 ```
 
 One backticked command per bullet; `*` matches any text; only a single simple command (no `&&`, `;`,
-`|`, backticks or `$(`). The list is read from the directive as committed on `origin/<Base>` (the
-plan you approved), never from the goal branch, so publish it before dispatching. To add a command
-later, commit the amendment on Base, run `friday check`, push Base, and the node picks it up at its
-next `friday start` (or after `--resume`). The deny list still wins: `sudo`, force-push and push to
+`|`, backticks or `$(`). The list is read from the directive as committed on `origin/friday-plan/<goal>` (the
+plan you approved), never from the goal branch, so run `friday approve --goal <g>` before
+dispatching (it pushes that ref; agents cannot). Without it the commands prompt. To add a command
+later, commit the amendment on the goal branch, run `friday check`, push the branch, run
+`friday approve --goal <g>` again, and the node picks it up after a fetch (its next `friday start`
+or after `--resume`). The deny list still wins: `sudo`, force-push and push to
 main stay refused even if listed (a listed `git push` to a branch other than the goal branch is a
 `friday check` error; a listed explicit tag push, destination `refs/tags/<name>`, runs), so `sudo` on a target over `ssh` stays a step you do. A
 pre-approved hardware command still takes the lease. See [spec.md](spec.md) section 5.

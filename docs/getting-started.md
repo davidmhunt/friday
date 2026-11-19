@@ -160,7 +160,7 @@ per bullet in backticks with `*` matching any text, in an `## Allowed commands` 
 Without that list these commands prompt. The list applies only to that directive while it is
 active, only to a single simple command (no `&`, `;`, `|`, backticks or `$(`), and never overrides
 the deny list (privilege escalation, force-push, push to main) or `friday accept`. Keep each
-pattern narrow. Decide this now: it is read from the plan as committed and pushed on Base.
+pattern narrow. Decide this now: it is read from the plan as you publish it with `friday approve --goal <g>` (below).
 
 ### Approve
 
@@ -172,24 +172,27 @@ again, and commits the plan.
 
 ### Where the plan commit lands
 
-The plan commit goes on the goal's **Base** (here `main`), not on the goal branch. The goal branch
-`friday/<goal>` does not exist yet; it is created from Base when the first directive starts. **You
-push the plan commit yourself:**
+The plan commit goes on the goal branch `friday/<goal>` (created from Base by the plan skill), never
+on Base: agents do not commit to `main`. The model pushes the branch. When any directive has
+`## Allowed commands`, **you publish the plan for pre-approval**:
 
 ```bash
-git push origin main
+friday approve --goal <g>
 ```
 
-Execution reads the approved plan, including `## Allowed commands`, from `origin/<Base>`, and
-`friday land` needs Base on origin to open the PR. If Base is not pushed, it fails.
+It runs `friday check --goal <g>`, refuses on errors or uncommitted tracked files, and pushes the
+goal branch's current plan commit to `friday-plan/<g>` on origin (no force) and lists what is now
+pre-approved. Execution reads `## Allowed commands` only from `origin/friday-plan/<g>`; agents
+cannot push that ref or run `friday approve`. Without it, those commands prompt as usual.
 
-Later amendments go on Base too. To change an approved goal (a step, the Verify command, an
-`## Allowed commands` list, a new directive), commit the change on Base, run `friday check`, and
-push Base. The same route extends a goal with related work while its PR is open: a goal is a
+Later amendments go on the goal branch too. To change an approved goal (a step, the Verify command,
+an `## Allowed commands` list, a new directive), commit the change on `friday/<goal>`, run
+`friday check`, push the branch, and run `friday approve --goal <g>` again if the allowed commands
+changed. The same route extends a goal with related work while its PR is open: a goal is a
 capability that can span several planning runs, and `/friday:plan` offers to add to an open goal (see
-`friday status`) before opening a new one. Never edit the plan on the goal branch. The running goal merges Base into its branch at
-the next `friday start`, and an amendment to the directive that is running takes effect when it
-restarts.
+`friday status`) before opening a new one. `friday start` still merges Base into the goal branch for
+upstream changes, and an amendment to the directive that is running takes effect when it restarts.
+`friday land` needs Base on origin to open the PR.
 
 ## 5. Execute
 
@@ -249,7 +252,7 @@ goal. Then `git switch main && git pull`.
 | `Status: blocked: <reason>`: a hardware prompt, a decision the directive does not settle, or Verify still failing after the fix rounds | read the reason in the directive's Log, fix or answer it, run `friday unblock <id>` (back to `approved`, one commit), then `/friday:execute <id>` again. Work already committed stays. Never edit `Status:` by hand |
 | `awaiting review` | open the `## Review` items, run `friday accept <id>` or `friday accept <id> --reject REASON`, then `friday land --goal <goal>` if the PR has not opened |
 | `friday land --goal` exits non-zero | 3 push failed, 4 Base is not on origin (push it), 5 no PR was opened (open the printed compare URL), 6 a Verify failed, 7 a directive is not done; the output names it |
-| a command waits at a prompt | that command is not in `.claude/settings.json` or the directive's `## Allowed commands`; answer it, or amend the plan on Base to list it |
+| a command waits at a prompt | that command is not in `.claude/settings.json` or the directive's `## Allowed commands`; answer it, or amend the plan on the goal branch to list it and run `friday approve --goal <g>` |
 
 ## 8. Where next
 
