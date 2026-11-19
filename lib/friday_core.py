@@ -520,6 +520,56 @@ def allowed_pattern_problem(pat: str) -> str | None:
     return None
 
 
+_PUSH_PAT_VALUE_OPTS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--signed", "--recurse-submodules"}
+
+
+def push_pattern_problem(pat: str, goal_branch: str) -> str | None:
+    """Why a `git push` Allowed-commands pattern can never run (the push guard allows only the
+    goal branch and explicit refs/tags/ pushes while a directive is active), or None."""
+    try:
+        toks = shlex.split(pat)
+    except ValueError:
+        return None
+    if not toks or toks[0] != "git":
+        return None
+    i = 1
+    while i < len(toks) and toks[i].startswith("-"):
+        i += 2 if toks[i] in ("-C", "-c", "--git-dir", "--work-tree") else 1
+    if i >= len(toks) or toks[i] != "push":
+        return None
+    why = ("the push guard denies this while the directive is active: only the goal branch "
+           "and explicit refs/tags/ pushes")
+    pos, args = [], toks[i + 1:]
+    j = 0
+    while j < len(args):
+        a = args[j]
+        if a in ("--all", "--mirror", "--branches", "--tags", "--follow-tags"):
+            return f"`{a}`; {why}"
+        if a in _PUSH_PAT_VALUE_OPTS:
+            j += 2
+            continue
+        if not a.startswith("-"):
+            pos.append(a)
+        j += 1
+    specs = pos[1:]
+    if not specs:
+        return None
+    if len(specs) >= 2 and specs[0] == "tag":
+        return None if len(specs) % 2 == 0 and all(specs[k] == "tag" for k in range(0, len(specs), 2)) \
+            else f"unrecognised tag push; {why}"
+    for sp in specs:
+        dst = sp.lstrip("+").rsplit(":", 1)[-1]
+        if dst.startswith("refs/heads/"):
+            dst = dst[len("refs/heads/"):]
+        if dst == "*":
+            return f"the destination is a bare `*`; {why}"
+        if dst.startswith("refs/tags/") and len(dst) > len("refs/tags/"):
+            continue
+        if dst != goal_branch:
+            return f"destination `{dst}` is not the goal branch {goal_branch} or an explicit refs/tags/ ref; {why}"
+    return None
+
+
 def validate_directive(did: str, text: str) -> list[Issue]:
     """This one directive file's own rules (no cross-checks against goal files)."""
     path = str(DIRECTIVE_DIR / f"{did}.md")
@@ -579,6 +629,9 @@ def validate_directive(did: str, text: str) -> list[Issue]:
         if pat is None:
             issues.append(Issue("error", path, ln, f"Allowed commands bullet needs exactly one backticked pattern: {text}"))
         elif (why := allowed_pattern_problem(pat)):
+            issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
+        elif (why := push_pattern_problem(
+                pat, f"friday/{did}" if d["land"] == "pr" else f"friday/{d['goal']}")):
             issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
 
     steps_sec = _section(md, "Steps")
