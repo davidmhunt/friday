@@ -361,6 +361,61 @@ directives, node, tmux session, worktree, branch, source ref, plugin commit, rep
 and directive files are not changed by dispatching. On the node, `runs/<id>/notes.md` notes where the
 dispatch came from.
 
+## Targets and workers
+
+A directive can reach a device in two ways. Pick by what the work needs.
+
+**A target directive** drives a device (a robot) over ssh from the node that runs it. Keep it thin. It
+may run:
+
+- named, reviewed project scripts, such as a read-only probe and one smoke test, each listed under
+  `## Allowed commands` (`tools/probe.sh *`);
+- single-purpose writes you approve one at a time (a tag, a file copy), at the prompt or as an exact
+  command.
+
+It does not pre-approve any remote command (`ssh <host> *`, a remote `bash -c *`) or a remote build or
+install (`docker build`, `colcon build`, `make`, `cmake`, `cargo build`, `pip install`, `uv sync`,
+`apt`). `friday check` warns on those patterns (not an error), and the plan skill routes such work to
+a worker. Over a broad `ssh` pattern the target's whole shell is open to the session, with no review.
+
+**A worker goal** (`Node: host:<robot>`) is for work that needs iteration on the robot: debugging,
+building, editing its checkout, hardware tests. The robot's own session runs it under that machine's
+local permission mode, so it has the robot's tools, its checkout and a shell on the machine. Use a
+worker when the steps are "try, look, change, try again".
+
+To promote a target to a worker, register it in `nodes.toml` (see above), then run
+`friday nodes --setup <robot>` and `friday nodes --check` (see
+[`friday nodes --setup <node>`](#friday-nodes---setup-node)). Then give the directive
+`Node: host:<robot>` and dispatch it like any goal.
+
+### A read-only probe recipe
+
+Keep the fixed list of read-only commands in a project script, so the directive pre-approves one name,
+not a shell. `tools/probe.sh <robot>` runs them over one ssh call and prints a labelled section for
+each:
+
+```bash
+#!/usr/bin/env bash
+# tools/probe.sh <robot>: read-only state of a robot, one ssh call, labelled sections.
+set -euo pipefail
+robot="${1:?usage: tools/probe.sh <robot>}"
+ssh "$robot" 'for c in "uname -a" "cat /etc/os-release" "uptime" "df -h /" "docker ps" \
+    "ros2 node list" "ros2 topic list"; do
+  printf "== %s ==\n" "$c"; sh -c "$c" 2>&1 || true
+done'
+```
+
+Review the script like code: its command list is the whole permission. List it under
+`## Allowed commands` as a single bullet:
+
+```markdown
+## Allowed commands
+- `tools/probe.sh *`
+```
+
+The probe takes the robot's hardware lease when the robot matches a `hardware` pattern, like any
+`ssh`. See [recipes/robot.md](recipes/robot.md).
+
 ## Hardware
 
 Hardware leases live on the machine that runs the SSH command (`~/.local/state/friday/leases/`), so a

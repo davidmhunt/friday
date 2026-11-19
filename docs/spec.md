@@ -133,6 +133,13 @@ Rules that tie keys together:
 - A warning when `Verify` matches a `hardware` pattern of `.claude/friday.json`: Verify is re-run
   unattended (fix rounds, landing) without the hardware prompt. Run the device step once, record it
   with `friday result write`, and make Verify a `friday result check`.
+- Warnings on `## Allowed commands` patterns that break the thin-target rule (a target directive runs
+  named scripts, not a remote shell; iterative robot work is a worker goal, see
+  [fleet.md](fleet.md) "Targets and workers"): an `ssh` pattern that pre-approves any remote command
+  (`ssh <host> *`, `ssh -p 22 <host> *`), a remote shell (`bash`, `sh`, `zsh`, `dash` with `-c` or `*`), or a
+  remote build or install (`docker build`, `colcon build`, `make`, `cmake`, `cargo build`, `pip install`,
+  `uv sync`, `apt`). `ssh` options that take a value (`-p`, `-i`, `-o`, `-J`, `-l`, `-F`) are skipped to find
+  the host. A specific command such as `ssh rover ./run ros2 topic list` does not warn.
 
 ### 2.2 Goal file
 

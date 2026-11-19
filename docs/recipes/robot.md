@@ -96,6 +96,11 @@ check it in the approval summary.
 A pre-approved hardware command still takes the lease and is still denied while another session
 holds it.
 
+Keep a target directive thin: `friday check` warns on `ssh rover *`, a remote `bash -c *` and remote
+builds. Pre-approve a reviewed script instead, such as the read-only `tools/probe.sh *`, and give
+iterative robot work to a worker goal. See [fleet.md](../fleet.md) "Targets and workers" for the rule
+and the probe recipe.
+
 ## What the deny list refuses even when pre-approved
 
 The deny list wins over `## Allowed commands`. These are refused even if a directive lists them:

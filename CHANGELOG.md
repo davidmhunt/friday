@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `friday check` warns on `## Allowed commands` patterns that pre-approve any remote command
+  (`ssh <host> *`, a remote `bash -c *`) or a remote build or install (#23). The plan skill keeps target
+  directives thin and routes iterative robot work to a worker goal; docs/fleet.md has a "Targets and
+  workers" section and a read-only probe recipe.
+
 ### Fixed
 
 - An explicit tag push (`refs/tags/<name>` or `tag <name>`) listed under `## Allowed commands` now runs while
