@@ -293,12 +293,12 @@ _PUSH_VALUE_OPTS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec",
 
 
 def _push_targets(args: list[str], target: Path) -> list[str] | None:
-    """Branch names a `git push` with these args (after `push`) updates; None when not knowable
-    (--all, --mirror, an unreadable current branch or upstream)."""
+    """Branch names (tags as `refs/tags/<name>`) a `git push` with these args (after `push`) updates;
+    None when not knowable (--all, --mirror, --tags, --follow-tags, an unreadable branch or upstream)."""
     pos, i = [], 0
     while i < len(args):
         a = args[i]
-        if a in ("--all", "--mirror", "--branches"):
+        if a in ("--all", "--mirror", "--branches", "--tags", "--follow-tags"):
             return None
         if a in _PUSH_VALUE_OPTS:
             i += 2
@@ -319,6 +319,13 @@ def _push_targets(args: list[str], target: Path) -> list[str] | None:
             return [cur] if cur else None
         return [up.split("/", 1)[1] if "/" in up else up]
     out = []
+    if len(specs) >= 2 and specs[0] == "tag":   # the `tag NAME` form: refs/tags/NAME
+        names, k = [], 0
+        while k + 1 < len(specs) and specs[k] == "tag":
+            names.append(f"refs/tags/{specs[k + 1]}")
+            k += 2
+        if k == len(specs):
+            return names
     for sp in specs:
         dst = sp.lstrip("+").rsplit(":", 1)[-1]
         if dst in ("", "HEAD", "@"):
@@ -365,6 +372,12 @@ def check_push(cmd: str, cwd: Path) -> str | None:
         if land.strip().lower() == "pr":
             ok = {f"friday/{did}"}
         dests = _push_targets(rest[1:], target)
+        if dests and all(d.startswith("refs/tags/") for d in dests):
+            pre = check_preapproved(cmd, cwd)
+            if pre and pre[0] == "allow":
+                continue
+            return (f"While {did} is active, a tag push ({', '.join(dests)}) needs a matching "
+                    f"`## Allowed commands` entry on Base (origin/<Base>:docs/directives/{did}.md).")
         if dests is None or not dests or any(d not in ok for d in dests):
             return (f"While {did} is active, `git push` may only update {' or '.join(sorted(ok)) or 'the goal branch'}"
                     f" (got {', '.join(dests) if dests else 'an unjudgeable target'}). Push the goal branch explicitly: "
