@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- An explicit tag push (`refs/tags/<name>` or `tag <name>`) listed under `## Allowed commands` now runs while
+  a directive is active (#24). `friday check` errors on a listed `git push` the guard always denies (a branch
+  other than the goal branch, or a bare `*`).
+
 ## 1.1.0 - 2026-11-18
 
 Attention release: sessions waiting on a prompt are visible in status, the dash and `friday nodes --waiting`; accepting a directive refuses uncommitted work; merged branches are reported.

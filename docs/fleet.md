@@ -235,7 +235,8 @@ One backticked command per bullet; `*` matches any text; only a single simple co
 plan you approved), never from the goal branch, so publish it before dispatching. To add a command
 later, commit the amendment on Base, run `friday check`, push Base, and the node picks it up at its
 next `friday start` (or after `--resume`). The deny list still wins: `sudo`, force-push and push to
-main stay refused even if listed, so `sudo` on a target over `ssh` stays a step you do. A
+main stay refused even if listed (a listed `git push` to a branch other than the goal branch is a
+`friday check` error; a listed explicit tag push, destination `refs/tags/<name>`, runs), so `sudo` on a target over `ssh` stays a step you do. A
 pre-approved hardware command still takes the lease. See [spec.md](spec.md) section 5.
 
 ### Ending a finished session
