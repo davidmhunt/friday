@@ -54,6 +54,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -129,11 +130,14 @@ def cmd_status(a) -> int:
             print(f"  {did:<12} {d['status'][:28]:<28} {d['deliverable'][:10]:<10} {d['title'][:60]}")
 
     listed: set[str] = set()
+    gh = os.environ.get("FRIDAY_GH") or shutil.which("gh")
     for gp in goals:
         g = fc.parse_goal(gp.read_text())
         items = g["directives"]
         done = sum(1 for x in items if x["id"] in ds and ds[x["id"]]["status"] == "done")
-        print(f"goal {gp.stem}  {g['status']}  base {g['base']}  {done}/{len(items)}  {g['title']}")
+        pr = fs.goal_pr(root, gp.stem, gh)
+        prtxt = f"  pr {pr[0]}{' ' + pr[1] if pr[1] else ''}" if pr else ""
+        print(f"goal {gp.stem}  {g['status']}  base {g['base']}  {done}/{len(items)}{prtxt}  {g['title']}")
         for x in items:
             listed.add(x["id"])
             row(x["id"], ds.get(x["id"]), x["text"])
@@ -821,7 +825,7 @@ def land_goal(gid: str) -> int:
             if ed.returncode != 0:
                 print(f"PR body not updated: {ed.stderr.strip()}")
             else:
-                print(f"updated the body of {url}:\n" + "\n".join(body))
+                print(f"PR already open, updated with the new push: {url}\nbody:\n" + "\n".join(body))
             print(f"PR: {url}")
             return 0
         pr = _run([gh, "pr", "create", "--base", base, "--head", head,

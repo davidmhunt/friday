@@ -10,7 +10,8 @@ holds any snapshot to it. Top-level keys:
   for the filesystem that holds `repos`. Any value is null when it cannot be read.
 - gpus[]: name, util (percent), mem {used, total} in MiB, processes [{pid, name, mem}].
   Empty without `nvidia-smi`.
-- repos[]: path, origin, branch, goals[] {id, title, status, directives[] {id, status,
+- repos[]: path, origin, branch, goals[] {id, title, status, pr (none|open|merged) and pr_url (both
+  left out without gh), directives[] {id, status,
   deliverable, title}}. Directives not in any goal sit under a goal with id null.
 - leases[]: resource, session, host, time, note (live hardware leases, as friday_core keeps them).
 - runs[]: repo, id (directive), name (the `.exit` file stem), exit (int or null), mtime;
@@ -70,6 +71,8 @@ SCHEMA = {
             "id": STR_OR_NULL,
             "title": str,
             "status": str,
+            "pr": str,
+            "pr_url": STR_OR_NULL,
             "directives": [{"id": str, "status": str, "deliverable": str, "title": str}],
         }],
     }],
@@ -92,6 +95,10 @@ SCHEMA = {
 }
 
 
+# Keys a snapshot may leave out: a goal's pr / pr_url are absent when gh is unavailable.
+OPTIONAL_KEYS = {"pr", "pr_url"}
+
+
 def _check(val, spec, path: str, out: list[str]) -> None:
     if isinstance(spec, tuple) and any(isinstance(s, (dict, list)) for s in spec):
         # a union with a structured member, e.g. ([NUM], None): first member that fits
@@ -105,7 +112,7 @@ def _check(val, spec, path: str, out: list[str]) -> None:
         if not isinstance(val, dict):
             out.append(f"{path}: expected object, got {type(val).__name__}")
             return
-        for k in spec.keys() - val.keys():
+        for k in spec.keys() - val.keys() - OPTIONAL_KEYS:
             out.append(f"{path}.{k}: missing")
         for k in val.keys() - spec.keys():
             out.append(f"{path}.{k}: not in schema")
@@ -472,6 +479,26 @@ def find_repos(cwd, registry_path=None, node_name: str | None = None, errors: li
     return uniq
 
 
+def goal_pr(path: Path, goal: str, gh: str | None) -> tuple[str, str | None] | None:
+    """(state, url) of the PR from `friday/<goal>`: state is none, open or merged (closed unmerged
+    counts as none). None when gh is missing or fails: the caller leaves the keys out."""
+    if not gh:
+        return None
+    out = _run([gh, "pr", "list", "--head", f"friday/{goal}", "--state", "all",
+                "--json", "state,url,number"], cwd=path)
+    if out is None:
+        return None
+    try:
+        prs = json.loads(out)
+    except ValueError:
+        return None
+    for want in ("OPEN", "MERGED"):
+        for pr in sorted(prs, key=lambda x: -x.get("number", 0)):
+            if str(pr.get("state", "")).upper() == want:
+                return want.lower(), pr.get("url")
+    return "none", None
+
+
 def collect_repo(path: Path, errors: list) -> dict:
     """One repos[] entry: origin, branch, and every goal with its directives' statuses."""
     origin = _run(["git", "config", "--get", "remote.origin.url"], cwd=path)
@@ -488,6 +515,7 @@ def collect_repo(path: Path, errors: list) -> dict:
         except Exception as e:  # a broken file is an entry in errors[], not a crash
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})
     goals, listed = [], set()
+    gh = os.environ.get("FRIDAY_GH") or shutil.which("gh")
     gdir = path / fc.GOAL_DIR
     for p in sorted(gdir.glob("*.md")) if gdir.is_dir() else []:
         if p.name.upper() in ("README.MD", "TEMPLATE.MD"):
@@ -499,7 +527,11 @@ def collect_repo(path: Path, errors: list) -> dict:
                 listed.add(x["id"])
                 items.append(directives.get(x["id"]) or
                              {"id": x["id"], "status": "missing", "deliverable": "", "title": x["text"]})
-            goals.append({"id": p.stem, "title": g["title"], "status": g["status"], "directives": items})
+            entry = {"id": p.stem, "title": g["title"], "status": g["status"], "directives": items}
+            pr = goal_pr(path, p.stem, gh)
+            if pr:
+                entry["pr"], entry["pr_url"] = pr
+            goals.append(entry)
         except Exception as e:
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})
     rest = [d for i, d in directives.items() if i not in listed]
