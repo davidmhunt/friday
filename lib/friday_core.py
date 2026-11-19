@@ -1020,12 +1020,32 @@ _SEPARATORS = ("&&", "||", ";", "|", "\n", "&")
 _SUBST = r"\$\(([^()]*)\)|`([^`]*)`"
 
 
+def _drop_single_quoted(line: str) -> str:
+    """line with the contents of single-quoted spans removed: the shell does not expand $(...) there."""
+    out, dq, i = [], False, 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and i + 1 < len(line):
+            out.append(line[i:i + 2]); i += 2
+            continue
+        if c == '"':
+            dq = not dq
+        elif c == "'" and not dq:
+            j = line.find("'", i + 1)
+            if j < 0:
+                out.append(line[i:]); break
+            i = j + 1
+            continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
 def split_commands(line: str) -> list[str]:
     """Split a shell line into simple commands on && || ; | & and newlines, outside quotes.
     Command substitutions $(...) and backticks are returned as extra commands too.
     Heredoc bodies are scanned like any other text (fail closed)."""
     parts, buf, quote, i = [], [], None, 0
-    subs = re.findall(_SUBST, line)
+    subs = re.findall(_SUBST, _drop_single_quoted(line))
     while i < len(line):
         c = line[i]
         if quote:
