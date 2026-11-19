@@ -4,6 +4,10 @@
 
 ### Added
 
+- `friday start` records the starting HEAD in `runs/<id>/start`; `friday commits` lists plan-only commits made
+  after it as `plan` lines (`plan` in `--json`) and the review prompts treat them as gaps when they change the
+  directive's goal, steps, Verify, Rules or Allowed commands (tt-10).
+
 - friday runs on a uv-managed Python 3.12 everywhere (#29). `friday install` runs `uv python install 3.12`,
   records the interpreter in `~/.local/state/friday/python` and writes `~/.local/bin/friday` as a shim
   (an old symlink is replaced). Hooks and remote snippets run through the new `bin/friday-python`
