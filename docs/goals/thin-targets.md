@@ -1,0 +1,24 @@
+# thin-targets: Targets stay thin: pre-approved tag pushes, target scope checks, cheap worker setup
+Status: approved
+Base: main
+Land: pr
+
+## Goal
+Issues #24 and #23 from console's fleet onboarding. A push the approved plan lists (a robot's
+known-good tag) runs instead of blocking, and `friday check` catches a listed push the guard would
+always refuse. Target directives stay a small, fixed set of things: `friday check` warns on raw
+remote globs and builds over ssh, the plan skill routes iterative robot work to a worker goal
+(`Node: host:<robot>`), and `friday nodes --setup <node>` reports every prerequisite a worker needs
+with its fix command, including for a node that is a target today. docs/fleet.md explains target
+vs worker and gives a reusable read-only probe recipe.
+
+Asked for by the user on 2026-11-18 ("A few more issues came up. Go ahead and address them
+overnight"); the design follows the proposals in the two issues. The issue's fallback (classifying
+remote commands, a per-robot deny list) is out of scope. #13 and #20 stay later goals.
+
+## Directives
+1. tt-01: A pre-approved tag push runs while a directive is active; `friday check` errors on a listed push the guard always denies (fixes #24)
+2. tt-02: Target directives stay thin: `friday check` warns on raw remote globs and remote builds; the plan skill routes iterative robot work to workers
+3. tt-03: `friday nodes --setup <node>` reports each worker prerequisite with its fix, also for a target being promoted (fixes #23)
+
+## Log
