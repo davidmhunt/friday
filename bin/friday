@@ -372,12 +372,6 @@ def cmd_start(a) -> int:
         old = fc.read_marker(Path.cwd())
         base = old["base"] if old and old.get("id") == a.id and old.get("base") else \
             _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
-    sf = root / "runs" / a.id / "start"
-    if not sf.exists():
-        head = _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
-        if head:
-            sf.parent.mkdir(parents=True, exist_ok=True)
-            sf.write_text(head + "\n")
     _install_hook(root)
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
                                  "gate": not a.no_gate, "base": base, "goal_base": goal["base"]})
@@ -1776,16 +1770,13 @@ def cmd_commits(a) -> int:
     if a.json:
         print(json.dumps({"base": r["base"],
                           "commits": [{"sha": s, "subject": m} for s, m in r["commits"]],
-                          "untracked": [{"sha": s, "subject": m, "files": f} for s, m, f in r["untracked"]],
-                          "plan": [{"sha": s, "subject": m} for s, m in r["plan"]]}, indent=2))
+                          "untracked": [{"sha": s, "subject": m, "files": f} for s, m, f in r["untracked"]]}, indent=2))
     else:
         print(f"base {r['base']}")
         for s, m in r["commits"]:
             print(f"{s} {m}")
         for s, m, _f in r["untracked"]:
             print(f"untracked {s} {m}")
-        for s, m in r["plan"]:
-            print(f"plan {s} {m}")
     return 0 if r["commits"] else 3
 
 

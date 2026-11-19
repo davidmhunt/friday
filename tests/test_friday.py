@@ -229,7 +229,7 @@ def test_finish_records_in_one_commit(repo):
     p = repo / "docs/directives/core-01.md"
     cli(repo, "start", "core-01")
     base = fc.read_marker(repo)["base"]
-    (repo / "runs/core-01").mkdir(parents=True, exist_ok=True)
+    (repo / "runs/core-01").mkdir(parents=True)
     (repo / "runs/core-01/notes.md").write_text("measured 3 ms\n")
     for n in ("a", "b"):
         (repo / f"{n}.txt").write_text(n)

@@ -214,7 +214,7 @@ const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'It
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Each \`plan\` line is an edit to the plan made after the directive started; it is a gap if it changes this directive's goal, steps, Verify, Rules or Allowed commands (the user amends plans in the planning session, so a legitimate one is resolved by the user). ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
+  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 let reviewVerdict = 'no gaps'
@@ -230,7 +230,7 @@ if (review && allGaps(review).length) {
     if (!v.ok) return await block(v.why)
   }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Each \`plan\` line is an edit to the plan made after the directive started; it is a gap if it changes this directive's goal, steps, Verify, Rules or Allowed commands (the user amends plans in the planning session, so a legitimate one is resolved by the user). Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && allGaps(review).length) {
