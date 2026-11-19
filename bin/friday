@@ -319,11 +319,86 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
     print(f"merged {base} {_run(['git', 'rev-parse', '--short', 'HEAD'], root).stdout.strip()}")
 
 
+def _locate_directive(root: Path, did: str):
+    """The directive is not in the working tree: look for it on the goal branches, then on each
+    candidate Base (origin/<Base> after a fetch, else local). Returns (ref, goal id, base, land,
+    looked) or (None, looked-at refs)."""
+    cands = ["main"]
+    gd = root / fc.GOAL_DIR
+    for gf in sorted(gd.glob("*.md")) if gd.is_dir() else []:
+        try:
+            b = fc.parse_goal(gf.read_text()).get("base")
+        except (OSError, ValueError):
+            continue
+        if b and b not in cands:
+            cands.append(b)
+    if _run(["git", "remote", "get-url", "origin"], root).returncode == 0:
+        for b in cands:
+            try:
+                subprocess.run(["git", "fetch", "-q", "origin", b], cwd=root, capture_output=True,
+                               timeout=30, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+    refs = _run(["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/friday",
+                 "refs/remotes/origin/friday"], root).stdout.split()
+    for b in cands:
+        refs += [f"origin/{b}", b]
+    looked = []
+    path = f"{fc.DIRECTIVE_DIR}/{did}.md"
+    for ref in refs:
+        if ref in looked:
+            continue
+        looked.append(ref)
+        r = _run(["git", "show", f"{ref}:{path}"], root)
+        if r.returncode != 0:
+            continue
+        parsed = fc.parse_directive_full(r.stdout)
+        gid = parsed["goal"]
+        if not gid or not fc.GOAL_RE.match(gid):
+            continue
+        g = _run(["git", "show", f"{ref}:{fc.GOAL_DIR}/{gid}.md"], root)
+        base = ""
+        if g.returncode == 0:
+            base = fc.parse_goal(g.stdout).get("base") or ""
+        return ref, gid, base or ref.removeprefix("origin/"), parsed["land"], looked
+    return None, looked
+
+
+def _switch_branch(root: Path, branch: str, base: str, gid: str) -> None:
+    if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+        sys.exit(f"friday: uncommitted changes to tracked files; commit them before switching to {branch}")
+    if _branch_exists(root, f"refs/heads/{branch}"):
+        cmd = ["git", "switch", "-q", branch]
+    else:
+        if _branch_exists(root, f"refs/heads/{base}"):
+            src = base
+        elif _branch_exists(root, f"refs/remotes/origin/{base}"):
+            src = f"origin/{base}"
+        else:
+            sys.exit(f"friday: base branch '{base}' of goal {gid} exists neither locally nor as origin/{base}")
+        cmd = ["git", "switch", "-q", "--no-track", "-c", branch, src]
+    r = _run(cmd, root)
+    if r.returncode != 0:
+        sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
+    print(f"on {branch}")
+
+
 def cmd_start(a) -> int:
     """Check the directive and its goal, enforce goal order, put the work on its branch
     (friday/<goal> for Land goal|none, friday/<id> for Land pr), then mark it running."""
     import re
     root = _root()
+    if fc.read_directive(root, a.id) is None:
+        found = _locate_directive(root, a.id)
+        if found[0] is None:
+            sys.exit(f"friday: no directive {fc.DIRECTIVE_DIR / (a.id + '.md')} in the working tree "
+                     f"or on {', '.join(found[1]) or 'any friday/<goal> branch or the Base'}")
+        ref, fgid, fbase, fland, _ = found
+        fbranch = f"friday/{a.id}" if fland == "pr" else f"friday/{fgid}"
+        print(f"found {a.id} on {ref}: merging {fbase} into {fbranch}")
+        if fc.current_branch(root) != fbranch:
+            _switch_branch(root, fbranch, fbase, fgid)
+        _merge_base(root, fbase, fbranch, a.id)
     d = _need(root, a.id)
     status = d["status"].lower()
     if not status.startswith(("approved", "running")):
@@ -345,23 +420,7 @@ def cmd_start(a) -> int:
         sys.exit(f"friday: {a.id} comes after {', '.join(undone)} in goal {gid}, which must be done first")
     branch = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
     if fc.current_branch(root) != branch:
-        if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
-            sys.exit(f"friday: uncommitted changes to tracked files; commit them before switching to {branch}")
-        if _branch_exists(root, f"refs/heads/{branch}"):
-            cmd = ["git", "switch", "-q", branch]
-        else:
-            base = goal["base"]
-            if _branch_exists(root, f"refs/heads/{base}"):
-                src = base
-            elif _branch_exists(root, f"refs/remotes/origin/{base}"):
-                src = f"origin/{base}"
-            else:
-                sys.exit(f"friday: base branch '{base}' of goal {gid} exists neither locally nor as origin/{base}")
-            cmd = ["git", "switch", "-q", "--no-track", "-c", branch, src]
-        r = _run(cmd, root)
-        if r.returncode != 0:
-            sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
-        print(f"on {branch}")
+        _switch_branch(root, branch, goal["base"], gid)
     _merge_base(root, goal["base"], branch, a.id, str(fc.GOAL_DIR / f"{gid}.md"))
     if goal["status"] == "approved":
         gp = fc.goal_path(root, gid)
