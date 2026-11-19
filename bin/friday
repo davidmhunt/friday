@@ -386,7 +386,9 @@ def _switch_branch(root: Path, branch: str, base: str, gid: str) -> None:
     if _branch_exists(root, f"refs/heads/{branch}"):
         cmd = ["git", "switch", "-q", branch]
     else:
-        if _branch_exists(root, f"refs/heads/{base}"):
+        if _branch_exists(root, f"refs/remotes/origin/{branch}"):
+            src = f"origin/{branch}"
+        elif _branch_exists(root, f"refs/heads/{base}"):
             src = base
         elif _branch_exists(root, f"refs/remotes/origin/{base}"):
             src = f"origin/{base}"

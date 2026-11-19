@@ -85,3 +85,25 @@ def test_start_finds_directive_on_origin_base(remote_repo):
     assert r.returncode == 0, r.stderr
     assert "found core-02 on" in r.stdout and "merging main into friday/core" in r.stdout
     assert (repo / "docs/directives/core-02.md").exists()
+
+
+def test_start_finds_directive_only_on_remote_goal_branch(remote_repo):
+    repo, _origin = remote_repo
+    _g(repo, "switch", "-q", "-c", "friday/core", "main")
+    _amend_main(repo)  # commits core-02 on main, so redo it on the goal branch
+    _g(repo, "switch", "-q", "main")
+    _g(repo, "reset", "-q", "--hard", "HEAD~1")
+    _g(repo, "switch", "-q", "friday/core")
+    (repo / "docs/directives/core-02.md").write_text(
+        DIRECTIVE.replace("core-01", "core-02").replace("Land: pr", "Land: goal"))
+    (repo / "docs/goals/core.md").write_text(GOAL.replace("1. core-01: Make the thing",
+                                             "1. core-02: Make the thing\n2. core-01: Make the thing"))
+    _g(repo, "add", ".")
+    _g(repo, "commit", "--no-verify", "-qm", "plan core-02")
+    _g(repo, "push", "-q", "origin", "friday/core", "main")
+    _g(repo, "switch", "-q", "main")
+    _g(repo, "branch", "-q", "-D", "friday/core")
+    r = cli(repo, "start", "core-02")
+    assert r.returncode == 0, r.stderr
+    assert _g(repo, "branch", "--show-current").strip() == "friday/core"
+    assert (repo / "docs/directives/core-02.md").exists()
