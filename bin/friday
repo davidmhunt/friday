@@ -921,11 +921,12 @@ def probe_script(node) -> str:
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
         f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
+        ff.plugin_install_lines(node),
     ]) + "\n"
 
 
 def check_node(node) -> tuple:
-    """Probe one node. Returns (summary_text, [fix lines]); fixes empty means it passes."""
+    """Probe one node. Returns (summary_text, [fix lines]); fixes empty means it passes (lines starting `warning:` do not fail it)."""
     argv, stdin = ff.ssh_cmd(node, probe_script(node))
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
@@ -961,8 +962,15 @@ def check_node(node) -> tuple:
     for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
+    inst = got.get("install", "unknown")
+    if inst == "other":
+        fixes.append(f"warning: friday is installed from {got.get('install_dir', '?')}, not plugin_dir "
+                     f"{node.plugin_dir}, on {node.name}: two copies exist; dispatch keeps --plugin-dir")
+    elif inst == "disabled":
+        fixes.append(f"warning: friday is installed but disabled on {node.name}; dispatch keeps --plugin-dir")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
-               f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}")
+               f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}, "
+               f"plugin install {inst}")
     return summary, fixes
 
 
@@ -1261,10 +1269,11 @@ def cmd_nodes(a) -> int:
                   f"tags={','.join(n.tags) or '-'} repos={n.repos or '-'}")
             continue
         summary, fixes = check_node(n)
-        print(f"{n.name:<12} {n.role:<7} {'FAIL' if fixes else 'ok':<5} {summary}")
+        hard = [f for f in fixes if not f.startswith("warning:")]
+        print(f"{n.name:<12} {n.role:<7} {'FAIL' if hard else 'ok':<5} {summary}")
         for f in fixes:
             print(f"  {f}")
-        if fixes and n.role in ("master", "worker"):
+        if hard and n.role in ("master", "worker"):
             ok = False
         if n.role in ("master", "worker"):
             line = fd.dash_line(state, n.name)
@@ -1503,7 +1512,8 @@ def resume_restart(root: Path, a) -> int:
     if not c["report_to"]:
         _refuse("report-to", "no session to report to", "pass --report-to <session> or set report_to in the nodes file")
     host = socket.gethostname()
-    launch = ff.launch_line(n, gid, st["path"], host, c["remaining"], c["report_to"])
+    launch = ff.launch_line(n, gid, st["path"], host, c["remaining"], c["report_to"],
+                            ff.probe_plugin_install(n))
     kill = f"tmux kill-session -t '=friday-{gid}'"
     if a.dry_run:
         if st["session"]:
@@ -1545,7 +1555,8 @@ def cmd_dispatch(a) -> int:
     origin_url = _git_out(["remote", "get-url", "origin"], root)[1]
     repo_name = origin_url.strip().rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
     wt = ff.worktree_path(n, repo_name, a.goal)
-    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to)
+    installed = ff.probe_plugin_install(n)
+    launch = ff.launch_line(n, a.goal, wt, socket.gethostname(), plan["directives"], report_to, installed)
     script = ff.prepare_script(n, a.goal, repo_name, origin_url, plan["base"], plan["plugin_commit"])
     if a.dry_run:
         print("prepare script:")
@@ -1566,7 +1577,7 @@ def cmd_dispatch(a) -> int:
         return r.returncode
     wt_abs = next((l.split(" ", 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_WORKTREE ")), wt)
     argv, stdin = ff.ssh_cmd(n, ff.launch_line(
-        n, a.goal, wt_abs, socket.gethostname(), plan["directives"], report_to) + "\n")
+        n, a.goal, wt_abs, socket.gethostname(), plan["directives"], report_to, installed) + "\n")
     r = subprocess.run(argv, input=stdin, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"friday: launch failed on {n.name}: {r.stderr.strip()}", file=sys.stderr)
