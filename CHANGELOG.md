@@ -9,6 +9,10 @@
   directives thin and routes iterative robot work to a worker goal; docs/fleet.md has a "Targets and
   workers" section and a read-only probe recipe.
 
+- `friday nodes --check` probes `uv`, `gh auth status` and `claude` sign-in with fix lines. `friday nodes
+  --setup <node>` prints these prerequisites first; on a target it prints the `nodes.toml` edit that
+  promotes it to a worker, changes nothing and exits 1 (#23).
+
 ### Fixed
 
 - An explicit tag push (`refs/tags/<name>` or `tag <name>`) listed under `## Allowed commands` now runs while

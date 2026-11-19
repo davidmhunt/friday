@@ -146,13 +146,25 @@ dispatched session, because nobody is there to answer them:
 Each is a FAIL with the fix `friday nodes --setup <node>`. A missing or unparsable
 `~/.claude/settings.json` counts as both prompts.
 
+It also probes three worker prerequisites, each reported with a fix line when missing: `uv` (on PATH or
+`~/.local/bin`; install from https://docs.astral.sh/uv/getting-started/installation/), `gh auth status`
+(push credentials for `friday land`; run `gh auth login` on the node) and `claude auth status` (signed
+in; run `claude` and `/login` on the node). Sign-in and `gh auth login` are for a person to do: friday
+reports them and never does them.
+
 ### `friday nodes --setup <node>`
 
 ```
 friday nodes --setup alfred [--yes]
 ```
 
-Prints the exact keys and the file (`~/.claude/settings.json` on that node), then asks `y/N` on the
+First prints `prerequisites:` with one line per item (`uv`, `gh auth`, `claude signed in`: ok, or
+missing with its fix), the same probe `--check` runs. A missing item does not stop the settings step.
+For a node whose role is `target`, `--setup` changes nothing on the node: it prints the prerequisites and
+the `nodes.toml` edit that makes it a worker (`role = "worker"`, `repos`, `plugin_dir`) and exits 1; edit
+the registry and re-run it.
+
+Then prints the exact keys and the file (`~/.claude/settings.json` on that node), then asks `y/N` on the
 terminal. Without a TTY it refuses unless you pass `--yes`. On confirmation it merges only those two keys
 into the file: other keys stay as they are, the file is written to a temp file and renamed, and the
 previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
@@ -383,8 +395,10 @@ building, editing its checkout, hardware tests. The robot's own session runs it 
 local permission mode, so it has the robot's tools, its checkout and a shell on the machine. Use a
 worker when the steps are "try, look, change, try again".
 
-To promote a target to a worker, register it in `nodes.toml` (see above), then run
-`friday nodes --setup <robot>` and `friday nodes --check` (see
+To promote a target to a worker, run `friday nodes --setup <robot>`: it lists the missing prerequisites
+(`uv`, `gh auth`, `claude` sign-in) with their fixes and prints the `nodes.toml` change (`role =
+"worker"`, `repos`, `plugin_dir`), exiting 1 until you make it. Edit the registry, re-run
+`--setup`, then `friday nodes --check` (see
 [`friday nodes --setup <node>`](#friday-nodes---setup-node)). Then give the directive
 `Node: host:<robot>` and dispatch it like any goal.
 
