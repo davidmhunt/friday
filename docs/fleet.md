@@ -104,9 +104,9 @@ Each node has `repos`. For a goal `<g>` in repo `<repo>`:
   `origin/friday/<g>` when that exists, otherwise from the goal's Base (`origin/<Base>`).
 - Your checkout on the node is never touched: no checkout, reset or stash happens in it.
 
-Plan amendments to a dispatched goal are commits on its Base (checked with `friday check`); the node
-picks them up at its next `friday start`, which merges Base into the goal branch. An amendment to the
-running directive takes effect when it restarts.
+Plan amendments to a dispatched goal are commits on its goal branch (checked with `friday check`,
+pushed; run `friday approve --goal <g>` again when `## Allowed commands` changed); the node
+picks them up at its next fetch. An amendment to the running directive takes effect when it restarts.
 
 To change where work happens, change `repos` for that node. It must be trusted by `claude` (see below).
 
@@ -124,10 +124,13 @@ On each worker (and on the master, which is also a node):
 4. `tmux` installed.
 5. The friday clone at `plugin_dir` (`git clone <friday origin> ~/friday`). Dispatch checks out the
    master's plugin commit there.
-6. `friday` on PATH: `python3 ~/friday/bin/friday install` once on the node (or let
-   `friday nodes --setup <node>` do it). After that just `friday`; remove it with
-   `ssh <node> friday uninstall`. The `uv run` and `python3` forms still work.
-7. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
+6. `uv` installed (https://docs.astral.sh/uv/getting-started/installation/). friday runs on a uv-managed
+   Python 3.12, so the node's system Python (3.10 on Ubuntu 22.04) is not used.
+7. `friday` on PATH: `python3 ~/friday/bin/friday install` once on the node (or let
+   `friday nodes --setup <node>` do it). It runs `uv python install 3.12`, records the interpreter in
+   `~/.local/state/friday/python` and writes a `~/.local/bin/friday` shim. After that just `friday`; remove
+   it with `ssh <node> friday uninstall`.
+8. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
    Dispatch refuses (`untrusted`) until `repos` or a parent is trusted in `~/.claude.json`.
 
 Then check from the master:
@@ -146,13 +149,28 @@ dispatched session, because nobody is there to answer them:
 Each is a FAIL with the fix `friday nodes --setup <node>`. A missing or unparsable
 `~/.claude/settings.json` counts as both prompts.
 
+For each node it reports `uv`, the recorded friday Python and its version, with the fixes
+`uv python install 3.12` then `friday install` when none is recorded, it does not run, or it is older than 3.11.
+
+It also probes three worker prerequisites, each reported with a fix line when missing: `uv` (on PATH or
+`~/.local/bin`; install from https://docs.astral.sh/uv/getting-started/installation/), `gh auth status`
+(push credentials for `friday land`; run `gh auth login` on the node) and `claude auth status` (signed
+in; run `claude` and `/login` on the node). Sign-in and `gh auth login` are for a person to do: friday
+reports them and never does them.
+
 ### `friday nodes --setup <node>`
 
 ```
 friday nodes --setup alfred [--yes]
 ```
 
-Prints the exact keys and the file (`~/.claude/settings.json` on that node), then asks `y/N` on the
+First prints `prerequisites:` with one line per item (`uv`, `gh auth`, `claude signed in`: ok, or
+missing with its fix), the same probe `--check` runs. A missing item does not stop the settings step.
+For a node whose role is `target`, `--setup` changes nothing on the node: it prints the prerequisites and
+the `nodes.toml` edit that makes it a worker (`role = "worker"`, `repos`, `plugin_dir`) and exits 1; edit
+the registry and re-run it.
+
+Then prints the exact keys and the file (`~/.claude/settings.json` on that node), then asks `y/N` on the
 terminal. Without a TTY it refuses unless you pass `--yes`. On confirmation it merges only those two keys
 into the file: other keys stay as they are, the file is written to a temp file and renamed, and the
 previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
@@ -205,8 +223,8 @@ friday never changes that setting.
 
 ## Dispatching
 
-Approve the goal and its first remaining directive, commit the goal and directive files, and publish
-them to `origin` (`friday/<g>` if it exists there, else the Base). Run `friday dispatch` from the repo you want dispatched: the goal and its origin come from the
+Approve the goal and its first remaining directive, commit the goal and directive files on
+`friday/<g>`, and push that branch to `origin`. Run `friday dispatch` from the repo you want dispatched: the goal and its origin come from the
 current checkout. Then:
 
 ```
@@ -231,11 +249,14 @@ attach or `--resume`. Pre-approve what the goal needs in each directive's `## Al
 ```
 
 One backticked command per bullet; `*` matches any text; only a single simple command (no `&&`, `;`,
-`|`, backticks or `$(`). The list is read from the directive as committed on `origin/<Base>` (the
-plan you approved), never from the goal branch, so publish it before dispatching. To add a command
-later, commit the amendment on Base, run `friday check`, push Base, and the node picks it up at its
-next `friday start` (or after `--resume`). The deny list still wins: `sudo`, force-push and push to
-main stay refused even if listed, so `sudo` on a target over `ssh` stays a step you do. A
+`|`, backticks or `$(`). The list is read from the directive as committed on `origin/friday-plan/<goal>` (the
+plan you approved), never from the goal branch, so run `friday approve --goal <g>` before
+dispatching (it pushes that ref; agents cannot). Without it the commands prompt. To add a command
+later, commit the amendment on the goal branch, run `friday check`, push the branch, run
+`friday approve --goal <g>` again, and the node picks it up after a fetch (its next `friday start`
+or after `--resume`). The deny list still wins: `sudo`, force-push and push to
+main stay refused even if listed (a listed `git push` to a branch other than the goal branch is a
+`friday check` error; a listed explicit tag push, destination `refs/tags/<name>`, runs), so `sudo` on a target over `ssh` stays a step you do. A
 pre-approved hardware command still takes the lease. See [spec.md](spec.md) section 5.
 
 ### Ending a finished session
@@ -359,6 +380,63 @@ Each dispatch appends one JSON line to `dispatches.jsonl` on the master, at
 directives, node, tmux session, worktree, branch, source ref, plugin commit, report target, time. Goal
 and directive files are not changed by dispatching. On the node, `runs/<id>/notes.md` notes where the
 dispatch came from.
+
+## Targets and workers
+
+A directive can reach a device in two ways. Pick by what the work needs.
+
+**A target directive** drives a device (a robot) over ssh from the node that runs it. Keep it thin. It
+may run:
+
+- named, reviewed project scripts, such as a read-only probe and one smoke test, each listed under
+  `## Allowed commands` (`tools/probe.sh *`);
+- single-purpose writes you approve one at a time (a tag, a file copy), at the prompt or as an exact
+  command.
+
+It does not pre-approve any remote command (`ssh <host> *`, a remote `bash -c *`) or a remote build or
+install (`docker build`, `colcon build`, `make`, `cmake`, `cargo build`, `pip install`, `uv sync`,
+`apt`). `friday check` warns on those patterns (not an error), and the plan skill routes such work to
+a worker. Over a broad `ssh` pattern the target's whole shell is open to the session, with no review.
+
+**A worker goal** (`Node: host:<robot>`) is for work that needs iteration on the robot: debugging,
+building, editing its checkout, hardware tests. The robot's own session runs it under that machine's
+local permission mode, so it has the robot's tools, its checkout and a shell on the machine. Use a
+worker when the steps are "try, look, change, try again".
+
+To promote a target to a worker, run `friday nodes --setup <robot>`: it lists the missing prerequisites
+(`uv`, `gh auth`, `claude` sign-in) with their fixes and prints the `nodes.toml` change (`role =
+"worker"`, `repos`, `plugin_dir`), exiting 1 until you make it. Edit the registry, re-run
+`--setup`, then `friday nodes --check` (see
+[`friday nodes --setup <node>`](#friday-nodes---setup-node)). Then give the directive
+`Node: host:<robot>` and dispatch it like any goal.
+
+### A read-only probe recipe
+
+Keep the fixed list of read-only commands in a project script, so the directive pre-approves one name,
+not a shell. `tools/probe.sh <robot>` runs them over one ssh call and prints a labelled section for
+each:
+
+```bash
+#!/usr/bin/env bash
+# tools/probe.sh <robot>: read-only state of a robot, one ssh call, labelled sections.
+set -euo pipefail
+robot="${1:?usage: tools/probe.sh <robot>}"
+ssh "$robot" 'for c in "uname -a" "cat /etc/os-release" "uptime" "df -h /" "docker ps" \
+    "ros2 node list" "ros2 topic list"; do
+  printf "== %s ==\n" "$c"; sh -c "$c" 2>&1 || true
+done'
+```
+
+Review the script like code: its command list is the whole permission. List it under
+`## Allowed commands` as a single bullet:
+
+```markdown
+## Allowed commands
+- `tools/probe.sh *`
+```
+
+The probe takes the robot's hardware lease when the robot matches a `hardware` pattern, like any
+`ssh`. See [recipes/robot.md](recipes/robot.md).
 
 ## Hardware
 

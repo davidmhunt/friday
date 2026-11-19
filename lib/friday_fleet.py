@@ -8,9 +8,26 @@ from __future__ import annotations
 
 import json
 import os
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11: last-resort fallback; `friday install` sets up 3.12
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        # Neither is present (stock 3.10): stay importable so `friday install` can run and fetch 3.12;
+        # only reading a nodes file fails, with the fix named.
+        class tomllib:  # noqa: N801
+            class TOMLDecodeError(ValueError):
+                pass
+
+            @staticmethod
+            def _no(*_a, **_k):
+                raise RegistryError("no TOML parser on this Python (< 3.11); run `friday install` "
+                                   "(it installs Python 3.12 via uv)")
+            loads = load = _no
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 ROLES = ("master", "worker", "target")
@@ -338,8 +355,9 @@ def plugin_install_lines(node) -> str:
     `install_dir=<dir>`: whether `friday@` is installed and enabled for the user, and from which
     directory (`same` means the node's plugin_dir)."""
     import shlex
-    return (f"if command -v python3 >/dev/null 2>&1; then FRIDAY_P={remote_path(node.plugin_dir)} "
-            f"python3 -c {shlex.quote(_PLUGIN_PY)} 2>/dev/null; else echo 'FRIDAY_PROBE install=unknown'; fi")
+    py = remote_path(node.plugin_dir.rstrip("/") + "/bin/friday-python")
+    return (f"if [ -x {py} ]; then FRIDAY_P={remote_path(node.plugin_dir)} "
+            f"{py} -c {shlex.quote(_PLUGIN_PY)} 2>/dev/null; else echo 'FRIDAY_PROBE install=unknown'; fi")
 
 
 def parse_plugin_install(text: str) -> tuple:
@@ -386,6 +404,7 @@ def prepare_script(node, goal: str, repo_name: str, origin_url: str, base: str,
 refuse() {{ echo "FRIDAY_REFUSE $1: $2"; exit "$3"; }}
 REPOS={repos}
 PLUGIN={plugin}
+PY="$PLUGIN/bin/friday-python"
 REPO_NAME={q(repo_name)}
 ORIGIN={q(origin_url)}
 GOAL={q(goal)}
@@ -397,7 +416,7 @@ REPOS=$(cd "$REPOS" && pwd -P)
 CLONE="$REPOS/$REPO_NAME"
 WT="$REPOS/$REPO_NAME.friday/$GOAL"
 # trust: repos or a parent must be accepted in ~/.claude.json
-python3 - "$REPOS" <<'PY' || refuse untrusted "$REPOS is not trusted in ~/.claude.json" {code['untrusted']}
+"$PY" - "$REPOS" <<'PY' || refuse untrusted "$REPOS is not trusted in ~/.claude.json" {code['untrusted']}
 import json, os, sys
 p = os.path.realpath(sys.argv[1])
 try:
@@ -440,7 +459,7 @@ else
     || refuse git "worktree add from origin/$BASE failed" {code['git']}
 fi
 # trust the new worktree (repos was trusted above): add it to ~/.claude.json, atomically
-python3 - "$WT" <<'PY' || refuse untrusted "cannot record trust for $WT in ~/.claude.json" {code['untrusted']}
+"$PY" - "$WT" <<'PY' || refuse untrusted "cannot record trust for $WT in ~/.claude.json" {code['untrusted']}
 import json, os, shutil, sys, tempfile
 wt = os.path.realpath(sys.argv[1])
 cfg = os.path.expanduser("~/.claude.json")
@@ -817,11 +836,13 @@ def clean_script(node, items: list, dry_run: bool = False) -> str:
     import shlex
     rows = "\n".join(f"{shlex.quote(i['repo'])} {shlex.quote(i['goal'])} {shlex.quote(i['path'])}"
                      for i in items)
+    py = remote_path(node.plugin_dir.rstrip("/") + "/bin/friday-python")
     return f"""set -u
+PY={py}
 DRY={1 if dry_run else 0}
 {IDLE_SH}
 untrust() {{
-python3 - "$1" <<'PY'
+"$PY" - "$1" <<'PY'
 import json, os, sys, tempfile
 wt = sys.argv[1]
 cfg = os.path.expanduser("~/.claude.json")

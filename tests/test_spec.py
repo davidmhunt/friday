@@ -18,7 +18,7 @@ import friday_hook as fh  # noqa: E402
 SPEC = (ROOT / "docs" / "spec.md").read_text()
 
 # One label per fh.DENY rule, in order; the spec's deny-list table uses these labels.
-DENY_LABELS = ["sudo", "chmod " + "777", "rm -rf", "force-push", "+refspec", "push to main", "git remote add",
+DENY_LABELS = ["sudo", "chmod " + "777", "rm -rf", "force-push", "+refspec", "push to main", "push to friday-plan", "git remote add",
                "git clean -f", "curl pipe sh", "eval fetched", "raw disk write"]
 
 

@@ -82,6 +82,9 @@ The result, and how a reader can tell it holds.
 ## Review
 - What the user should open and what to look for (needed with `Accept: user`).
 
+## Rules
+- A constraint that holds for every step.
+
 ## Allowed commands
 - `friday dispatch --goal board-limits`
 
@@ -112,6 +115,7 @@ An unknown header key is a warning.
 | `## Steps` | yes | numbered list; at least one step. A `[heavy]` step (the marker inside an inline code span is only a mention) must contain `Heavy because:`; heavy steps run on Opus |
 | `## Acceptance` | `doc`, `slides`, `external`: yes; `code`: optional | at most once; at least one `- ` bullet where required; the verifier grades each bullet |
 | `## Review` | with `Accept: user`: yes | at most once; at least one `- ` bullet; printed when the directive reaches `awaiting review` |
+| `## Rules` | no | at most once; at least one `- ` bullet when present (error otherwise); constraints for the whole directive, given to every implementer, verify-fix, review-fix, runner and reviewer prompt; the reviewer treats a broken rule as a gap |
 | `## Allowed commands` | no | bullets, each with exactly one backticked pattern (section 5) |
 | `## Out of scope` | yes | what must not change; the verifier checks it |
 | `## Log` | yes, last | written by commands, never by hand |
@@ -133,6 +137,13 @@ Rules that tie keys together:
 - A warning when `Verify` matches a `hardware` pattern of `.claude/friday.json`: Verify is re-run
   unattended (fix rounds, landing) without the hardware prompt. Run the device step once, record it
   with `friday result write`, and make Verify a `friday result check`.
+- Warnings on `## Allowed commands` patterns that break the thin-target rule (a target directive runs
+  named scripts, not a remote shell; iterative robot work is a worker goal, see
+  [fleet.md](fleet.md) "Targets and workers"): an `ssh` pattern that pre-approves any remote command
+  (`ssh <host> *`, `ssh -p 22 <host> *`), a remote shell (`bash`, `sh`, `zsh`, `dash` with `-c` or `*`), or a
+  remote build or install (`docker build`, `colcon build`, `make`, `cmake`, `cargo build`, `pip install`,
+  `uv sync`, `apt`). `ssh` options that take a value (`-p`, `-i`, `-o`, `-J`, `-l`, `-F`) are skipped to find
+  the host. A specific command such as `ssh rover ./run ros2 topic list` does not warn.
 
 ### 2.2 Goal file
 
@@ -162,7 +173,8 @@ The goal name matches `^[a-z0-9][a-z0-9-]*$` and must not look like a directive 
 | `Land` | yes | `pr`, `none` |
 
 Unknown goal headers are ignored. Sections `## Goal`, `## Directives`, `## Log` are required once
-each, in that order, `## Log` last; others are not restricted. `## Directives` is a numbered list in
+each, in that order, `## Log` last; others are not restricted. An optional `## Rules` (`- ` bullets, at
+least one when present) applies to every directive of the goal. `## Directives` is a numbered list in
 run order; each item starts with a directive id, optionally followed by `: <text>`. A bad or repeated
 id, or an id with no directive file whose `Goal:` names this goal, is an error.
 
@@ -174,6 +186,10 @@ id, or an id with no directive file whose `Goal:` names this goal, is an error.
 - `<git dir>/friday-active`, per worktree, never committed: the active marker (`id`, `host`,
   `started`, `gate`, `base`, `goal_base`), written by `friday start`, removed by `friday finish`.
 - `~/.local/state/friday/leases/<resource>.json`: hardware leases (section 9.3).
+- `~/.local/state/friday/python`: the interpreter path `friday install` recorded (from `uv python find 3.12`).
+  `bin/friday-python` (POSIX sh) resolves the Python for every friday entry point: the recorded path if it
+  runs, else `uv python find 3.12`, else `python3` with a warning on stderr naming `friday install`. Hooks
+  and remote snippets run through it; `friday status` warns when hooks would fall back to `python3`.
 - `~/.local/state/friday/dispatches.jsonl` on the master: one line per dispatch or resume.
 
 ## 3 Status lifecycle
@@ -213,7 +229,7 @@ errors, and every earlier directive of its goal is `done` or `awaiting review`.
 | Who | May |
 |---|---|
 | The user | approve a goal and its directives (`proposed` -> `approved`); run `friday accept` (the only way out of `awaiting review`); merge PRs; run the prompted commands (`friday release`, a real `friday dispatch`, a real `friday nodes --clean`) unless a directive pre-approves them; run `sudo` and other denied commands |
-| `/friday:plan` | write goal and directive files as `proposed`, run `friday init`, commit the plan on Base |
+| `/friday:plan` | write goal and directive files as `proposed`, run `friday init`, commit the plan on the goal branch `friday/<goal>` and push it; ask the user to run `friday approve --goal <g>` when a directive has `## Allowed commands` |
 | Commands | write `Status` and `## Log`: `start` (goal `approved` -> `running`), `finish`, `accept`, `unblock`, `land --goal` (goal `done` and a Log line). Each writes one commit with a `Directive: <id>` or `Goal: <g>` line |
 | Agents in a run | edit code, docs and data inside a step's scope, and `runs/<id>/notes.md`; never `Status` or `## Log` by hand; never `friday accept` (the PreToolUse hook denies it, also through `ssh`, `bash -c`, `uv run`) |
 
@@ -235,19 +251,23 @@ how an unattended or dispatched run gets past the commands that would otherwise 
 
 - **Format.** Bullets each holding exactly one backticked pattern. `*` matches any text; the whole
   command must match. A pattern is one simple command.
-- **Where the list is read from.** The hook reads the directive as committed on `origin/<Base>`
-  (`git show origin/<Base>:docs/directives/<id>.md`), the plan the user approved, never the working
-  tree. `<Base>` comes from the active marker, is trusted only when the goal file on `origin/<Base>`
-  names the same Base, and is never a `friday/*` branch. So editing the directive or the goal's
-  `Base:` on the goal branch cannot widen the list. To change the list, amend the plan on Base and
-  push it (section 6); `friday start` fetches `origin/<Base>`, the hook never does.
+- **Where the list is read from.** The hook reads the directive as committed on the ref
+  `friday-plan/<goal>` on origin (`git show origin/friday-plan/<goal>:docs/directives/<id>.md`), the
+  plan the user approved, never the working tree. Only `friday approve --goal <g>`, a user-only
+  command, pushes that ref (the hook denies agent pushes to `friday-plan/*`). Without the ref
+  nothing is pre-approved and commands prompt as usual. So editing the directive on the goal branch
+  cannot widen the list. To change the list, amend the plan on the goal branch and run
+  `friday approve --goal <g>` again (section 6); the hook never fetches.
 - **Scope.** Only the active directive's list applies (the marker names it), only to a command
   command line whose every simple command matches a pattern. The line is split on newlines, `&&`,
   `||`, `;` and `|`; each part must match. It is never pre-approved when it contains command or
   process substitution (`$(`, backticks, `<(`, `>(`), a heredoc (`<<`) or backgrounding `&`. Nothing
   is built in as harmless: list helpers such as `grep *` explicitly. Applies only in the worktree where the directive is active.
 - **`friday check` errors** on a pattern that is only `*`, contains `&&`, `;`, `|`, a backtick or
-  `$(`, starts with `friday accept`, or matches the hook's deny list.
+  `$(`, starts with `friday accept`, or matches the hook's deny list. It also errors on a `git push`
+  (or `git -C <dir> push`) whose destination is neither an explicit `refs/tags/<name>` ref nor the
+  goal branch (`friday/<goal>`; `friday/<id>` for `Land: pr`), or is a bare `*`: the push guard
+  denies it while the directive is active.
 - **What it overrides.** Only the permission prompt. It answers `allow` where Claude Code would
   ask.
 - **What still applies.** The deny list wins (so `sudo` is refused even when listed, and `sudo` on
@@ -264,16 +284,26 @@ how an unattended or dispatched run gets past the commands that would otherwise 
   lists them. `friday accept` can never be allowed.
 - While a directive is active, `git push` may update only the goal's own branch (`friday/<goal>`,
   or `friday/<id>` for `Land: pr`), so the agent cannot edit `origin/<Base>` into a trusted source.
+  The one exception is an explicit tag push (a `refs/tags/<name>` destination, or the `tag <name>`
+  form) that the directive lists under `## Allowed commands`: it runs. An unlisted tag push is
+  denied, a listed push to any other branch is a `friday check` error (and still denied by the
+  guard), and `--tags`, `--follow-tags`, `--all`, `--mirror` and force stay denied.
 
 ## 6 Plan amendments and a directive's change set
 
-**Amending a running goal's plan.** The plan lives on the goal's Base. To change an approved goal
-or directive (steps, Verify, `## Allowed commands`, a new directive), commit the change on Base,
-check it with `friday check`, and push Base. Never edit the plan on the goal branch: `friday start`
-merges Base into the goal branch before each directive (`origin/<Base>` after a fetch with a 30 s
-limit; a failed fetch warns and uses the local Base). A merge conflict aborts the merge and `start`
-exits non-zero. The running session sees an amendment only at its next `friday start`: before the
-next directive, or when the current directive is restarted (for example after a block and
+**Amending a running goal's plan.** The plan lives on the goal branch `friday/<goal>`, created from
+Base by the plan skill; agents never commit to Base. To change an approved goal or directive (steps,
+Verify, `## Allowed commands`, a new directive), commit the change on the goal branch, check it with
+`friday check`, push the branch, and when `## Allowed commands` changed run `friday approve --goal
+<g>` again (the published `friday-plan/<g>` does not follow the branch). `friday start` still merges
+Base into the goal branch before each directive (`origin/<Base>` after a fetch with a 30 s limit; a
+failed fetch warns and uses the local Base) for upstream changes. A directive that exists only on
+Base (or only on the goal branch) is found there: `start` prints `found <id> on <ref>: merging <Base>
+into friday/<goal>`, switches to the goal branch and merges Base first. A conflict confined to the
+`Status:` lines of goal and directive files is resolved in favour of the goal branch (lifecycle state
+lives there); any other conflict aborts the merge and `start` exits non-zero with the conflicted paths.
+A goal that is `done` but now lists a directive that is not done is set back to `running`. The running session sees an amendment only at its next `friday start`:
+before the next directive, or when the current directive is restarted (for example after a block and
 `friday unblock`). An amendment to the running directive does not reach the session that is
 executing it. While a directive is active, the `commit-msg` git hook refuses a commit without
 `Directive: <id>`, except a commit that only touches goal and directive files and names a directive
@@ -284,7 +314,7 @@ merge-base of the goal's Base and the tip (HEAD, or `friday/<id>` for `Land: pr`
 exists) that carry a `Directive: <id>` line, minus friday's own record commits (`<id>: blocked`,
 `unblock`, `record results`, `accepted`). Commits on that range with no `Directive:` line that touch
 anything outside `docs/goals/` and `docs/directives/` are listed as `untracked`; the review treats
-each as a gap. The review and the Log's commit list use this set, so a restart never changes what
+each as a gap. A commit whose files are all under `docs/goals/`, `docs/directives/` or `.claude/settings.json` is plan-only (the plan commit on the goal branch): it is never the directive's work, with or without a `Directive:` line, and is excluded from `commits` and `untracked`. `friday start <id>` records the HEAD it starts from in `runs/<id>/start` (untracked; written only when absent, so a restart keeps the first point). A plan-only commit that is an ancestor of that point is the plan and stays excluded; one made after it is a plan edit made during the run and is listed as `plan <sha> <subject>` (with or without a trailer), which the review treats as a gap if it changes the directive's goal, steps, Verify, Rules or Allowed commands. When the file is absent (older runs) every plan-only commit is excluded. The Log lists only own commits. The review and the Log's commit list use this set, so a restart never changes what
 is reviewed.
 
 ## 7 Commands
@@ -299,27 +329,28 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo, the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
 | `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing. Reports whether the GitHub repo deletes head branches on merge and prints the `gh api -X PATCH` command to turn it on (changes nothing; skipped when `gh` is missing or signed out) | 0; 1 unreadable settings file |
 | `friday new <loop>` | print the next free directive id for a loop (`core` -> `core-04`) | 0 |
-| `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base, set the goal `running`, install the guard, write the marker, print `base <sha>`. Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
+| `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base (finding a directive that exists only on the goal branch or Base first; a Status-only conflict keeps the goal branch's lines), set the goal `running` (a `done` goal with an undone directive reopens), install the guard, write the marker, print `base <sha>`. Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
 | `friday verify [<id>]` | run the directive's `Verify` (default: the active one); `none` is skipped | Verify's own exit code; 0 for `none`; 1 no directive |
 | `friday finish <id> [--verify TEXT] [--review TEXT] [--base SHA] [--blocked REASON]` | append the Log entry (commits, notes, Verify, review) and set Status: `done`, `awaiting review` (`Accept: user`) or `blocked: REASON` (goal also blocked); one commit; clear the marker. `--base SHA` lists commits since SHA instead of using `friday commits` | 0; 1 other tracked files uncommitted, commit failed |
 | `friday accept <id> [--note TEXT] [--reject REASON]` | the user accepts an `awaiting review` directive (`done`) or rejects it (`blocked: REASON`, goal blocked); one commit; must run on the directive's branch. Refuses, changing nothing, while any tracked file is modified or staged: lists them and prints the `git commit -am` to run first; untracked files do not count. Denied to agents | 0; 1 not awaiting review, wrong branch; 8 tracked files uncommitted |
+| `friday approve --goal <g>` | the user publishes the goal's plan: runs `friday check --goal <g>`, then pushes `friday/<g>` and `HEAD` to `friday-plan/<g>` on origin (no force; a non-fast-forward is refused) and lists what is now pre-approved. Must run on `friday/<g>`. Denied to agents | 0; 1 check errors, wrong branch, push refused; 8 tracked files uncommitted |
 | `friday unblock <id>` | a `blocked:` directive back to `approved` with a Log line, and a blocked goal to `running`; one commit; on the directive's branch | 0; 1 not blocked, wrong branch |
-| `friday commits <id> [--json]` | the directive's own commits and `untracked` commits (section 6); `--json` gives `base`, `commits`, `untracked` | 0 commits found; 3 none; 2 cannot say (no goal, no Base branch, no merge-base) |
+| `friday commits <id> [--json]` | the directive's own commits, `untracked` commits and `plan` edits made after start (section 6); `--json` gives `base`, `commits`, `untracked`, `plan` | 0 commits found; 3 none; 2 cannot say (no goal, no Base branch, no merge-base) |
 | `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR with a table of directives. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh` missing or signed out; prints `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
 | `friday release <resource>` / `friday release --all` | free a hardware lease | 0; 1 no resource named |
 | `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` | record an expensive run once in `results/<id>.json` | 0; 1 error (no HEAD, file missing) |
 | `friday result check <id> [--require 'K OP V']... [--files]` | the cheap Verify: the record exists, its commit is an ancestor of HEAD, each requirement holds (`OP` is one of `>= > <= < == !=`), with `--files` each recorded file still has its hash | 0 holds; 1 one line per unmet condition |
 | `friday check [<id> \| --goal G \| --all]` | validate goal and directive files (default all) | 0; 1 any error |
-| `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive | 0; 1 the file has errors; 2 file missing |
-| `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash | 0; 1 no registry, or a master or worker failed the check |
+| `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive and `rules` (the repo's `friday.json` rules, then the goal's `## Rules`, then the directive's, deduplicated) | 0; 1 the file has errors; 2 file missing |
+| `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash, including `uv`, the recorded friday Python and its version, `gh auth` and `claude` sign-in with fix lines | 0; 1 no registry, or a master or worker failed the check |
 | `friday nodes --waiting` | one line per session waiting on a prompt across the registry's master and worker nodes (node, goal, directive, age, message), read from each node's `friday status --json` over ssh | 0 none waiting; 10 some waiting; 2 a node unreachable |
-| `friday nodes --setup NODE [--yes]` | set the node's first-run prompt skips in its `~/.claude/settings.json`, write its `node.toml`, link `friday`, install the 30 s push timer; asks y/N (`--yes` skips, required without a terminal) | 0; 1 refused or failed |
+| `friday nodes --setup NODE [--yes]` | print the prerequisite probe (`uv`, `gh auth`, `claude` sign-in, each ok or with its fix) first; on a target print the `nodes.toml` edit that makes it a worker and change nothing; otherwise set the node's first-run prompt skips in its `~/.claude/settings.json`, write its `node.toml`, link `friday`, install the 30 s push timer; asks y/N (`--yes` skips, required without a terminal) | 0; 1 refused or failed, or the node is a target |
 | `friday nodes --clean NODE [--dry-run]` | remove finished goals' worktrees, branches, tmux sessions and trust entries on a node; `--dry-run` only plans | 0; 1 error; `--dry-run` without `--clean` exits 2 |
 | `friday dispatch --goal G [--node N] [--report-to S] [--dry-run]` | check, pick a node, prepare a worktree there and start a tmux session `friday-<G>` running the goal's directives; records it. `--dry-run` changes nothing | 0; 10-27 a refusal on the master (table below); 30-36 a refusal by the node; 1 launch failed |
 | `friday dispatch --goal G --resume [--unblock ID]... [--node N] [--report-to S] [--dry-run]` | restart a stopped goal in its existing worktree; `--unblock ID` (repeatable) first runs `friday unblock ID` there | 0; 16, 18, 19, 20; 21-26 (table below); 1 stop or launch failed |
 | `friday session-end --goal G` | close this dispatched session's own tmux session 10 s later, once the goal is `done` | 0; 1 refused (not dispatched, not that session, goal not done) |
-| `friday install [--bin-dir DIR]` | link `DIR/friday` (default `~/.local/bin`) to this checkout | 0; 1 would overwrite something else |
-| `friday uninstall [--bin-dir DIR]` | remove that link when it points at a friday checkout, and this repo's `commit-msg` guard | 0; 1 not a friday link |
+| `friday install [--bin-dir DIR]` | needs `uv`: run `uv python install 3.12`, record the path from `uv python find 3.12` in `~/.local/state/friday/python`, and write `DIR/friday` (default `~/.local/bin`) as an sh shim that execs that interpreter on this checkout's `bin/friday`; an old friday symlink is replaced | 0; 1 would overwrite something else, or `uv` failed |
+| `friday uninstall [--bin-dir DIR]` | remove that shim (or old link) when it is friday's, the recorded Python path, and this repo's `commit-msg` guard | 0; 1 not a friday link |
 | `friday dash [--bind ADDR]... [--no-self]` | serve the status API on 127.0.0.1 and the tailnet address (section 12) | 0; 1 |
 | `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing |
 
@@ -371,9 +402,12 @@ allow rules match it.
 2. **Implement.** One `implementer` agent per step, in order; `[heavy]` steps run on Opus. A step
    commits only if it changed tracked files, last line `Directive: <id>`. A step that needs a
    decision or fails stops the run as blocked.
-3. **Verify.** The `runner` agent runs `Verify`. On failure an implementer fixes the root cause and
-   it runs again, up to 4 rounds or until the same failure repeats twice. Skipped for
-   `Deliverable: external`.
+3. **Verify.** The `runner` agent runs `Verify` as one plain foreground Bash call with a 600000 ms
+   timeout (never detached: no `setsid`, `nohup`, `&` or `run_in_background`). On failure an
+   implementer fixes the root cause and it runs again, up to 4 rounds or until the same failure
+   repeats twice. If Verify never ran (the call was denied, timed out before finishing, or was not
+   made) the runner reports `ran: false` and the run blocks at once with `Verify not run: <reason>`,
+   with no fix rounds; raise the timeout or narrow Verify. Skipped for `Deliverable: external`.
 4. **Review.** The `verifier` (Opus, read-only, fresh context) runs `friday commits <id>`, reviews
    each commit and the touched files against the steps, `## Acceptance` and `## Out of scope`, and
    reports every untracked commit as a gap. Real gaps get one fix round, then Verify and a second
@@ -412,7 +446,7 @@ must already be allowed, by `.claude/settings.json` or by `## Allowed commands` 
 
 ## 9 Hooks
 
-Hooks are in `hooks/hooks.json` and run `hooks/friday_hook.py`. Each decision is deterministic and
+Hooks are in `hooks/hooks.json` and run `hooks/friday_hook.py` through `bin/friday-python` (section 2). Each decision is deterministic and
 its reason tells the agent the fix. A hook bug fails open: it prints an error to stderr and makes no
 decision rather than wedge a session. Rules in a PreToolUse run are combined: `deny` beats `ask`
 beats `allow`.
@@ -422,11 +456,12 @@ beats `allow`.
 | Rule | Effect |
 |---|---|
 | Deny list | deny the commands listed in the next table. Every heredoc body is scanned like any other text, so text that names a guarded command (a PR body that mentions the accept command or `sudo`) is refused even in a quoted heredoc; put such text in a file and pass it with `--body-file` or `-F` instead |
-| `friday accept` guard | deny `friday accept` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
+| `friday accept` guard | deny `friday accept` and `friday approve` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
-| Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`), including `--all`, `--mirror` and an unjudgeable target |
+| Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`) or of explicit `refs/tags/<name>` refs that the directive's `## Allowed commands` lists (section 5); `--all`, `--mirror`, `--tags`, `--follow-tags` and an unjudgeable target stay denied |
 | Commit guard | while a directive is active, deny `git commit` on main, master or the goal's Base (create or switch to `friday/<goal>`); with no directive active, ask before a commit directly on main or master. The repository judged is the one the command commits in (`cd DIR && git commit`, `git -C DIR commit`) |
-| Pre-approval | allow a command line (a batch) when every simple command in it matches the active directive's `## Allowed commands` as committed on `origin/<Base>` (section 5) |
+| `bash_file_io` | with `"bash_file_io": "deny"` in `.claude/friday.json`, deny (not ask) Bash that does file I/O the file tools cover: `cat`, `head`, `tail`, `less`, `more`, `sed`, `awk`, `grep`, `egrep`, `rg` with a file operand, `sed -i`, `tee <file>`, a heredoc, a `>`/`>>` redirect to anything but `/dev/null`, `/dev/fd/N` or `&N`, and `python -`/`python3 -` or `python3 <<` fed on stdin. The reason tells the agent to use Read/Grep/Glob and Edit/Write. A tool at the end of a pipeline reading stdin is allowed. Runs before pre-approval, so a listed command is still denied |
+| Pre-approval | allow a command line (a batch) when every simple command in it matches the active directive's `## Allowed commands` as committed on `origin/friday-plan/<goal>` (section 5) |
 | Hardware | a command matching a `hardware` pattern of `.claude/friday.json`: deny when another session holds the resource's lease; otherwise take the lease and ask the user (allow when pre-approved or session-approved). The ask reason says the lease is held for this session and the approval covers this command only (when the resource is `session` in `hardware_approval`, that approving it once approves the rest of the session). Allow reasons: `<resource> approved for this session`, or the pre-approval reason. Pre-approval matches a batch when every simple command matches (one hardware command per line, no substitution; leases for every resource any part touches, in order); session approval still covers a single simple command only |
 
 The deny list, each rule traced to an incident or a hard rule:
@@ -439,6 +474,7 @@ The deny list, each rule traced to an incident or a hard rule:
 | `force-push` | `git push` with `--force`, `--force-with-lease` or `-f` |
 | `+refspec` | `git push` of a `+ref` refspec |
 | `push to main` | `git push` to `main` or `master` |
+| `push to friday-plan` | `git push` whose destination is `friday-plan/*` (only `friday approve` publishes a plan) |
 | `git remote add` | adding a git remote |
 | `git clean -f` | `git clean` with `-f` or `--force` |
 | `curl pipe sh` | piping `curl` or `wget` output into `bash`, `sh` or `zsh` |
@@ -507,6 +543,8 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
 |---|---|---|
 | `run_wrapper` | the command builds, tests and scripts must go through | `./run` |
 | `run_only` | tool names (`python`, `uv`, `cmake`, ...) that must be run through the wrapper | none |
+| `bash_file_io` | `deny`: the hook denies Bash file reads and writes the file tools cover (see the hook table); `allow` or absent changes nothing. `friday check` errors on another value; `load_config` reads it as `allow`. `friday init` prints it as an option | `allow` |
+| `rules` | list of strings: rules for every directive in the repo. `friday check` errors on a non-list or a non-string entry; `load_config` drops such values | none |
 | `hardware` | object: resource name -> list of regular expressions matched against a Bash command | none |
 | `hardware_approval` | object: resource name (a key of `hardware`) -> `command` or `session`. `session`: one approved command approves the resource for the rest of the session while it holds the lease. `friday check` errors on another value or an unknown resource; `load_config` ignores such entries | `command` for every resource |
 
@@ -555,8 +593,8 @@ the user. How machines and projects appear, the API and the Docker deployment:
   check belongs in `friday result` (run once, check cheaply).
 - **friday's git and `gh` calls time out after 180 s**; the Base fetch in `friday start` after
   30 s (it then warns and uses the local Base).
-- **Pre-approval reads `origin/<Base>` as last fetched.** A plan amendment that is not pushed, or
-  not yet fetched by a `friday start`, is not seen by the hook.
+- **Pre-approval reads `origin/friday-plan/<goal>` as last fetched.** A plan amendment that the user
+  has not published with `friday approve --goal <g>`, or not yet fetched, is not seen by the hook.
 - **Goal directives run in sequence.** Parallel directives within a goal are not built.
 - **A dispatched goal runs on one node** and cannot move to another.
 - **Parallelism is across goals**, not within one: separate branches, worktrees or machines. A

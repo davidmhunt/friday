@@ -37,6 +37,7 @@ DENY = [
     (r"\bgit\s+push\b.*(\s--force\b|\s--force-with-lease\b|\s-f\b)", "Force-push is not allowed."),
     (r"\bgit\s+push\b[^|;&]*\s\+[\w./*-]+", "Force-push via +refspec is not allowed."),
     (r"\bgit\s+push\b[^|;&]*\s(origin\s+)?(HEAD:)?(main|master)(\s|$)", "Pushing to main/master is not allowed; push the directive branch and open a PR."),
+    (r"\bgit\s+push\b[^|;&]*[\s:](refs/heads/)?friday-plan/", "Pushing to friday-plan/* is not allowed: only the user's `friday approve` publishes a plan."),
     (r"\bgit\s+remote\s+add\b", "Adding a git remote is not allowed."),
     (r"\bgit\s+clean\b.*(\s-[a-zA-Z]*f|\s--force)", "git clean -f is not allowed."),
     (r"(?s)\b(curl|wget)\b.*(\||;|&&)\s*(bash|sh|zsh)\b", "Piping a downloaded script into a shell is not allowed."),
@@ -64,24 +65,27 @@ def check_deny(cmd: str) -> str | None:
 _SHELLISH = {"ssh", "bash", "sh", "zsh", "dash", "eval", "xargs", "docker", "podman", "run", "watch", "env"}
 
 
-def _runs_accept(cmd: str, depth: int = 0) -> bool:
-    """True when some simple command in `cmd` invokes `friday accept`: directly, through
+def _runs_accept(cmd: str, depth: int = 0, subs=("accept", "approve")) -> bool:
+    """True when some simple command in `cmd` invokes `friday accept` or `friday approve`: directly, through
     `python3 .../bin/friday`, `uv run`, or as an argument string (ssh host '...', bash -c '...')."""
     for simple in fc.split_commands(cmd):
         argv = fc.argv_of(simple)
         for i, a in enumerate(argv):
             if Path(a).name in ("friday", "friday.py"):
                 nxt = [x for x in argv[i + 1:] if not x.startswith("-")]
-                if nxt and nxt[0] == "accept":
+                if nxt and nxt[0] in subs:
                     return True
             if (depth < 4 and i and re.search(r"\s", a)
-                    and any(Path(x).name in _SHELLISH for x in argv[:i]) and _runs_accept(a, depth + 1)):
+                    and any(Path(x).name in _SHELLISH for x in argv[:i]) and _runs_accept(a, depth + 1, subs)):
                 return True
     return False
 
 
 def check_accept(cmd: str) -> str | None:
-    if _runs_accept(cmd):
+    if _runs_accept(cmd, subs=("approve",)):
+        return ("`friday approve` is not allowed from an agent session: only the user publishes a plan "
+                "for pre-approval. Tell the user to run `! friday approve --goal <g>`, and stop.")
+    if _runs_accept(cmd, subs=("accept",)):
         return ("`friday accept` is not allowed from an agent session: only the user accepts a directive "
                 "that is awaiting review. Print the review bullets and the command, and stop.")
     return None
@@ -92,7 +96,7 @@ def check_run_only(cmd: str, cfg: dict) -> str | None:
     wrapper = cfg.get("run_wrapper", "./run")
     if not tools:
         return None
-    for simple in fc.split_commands(cmd):
+    for simple in fc.split_commands(cmd, literal_quotes=True):
         argv = fc.argv_of(simple)
         if not argv:
             continue
@@ -101,6 +105,107 @@ def check_run_only(cmd: str, cfg: dict) -> str | None:
         if Path(argv[0]).name in tools:
             return (f"In this project, builds, tests and scripts run through `{wrapper}` "
                     f"(dev container or native, per machine). Use: {wrapper} {simple.strip()}")
+    return None
+
+
+FILE_IO_REASON = ("use Read/Grep/Glob for reading and Edit/Write for writing files; "
+                  "Bash is for running programs (bash_file_io is \"deny\" in .claude/friday.json)")
+_FILE_READERS = {"cat", "head", "tail", "less", "more"}
+_SCRIPT_TOOLS = {"sed", "awk", "grep", "egrep", "rg"}
+# flags that take a separate value, per tool (so the value is not mistaken for a file operand)
+_VALUE_FLAGS = {"head": {"-n", "-c"}, "tail": {"-n", "-c"},
+                "grep": {"-A", "-B", "-C", "-m", "--max-count"}, "egrep": {"-A", "-B", "-C", "-m"},
+                "rg": {"-A", "-B", "-C", "-m", "-g", "--glob", "-t", "--type", "-M"}, "sed": set(), "awk": {"-F", "-v"}}
+_SCRIPT_FLAGS = {"sed": {"-e", "-f"}, "awk": {"-f"}, "grep": {"-e", "-f"}, "egrep": {"-e", "-f"}, "rg": {"-e", "-f"}}
+
+
+def _redirect_targets(simple: str) -> tuple[list[str], bool]:
+    """Targets of > / >> outside quotes in one simple command, and whether it has a heredoc (<<)."""
+    targets, heredoc, quote, i = [], False, None, 0
+    while i < len(simple):
+        c = simple[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            i += 1
+        elif simple.startswith("<<<", i):
+            i += 2
+        elif simple.startswith("<<", i):
+            heredoc = True; i += 1
+        elif c == ">":
+            j = i + 1
+            if j < len(simple) and simple[j] == ">":
+                j += 1
+            amp = j < len(simple) and simple[j] == "&"
+            if j < len(simple) and simple[j] in "|&":
+                j += 1                      # >| (clobber) and >& (fd dup, or file when not a number or -)
+            while j < len(simple) and simple[j] in " \t":
+                j += 1
+            k = j
+            while k < len(simple) and simple[k] not in " \t;&|<>":
+                k += 1
+            t = simple[j:k]
+            targets.append("&" + t if amp and (t.isdigit() or t == "-") else t)
+            i = max(k, i + 1) - 1
+        i += 1
+    return targets, heredoc
+
+
+def _positionals(argv: list[str], tool: str) -> tuple[list[str], bool]:
+    """Positional operands of argv[1:], and whether a script flag (-e/-f) supplied the script/pattern."""
+    vals, sflags = _VALUE_FLAGS.get(tool, set()), _SCRIPT_FLAGS.get(tool, set())
+    pos, scripted, skip = [], False, False
+    for a in argv[1:]:
+        if skip:
+            skip = False
+        elif a == "--":
+            pos.append("")      # placeholder is dropped below; operands after -- are positional
+        elif a.startswith("-") and a != "-":
+            if a in sflags:
+                scripted, skip = True, True
+            elif a in vals:
+                skip = True
+        else:
+            pos.append(a)
+    return [x for x in pos if x != ""], scripted
+
+
+def check_bash_file_io(cmd: str, cfg: dict) -> str | None:
+    """With bash_file_io: deny, deny Bash commands that do file I/O the file tools cover. A tool that
+    only reads a pipe (no file operand) is fine."""
+    if cfg.get("bash_file_io") != "deny":
+        return None
+    for simple in fc.split_commands(cmd, literal_quotes=True):
+        targets, heredoc = _redirect_targets(simple)
+        if heredoc:
+            return FILE_IO_REASON
+        for t in targets:
+            if t and not (t == "/dev/null" or t.startswith("/dev/fd/") or t.startswith("&")):
+                return FILE_IO_REASON
+        argv = fc.argv_of(simple)
+        if not argv:
+            continue
+        tool = Path(argv[0]).name
+        if tool in ("python", "python3") and len(argv) > 1 and argv[1] == "-":
+            return FILE_IO_REASON
+        if tool == "tee" and any(not a.startswith("-") for a in argv[1:]):
+            return FILE_IO_REASON
+        if tool == "sed" and any(a == "-i" or a.startswith(("-i", "--in-place")) or
+                                 (a.startswith("-") and not a.startswith("--") and "i" in a[1:] and "e" not in a)
+                                 for a in argv[1:]):
+            return FILE_IO_REASON
+        if tool in _FILE_READERS:
+            if _positionals(argv, tool)[0]:
+                return FILE_IO_REASON
+        elif tool in _SCRIPT_TOOLS:
+            pos, scripted = _positionals(argv, tool)
+            if len(pos) > (0 if scripted else 1):
+                return FILE_IO_REASON
     return None
 
 
@@ -249,28 +354,32 @@ def _git_show(root: Path, spec: str) -> str | None:
 
 def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     """A command matching `## Allowed commands` of the active directive, as committed on
-    origin/<Base> (the plan the user approved), so a goal-branch edit cannot widen it. Base comes from
-    the marker (outside the working tree) and is trusted only when it is not a friday/* branch and the
-    goal file on origin/<Base> names the same Base. None (no decision) on any doubt."""
+    origin/friday-plan/<goal>: the ref only the user's `friday approve` pushes, so neither a goal-branch
+    edit nor an agent-written plan can widen it. The goal is read from the directive in the working
+    tree and trusted only when the directive on that ref names the same goal. No ref, no
+    pre-approval. None (no decision) on any doubt."""
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
         if not marker or not root or not cmd.strip() or _unsafe_batch(cmd):
             return None
         did = marker["id"]
-        base = str(marker.get("goal_base") or "").strip()
-        if not base or base.startswith("friday/") or base.startswith("-"):
+        if not isinstance(did, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", did):
             return None
-        text = _git_show(root, f"origin/{base}:docs/directives/{did}.md")
+        try:
+            local = fc.parse_directive_full((root / "docs" / "directives" / f"{did}.md").read_text())
+        except OSError:
+            return None
+        goal = (local.get("goal") or "").strip()
+        if not goal or not fc.GOAL_RE.match(goal):
+            return None
+        text = _git_show(root, f"origin/friday-plan/{goal}:docs/directives/{did}.md")
         if text is None:
             return None
         parsed = fc.parse_directive_full(text)
-        goal = (parsed.get("goal") or "").strip()
-        if not goal or not fc.GOAL_RE.match(goal) or base == f"friday/{goal}":
+        if (parsed.get("goal") or "").strip() != goal:
             return None
-        gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
-        if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
-            return None
+        base = f"friday-plan/{goal}"
         simples = fc.split_commands(cmd)
         rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
                for pat in parsed.get("allowed") or []]
@@ -283,7 +392,7 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
                 used.append(hit)
         if simples:
             pats = ", ".join(f"`{p}`" for p in used)
-            return "allow", f"pre-approved in {did} (on {base}): every command matches {pats}"
+            return "allow", f"pre-approved in {did} (on origin/{base}): every command matches {pats}"
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None
@@ -293,12 +402,12 @@ _PUSH_VALUE_OPTS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec",
 
 
 def _push_targets(args: list[str], target: Path) -> list[str] | None:
-    """Branch names a `git push` with these args (after `push`) updates; None when not knowable
-    (--all, --mirror, an unreadable current branch or upstream)."""
+    """Branch names (tags as `refs/tags/<name>`) a `git push` with these args (after `push`) updates;
+    None when not knowable (--all, --mirror, --tags, --follow-tags, an unreadable branch or upstream)."""
     pos, i = [], 0
     while i < len(args):
         a = args[i]
-        if a in ("--all", "--mirror", "--branches"):
+        if a in ("--all", "--mirror", "--branches", "--tags", "--follow-tags"):
             return None
         if a in _PUSH_VALUE_OPTS:
             i += 2
@@ -319,6 +428,13 @@ def _push_targets(args: list[str], target: Path) -> list[str] | None:
             return [cur] if cur else None
         return [up.split("/", 1)[1] if "/" in up else up]
     out = []
+    if len(specs) >= 2 and specs[0] == "tag":   # the `tag NAME` form: refs/tags/NAME
+        names, k = [], 0
+        while k + 1 < len(specs) and specs[k] == "tag":
+            names.append(f"refs/tags/{specs[k + 1]}")
+            k += 2
+        if k == len(specs):
+            return names
     for sp in specs:
         dst = sp.lstrip("+").rsplit(":", 1)[-1]
         if dst in ("", "HEAD", "@"):
@@ -365,6 +481,13 @@ def check_push(cmd: str, cwd: Path) -> str | None:
         if land.strip().lower() == "pr":
             ok = {f"friday/{did}"}
         dests = _push_targets(rest[1:], target)
+        if dests and all(d.startswith("refs/tags/") for d in dests):
+            pre = check_preapproved(cmd, cwd)
+            if pre and pre[0] == "allow":
+                continue
+            return (f"While {did} is active, a tag push ({', '.join(dests)}) needs a matching "
+                    f"`## Allowed commands` entry in the approved plan "
+                    f"(origin/friday-plan/<goal>:docs/directives/{did}.md, published by the user's `friday approve`).")
         if dests is None or not dests or any(d not in ok for d in dests):
             return (f"While {did} is active, `git push` may only update {' or '.join(sorted(ok)) or 'the goal branch'}"
                     f" (got {', '.join(dests) if dests else 'an unjudgeable target'}). Push the goal branch explicitly: "
@@ -385,6 +508,8 @@ def pretool(payload: dict) -> None:
     if (r := check_accept(cmd)):
         results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
+        results.append(("deny", r))
+    if (r := check_bash_file_io(cmd, cfg)):
         results.append(("deny", r))
     if (r := check_push(cmd, cwd)):
         results.append(("deny", r))

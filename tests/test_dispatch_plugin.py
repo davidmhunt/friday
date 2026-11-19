@@ -13,6 +13,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import friday_fleet as ff  # noqa: E402
 
 
+def fake_plugin_python(plugin_dir):
+    """The node's <plugin_dir>/bin/friday-python, as a plain python3 wrapper."""
+    py = Path(plugin_dir) / "bin" / "friday-python"
+    py.parent.mkdir(parents=True, exist_ok=True)
+    py.write_text('#!/bin/sh\nexec python3 "$@"\n')
+    py.chmod(0o755)
+
+
 def probe(tmp_path, plugins, plugin_dir):
     """Run the probe lines under a fake `claude plugin list --json`; returns (state, dir)."""
     bindir = tmp_path / "bin"
@@ -21,6 +29,7 @@ def probe(tmp_path, plugins, plugin_dir):
     claude.write_text(f"#!/bin/bash\ncat <<'EOF'\n{json.dumps(plugins)}\nEOF\n")
     claude.chmod(0o755)
     node = ff.Node("w", "worker", "me@w", repos="~/r", plugin_dir=str(plugin_dir))
+    fake_plugin_python(plugin_dir)
     env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
     r = subprocess.run(["bash"], input=ff.plugin_install_lines(node) + "\n", env=env,
                        capture_output=True, text=True)
@@ -73,6 +82,7 @@ def run_check(tmp_path, monkeypatch, settings, plugins=None):
     (home / ".claude").mkdir(parents=True, exist_ok=True)
     (home / ".claude" / "settings.json").write_text(json.dumps(settings))
     node = ff.Node("w", "worker", "me@w", repos=str(tmp_path / "r"), plugin_dir=str(tmp_path / "pd"))
+    fake_plugin_python(tmp_path / "pd")
     script = cli.probe_script(node)
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)

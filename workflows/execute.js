@@ -49,8 +49,10 @@ const STEP = {
 }
 const VERIFY = {
   type: 'object',
-  required: ['passed', 'exit_code', 'signature', 'tail'],
+  required: ['ran', 'passed', 'exit_code', 'signature', 'tail'],
   properties: {
+    ran: { type: 'boolean', description: 'false when the command was denied, timed out before finishing, or was never run' },
+    not_run_reason: { type: 'string', description: 'why it did not run to completion; empty if ran' },
     passed: { type: 'boolean' },
     exit_code: { type: 'integer' },
     signature: { type: 'string', description: 'the first failing test or error line, verbatim; empty if passed' },
@@ -97,6 +99,15 @@ const directive = `docs/directives/${id}.md`
 // patterns, and a chained or prefixed command does not match them, so the classifier refuses it.
 const ALONE = 'Run each friday command as its own single Bash call. The session\'s current directory is already the repo root, so no `cd` is needed. Do not use `cd`, `&&`, `;` or `|`, and do not add `echo $?` or any other echo: chained commands do not match the repo\'s `Bash(friday ...)` allow rules, and the Bash tool result already carries the exit code.'
 
+// The directive's rules (repo, goal, directive; merged by `friday parse --json`), appended to the
+// prompts of the agents that change or judge the work. Empty when there are none.
+const rulesBlock = rules => {
+  const list = (Array.isArray(rules) ? rules : []).map(x => String(x).trim()).filter(Boolean)
+  return list.length ? `\n\nRules for this directive (from the plan; they apply to every step):\n${list.map(x => `- ${x}`).join('\n')}` : ''
+}
+
+const RULE_GAP = rules => (Array.isArray(rules) && rules.some(x => String(x).trim()) ? '\nA broken rule is a gap: report each one with the evidence.' : '')
+
 // Verify/review state known so far, recorded by `friday finish --blocked`.
 const state = { verify: '', review: '' }
 const q = t => String(t).replace(/\s+/g, ' ').replace(/[`"$\\]/g, "'").trim()
@@ -131,9 +142,14 @@ async function verifyLoop(d, label) {
   let last = '', same = 0
   for (let round = 1; ; round++) {
     const v = await agent(
-      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, and wait for it to finish (it can take several minutes):\n\n${d.verify}\n\nReturn whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.`,
+      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, as one plain foreground Bash call with timeout 600000 ms. Do not use setsid, nohup, &, run_in_background or any detached job. If the call is denied, is not made, or hits the timeout before finishing, return ran=false with not_run_reason (for a timeout, say it needs a higher timeout or a narrower Verify); do not guess a result.\n\n${d.verify}\n\nOtherwise return ran=true, whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
       { agentType: 'friday:runner', schema: VERIFY, label: `${label} verify ${round}`, phase: 'Verify' },
     )
+    if (v && v.ran === false) {
+      const r = v.not_run_reason || 'no reason given'
+      const hint = /time/i.test(r) ? ' (raise the timeout or narrow Verify)' : ''
+      return { ok: false, why: `Verify not run: ${r}${hint}` }
+    }
     if (v && v.passed) { state.verify = verifyLineOf(); return { ok: true, rounds: round } }
     const sig = v ? v.signature : 'the verify run returned nothing'
     same = sig === last ? same + 1 : 1
@@ -142,7 +158,7 @@ async function verifyLoop(d, label) {
       return { ok: false, why: `Verify still fails after ${round} round(s): ${sig}` }
     }
     const fix = await agent(
-      `Directive ${id} (${directive}): its Verify command fails.\n\nCommand: ${d.verify}\nFirst failure: ${sig}\nOutput tail:\n${v ? v.tail : '(none)'}\n\nFind and fix the root cause within the directive's scope. Do not weaken, skip or delete tests or checks. Run the failing part again to confirm, then commit (last line \`Directive: ${id}\`).`,
+      `Directive ${id} (${directive}): its Verify command fails.\n\nCommand: ${d.verify}\nFirst failure: ${sig}\nOutput tail:\n${v ? v.tail : '(none)'}\n\nFind and fix the root cause within the directive's scope. Do not weaken, skip or delete tests or checks. Run the failing part again to confirm, then commit (last line \`Directive: ${id}\`).${rulesBlock(d.rules)}`,
       { agentType: 'friday:implementer', schema: STEP, label: `${label === 'initial' ? '' : label + ' '}fix ${round}/${MAX_FIX_ROUNDS}`, phase: 'Verify' },
     )
     if (fix && fix.status === 'needs_user') return { ok: false, why: fix.question }
@@ -187,7 +203,7 @@ for (const s of d.steps) {
   const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}/${d.steps.length}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
   if (s.heavy) opts.model = 'opus'
   const r = await agent(
-    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` (plain lines or \`- \` bullets, never \`#\` headings) and do not commit.`,
+    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` (plain lines or \`- \` bullets, never \`#\` headings) and do not commit.${rulesBlock(d.rules)}`,
     opts,
   )
   if (!r) return await block(`step ${s.n} agent did not return`)
@@ -214,14 +230,14 @@ const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'It
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
+  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). A \`plan\` line is a plan edit made after the directive started; it is a gap if it changes this directive's goal, steps, Verify, Rules or Allowed commands. ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}${rulesBlock(d.rules)}${RULE_GAP(d.rules)}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 let reviewVerdict = 'no gaps'
 if (review && allGaps(review).length) {
   const list = allGaps(review).map((g, i) => `${i + 1}. ${g.where}: ${g.problem} (evidence: ${g.evidence})`).join('\n')
   const fix = await agent(
-    `An independent review of directive ${id} (${directive}) found these gaps:\n${list}\n\nFix each one that is real, within scope. If you disagree with one, leave it and explain why with evidence. Commit (last line \`Directive: ${id}\`).`,
+    `An independent review of directive ${id} (${directive}) found these gaps:\n${list}\n\nFix each one that is real, within scope. If you disagree with one, leave it and explain why with evidence. Commit (last line \`Directive: ${id}\`).${rulesBlock(d.rules)}`,
     { agentType: 'friday:implementer', schema: STEP, label: 'fix review gaps', phase: 'Review' },
   )
   if (fix && fix.status === 'needs_user') return await block(fix.question)
@@ -230,7 +246,7 @@ if (review && allGaps(review).length) {
     if (!v.ok) return await block(v.why)
   }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). A \`plan\` line is a plan edit made after the directive started; it is a gap if it changes this directive's goal, steps, Verify, Rules or Allowed commands. Report only gaps that still affect correctness or the stated requirements.\n\n${accept}${rulesBlock(d.rules)}${RULE_GAP(d.rules)}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && allGaps(review).length) {

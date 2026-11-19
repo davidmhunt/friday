@@ -34,7 +34,7 @@ import json  # noqa: E402
 
 
 def _subjects(r):
-    return [ln.split(" ", 1)[1] for ln in r.stdout.splitlines() if ln.count(" ") and not ln.startswith(("base", "untracked"))]
+    return [ln.split(" ", 1)[1] for ln in r.stdout.splitlines() if ln.count(" ") and not ln.startswith(("base", "untracked", "plan "))]
 
 
 def _untracked(r):
@@ -61,6 +61,20 @@ def test_plan_only_commit_without_trailer_is_neither_listed_nor_untracked(repo):
     g.write_text(g.read_text() + "\namended\n")
     _g(repo, "add", "docs/goals/core.md")
     _g(repo, "commit", "--no-verify", "-qm", "amend plan")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0 and _subjects(r) == ["mine a"] and not _untracked(r)
+
+
+def test_plan_commit_with_settings_json_is_plan_only(repo):
+    _g(repo, "checkout", "-qb", "friday/core")
+    (repo / ".claude").mkdir(exist_ok=True)
+    (repo / ".claude/settings.json").write_text("{}\n")
+    g = repo / "docs/goals/core.md"
+    g.write_text(g.read_text() + "\nplanned\n")
+    _g(repo, "add", ".claude/settings.json", "docs/goals/core.md")
+    _g(repo, "commit", "--no-verify", "-qm", "plan: core\n\nDirective: core-01")
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
     r = cli(repo, "commits", "core-01")
     assert r.returncode == 0 and _subjects(r) == ["mine a"] and not _untracked(r)
 
@@ -171,3 +185,85 @@ def test_no_prompt_mentions_review_base():
     for f in ("workflows/execute.js", "agents/verifier.md", "skills/directive/SKILL.md"):
         t = (root / f).read_text()
         assert "reviewBase" not in t and "review_base" not in t, f
+
+
+def test_plan_commit_on_goal_branch_with_trailer_is_not_own_work(repo):
+    cli(repo, "start", "core-01")
+    g = repo / "docs/goals/core.md"
+    g.write_text(g.read_text() + "\n")
+    _g(repo, "add", "docs/goals/core.md")
+    _g(repo, "commit", "--no-verify", "-qm", "plan: core\n\nDirective: core-01\nDirective: core-02")
+    _commit(repo, "a.txt", "work\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert _subjects(r) == ["work"] and not _untracked(r)
+
+
+# ---------------------------------------------------------------- plan edits after start (tt-10)
+
+def _plan_edit(repo, msg):
+    p = repo / "docs/directives/core-01.md"
+    p.write_text(p.read_text() + "\nedit\n")
+    _g(repo, "add", "docs/directives/core-01.md")
+    _g(repo, "commit", "--no-verify", "-qm", msg)
+
+
+def _plan_lines(r):
+    return [ln for ln in r.stdout.splitlines() if ln.startswith("plan ")]
+
+
+def test_plan_commit_before_start_is_excluded_not_a_plan_line(repo):
+    _g(repo, "checkout", "-qb", "friday/core")
+    (repo / ".claude").mkdir(exist_ok=True)
+    (repo / ".claude/settings.json").write_text("{}\n")
+    g = repo / "docs/goals/core.md"
+    g.write_text(g.read_text() + "\nplanned\n")
+    _g(repo, "add", ".claude/settings.json", "docs/goals/core.md")
+    _g(repo, "commit", "--no-verify", "-qm", "plan: core\n\nDirective: core-01\nDirective: core-02")
+    cli(repo, "start", "core-01")
+    assert (repo / "runs/core-01/start").read_text().strip() == _g(repo, "rev-parse", "HEAD").strip()
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0 and _subjects(r) == ["mine a"]
+    assert not _untracked(r) and not _plan_lines(r)
+    assert json.loads(cli(repo, "commits", "core-01", "--json").stdout)["plan"] == []
+
+
+def test_trailered_and_untrailered_plan_edits_after_start_are_plan_lines(repo):
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    _plan_edit(repo, "rewrite verify\n\nDirective: core-01")
+    _plan_edit(repo, "rewrite steps")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0 and _subjects(r) == ["mine a"] and not _untracked(r)
+    assert [ln.split(" ", 2)[2] for ln in _plan_lines(r)] == ["rewrite verify", "rewrite steps"]
+    j = json.loads(cli(repo, "commits", "core-01", "--json").stdout)
+    assert [p["subject"] for p in j["plan"]] == ["rewrite verify", "rewrite steps"]
+    assert [c["subject"] for c in j["commits"]] == ["mine a"]
+
+
+def test_restart_keeps_first_start_point(repo):
+    cli(repo, "start", "core-01")
+    first = (repo / "runs/core-01/start").read_text()
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    _plan_edit(repo, "rewrite verify")
+    assert cli(repo, "start", "core-01").returncode == 0
+    assert (repo / "runs/core-01/start").read_text() == first
+    assert len(_plan_lines(cli(repo, "commits", "core-01"))) == 1
+
+
+def test_absent_start_file_excludes_all_plan_only_commits(repo):
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    _plan_edit(repo, "rewrite verify\n\nDirective: core-01")
+    (repo / "runs/core-01/start").unlink()
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0 and _subjects(r) == ["mine a"]
+    assert not _plan_lines(r) and not _untracked(r)
+
+
+def test_code_commit_with_trailer_after_start_is_own_work_not_plan(repo):
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert _subjects(r) == ["mine a"] and not _plan_lines(r)

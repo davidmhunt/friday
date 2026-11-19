@@ -75,13 +75,20 @@ and may go anywhere before `## Log`. For `doc`, `slides` and `external` it is re
 least one `- ` bullet (a bullet may continue on indented lines); missing or empty is an error.
 Other sections are allowed before `## Log`.
 
+`## Rules` is optional (before `## Log`): `- ` bullets, at least one when the section is present
+(an error otherwise). Put a constraint that holds for the whole directive there ("use Read, Grep, Edit
+and Write, not cat, grep or sed in Bash"), never inside one step's text: the execute workflow puts
+the rules into every implementer, verify-fix, runner and reviewer prompt, and the reviewer treats a broken
+rule as a gap. A goal file may carry `## Rules` too, and `.claude/friday.json` `rules` holds the
+repo-wide ones; `friday parse --json` returns all three merged as `rules`.
+
 `## Allowed commands` is optional (at most once, before `## Log`): bullets, each holding one
 backticked command pattern where `*` matches any text. While the directive is active in a
 worktree, the PreToolUse hook allows a Bash command that is one simple command matching a
-pattern, without a prompt. The list is read from the directive as committed on the goal's Base on
-origin (`git show origin/<Base>:docs/directives/<id>.md`), the plan the user approved, so edits on
-the goal branch never widen it. Base is trusted only when the goal file on `origin/<Base>` names the
-same Base, and never when it is the goal branch or a `friday/*` branch. Deny rules, the commit guard, `friday accept <id>` and hardware leases still
+pattern, without a prompt. The list is read from the directive as committed on the ref `friday-plan/<goal>` on origin
+(`git show origin/friday-plan/<goal>:docs/directives/<id>.md`), the plan the user approved and
+published with `friday approve --goal <goal>`, so edits on the goal branch never widen it; without
+that ref nothing is pre-approved. Deny rules, the commit guard, `friday accept <id>` and hardware leases still
 win. `friday check` errors on a pattern that is only `*`, contains `&&`, `;`, `|` or a backtick
 substitution, starts with `friday accept <id>`, or matches the hook's deny list. `friday parse --json`
 returns it as `allowed`.
@@ -172,8 +179,10 @@ must name this goal.
   done and opens the one PR into Base (exit 6 when a Verify fails; nothing is pushed).
 - A Stop hook keeps the active directive from ending until its Verify passes; a PostToolUse hook
   runs the format check after edits to goal and directive files.
-- Amending an approved goal: commit the change on its Base and check it with `friday check`. The
-  next `friday start` merges Base into the goal branch (message `Merge <Base> into friday/<goal>
+- The plan lives on the goal branch `friday/<goal>`, never on Base. Amending an approved goal:
+  commit the change on the goal branch, check it with `friday check`, and, when `## Allowed commands`
+  changed, ask the user to run `friday approve --goal <goal>` again. `friday start` still merges
+  Base into the goal branch for upstream changes (message `Merge <Base> into friday/<goal>
   before <id>`, trailer `Directive: <id>`; a conflict aborts the merge and start exits non-zero).
   An amendment to the running directive takes effect when it restarts. While a directive is active
   a `commit-msg` git hook installed by `friday init`/`friday start` refuses commits without

@@ -271,6 +271,10 @@ def run_prepare(e, *, trusted=True, session=False, node_repos="~/work", base="ma
                        check=True, capture_output=True)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=e.plugin, capture_output=True,
                             text=True).stdout.strip()
+    fp = home / "friday" / "bin" / "friday-python"
+    fp.parent.mkdir(exist_ok=True)
+    fp.write_text('#!/bin/sh\nexec python3 "$@"\n')
+    fp.chmod(0o755)
     node = ff.Node("alfred", "worker", "me@alfred", repos=node_repos, plugin_dir="~/friday")
     origin = str(e.repo.parent / "proj.git")
     script = ff.prepare_script(node, "g1", "proj", precreate or origin, base, commit)

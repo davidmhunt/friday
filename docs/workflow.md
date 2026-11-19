@@ -18,17 +18,20 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
 
 1. **Plan.** `/friday:plan <goal>` in a session on Fable or Opus. It reads the repo, interviews
    you, runs `friday init`, and commits the goal file and its directives (`Status: proposed`) on the
-   goal's Base.
+   goal branch `friday/<goal>` (created from Base; never on Base) and pushes it.
 2. **Approve.** Read each directive's goal, steps, Verify, `## Allowed commands` and out-of-scope
    list; approve, amend or drop. Approved files are committed with `Status: approved`, once for the
-   whole goal.
+   whole goal. If any directive has `## Allowed commands`, you run `friday approve --goal <g>` to publish
+   the plan for pre-approval.
 3. **Execute.** `/friday:execute <id>` for the first directive; it runs a workflow in the background
    (watch it with `/workflows`):
    - **Prepare**: `friday start <id> --no-gate` switches to the goal branch `friday/<goal>` (created
      from Base on the first directive), merges Base in, and commits nothing.
    - **Implement**: one `implementer` per step, in order; `[heavy]` steps run on Opus.
-   - **Verify**: the `runner` runs the Verify command; on failure an implementer fixes the root
-     cause and it runs again, up to 4 rounds or until the same failure repeats twice.
+   - **Verify**: the `runner` runs the Verify command as one plain foreground call; on failure an
+     implementer fixes the root cause and it runs again, up to 4 rounds or until the same failure
+     repeats twice. A Verify that never ran blocks at once as `Verify not run: <reason>`, with no
+     fix rounds.
    - **Review**: the `verifier` (Opus, read-only, fresh context) checks the directive's commits
      (`friday commits <id>`) against the directive; real gaps get one fix round, then Verify and
      review again.
@@ -51,7 +54,8 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
 
 `Accept: user` directives stop at `awaiting review`: the goal branch is pushed, later directives
 continue, and you open the `## Review` bullets and run `friday accept <id>` (or
-`friday accept <id> --reject REASON`). Agents cannot run it.
+`friday accept <id> --reject REASON`). Agents cannot run it. Likewise only you run
+`friday approve --goal <g>`, which publishes the plan's `## Allowed commands` for pre-approval.
 
 The workflow runs one agent at a time. Claude Code also caps any workflow at min(16, CPUs - 2)
 agents at once. Allow the `friday` commands in the project's `.claude/settings.json` (`friday init`
@@ -90,10 +94,11 @@ section, one command per bullet in backticks, `*` matching any text:
 - `./run tools/bench.sh *`
 ```
 
-- The list is read from the directive as committed on `origin/<Base>`, not from the goal branch. To
-  add or change it after approval, amend the plan on Base, run `friday check`, and push Base; the
-  session picks it up at its next `friday start` (before the next directive, or after a block and
-  `friday unblock`).
+- The list is read only from `origin/friday-plan/<goal>`, the ref the user's `friday approve`
+  publishes from the plan on the goal branch. To add or change it after approval, amend the plan as
+  a commit on `friday/<goal>` (never on Base), run `friday check`, and ask the user to run
+  `friday approve` again; the session picks it up at its next `friday start` (before the next
+  directive, or after a block and `friday unblock`).
 - It applies only to the active directive, only to a single simple command (no `&`, `;`, `|`,
   backticks, `$(`), and only answers the prompt.
 - Still denied or prompted: the deny list (so privilege escalation, force-push and push to main stay
@@ -105,10 +110,12 @@ Details: [spec.md](spec.md) section 5. For dispatch see [fleet.md](fleet.md).
 
 ## Amending an approved plan
 
-Amendments to an approved goal are commits on its Base, checked with `friday check`. They reach the
-goal branch at the next `friday start`, which merges Base into `friday/<goal>` (or `friday/<id>` for
-`Land: pr`) before the directive; a conflict aborts the merge and start exits non-zero. An amendment
-to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
+Amendments to an approved goal are commits on its goal branch `friday/<goal>`, checked with
+`friday check` and pushed; run `friday approve --goal <g>` again when `## Allowed commands` changed.
+`friday start` still merges Base into the goal branch before each directive, and finds a directive that
+exists only on Base (`found <id> on <ref>: merging ...`). A conflict confined to `Status:` lines is
+resolved in favour of the goal branch; any other conflict aborts the merge and start exits non-zero. A
+`done` goal that gains an undone directive is set back to `running`. An amendment to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
 git hook (installed by `friday init` and `friday start`, removed by `friday uninstall`) refuses commits
 without `Directive: <id>`; `git commit --no-verify` overrides it deliberately.
 

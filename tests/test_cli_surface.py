@@ -16,7 +16,7 @@ FRIDAY = ROOT / "bin" / "friday"
 sys.path.insert(0, str(ROOT / "lib"))
 import friday_core as fc  # noqa: E402
 
-USER_ONLY = ("accept *",)  # typed by the user; no allow rule, no agent runs it (the hook denies it)
+USER_ONLY = ("accept *", "approve *")  # typed by the user; no allow rule, no agent runs it (the hook denies it)
 PROMPTED = ("dispatch --goal *", "nodes --clean *", "release *")
 
 

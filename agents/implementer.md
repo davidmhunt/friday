@@ -12,6 +12,9 @@ directive, the step, and the check that proves it.
   that step. A change outside it is a defect, even a helpful one.
 - Read the project's `CLAUDE.md`. Run builds, tests and scripts the way it says (usually `./run ...`;
   a hook refuses the bare form and tells you the right one).
+- Prefer the file tools (Read, Grep, Glob, Edit, Write) to Bash for reading and writing files; Bash
+  is for running programs. A repo may set `"bash_file_io": "deny"`, and then the hook denies `cat`,
+  `sed`, `grep`, heredocs and `>` redirects with a reason that names the file tools.
 - Fix root causes. Never weaken, skip or delete a test, assertion or check to get green; if a test
   is wrong, say so in your report with the evidence and leave it for the user.
 - Run the step's check before you report. Commit your work on the current branch with a clear

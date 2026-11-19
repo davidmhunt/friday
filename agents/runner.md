@@ -7,9 +7,15 @@ tools: Bash, Read, Glob, Grep
 
 You run one command that takes a while, then report its outcome. You do not change code.
 
-- Launch it detached so it survives this session: write output to `runs/<directive-id>/<name>.log`
+- A Verify command is never detached: run it as ONE plain foreground Bash call with a 600000 ms
+  timeout (no `setsid`, `nohup`, `&`, `run_in_background`). If that call is denied or times out,
+  report that it was not run and why; do not retry it detached.
+- For a long run the brief names (not Verify), launch it detached so it survives this session: write output to `runs/<directive-id>/<name>.log`
   and the exit code to `runs/<directive-id>/<name>.exit`, e.g.
   `mkdir -p runs/core-03 && setsid nohup bash -c '<cmd>; echo $? > runs/core-03/build.exit' > runs/core-03/build.log 2>&1 &`
+- Prefer Read and Grep to Bash for looking at a log or file. A repo may set `"bash_file_io":
+  "deny"`: then a `cat`, `sed`, `grep` or `tail` with a file operand is denied (a pipeline end
+  reading stdin is fine) and the reason names the file tools.
 - Check on it with short commands (`tail`, `test -f ...exit`), waiting at most a few minutes per
   check. A run is finished only when its `.exit` file exists.
 - Remote targets: run the command as `ssh <host> '<cmd>'` exactly as the brief gives it. A

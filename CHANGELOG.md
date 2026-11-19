@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+### Added
+
+- `friday start` records the starting HEAD in `runs/<id>/start`; `friday commits` lists plan-only commits made
+  after it as `plan` lines (`plan` in `--json`) and the review prompts treat them as gaps when they change the
+  directive's goal, steps, Verify, Rules or Allowed commands (tt-10).
+
+- friday runs on a uv-managed Python 3.12 everywhere (#29). `friday install` runs `uv python install 3.12`,
+  records the interpreter in `~/.local/state/friday/python` and writes `~/.local/bin/friday` as a shim
+  (an old symlink is replaced). Hooks and remote snippets run through the new `bin/friday-python`
+  launcher (recorded path, else `uv python find 3.12`, else `python3` with a warning), so nodes with an
+  old system Python (Ubuntu 22.04, 3.10) work. `friday nodes --check` reports uv and the recorded Python
+  per node with fix lines; `friday status` warns when hooks would fall back to `python3`. `tomli` is the
+  fallback when `tomllib` is missing. uv is now a requirement.
+
+- `"bash_file_io": "deny"` in `.claude/friday.json` makes the PreToolUse hook deny Bash file reads and
+  writes the file tools cover (`cat`, `sed`, `grep`, heredocs, `>` redirects, `python3 -`), naming
+  Read/Grep/Glob and Edit/Write; tools reading a pipe stay allowed. `friday init` prints it as an
+  option. `run_only` and other `split_commands` rules no longer match words inside quoted arguments
+  (#27).
+
+- A `## Rules` section on directives and goals and `"rules": [...]` in `.claude/friday.json` hold
+  constraints for the whole directive. `friday parse --json` returns them merged (repo, goal, directive,
+  deduplicated); the execute workflow puts them into every implementer, verify-fix, runner and reviewer prompt, and
+  the reviewer treats a broken rule as a gap. `friday check` errors on an empty `## Rules` or a non-list
+  `rules`. The directive and plan skills describe it (#27).
+
+- `friday start <id>` finds a directive that exists only on Base or the goal branch, merges Base first, and
+  resolves a Base-merge conflict confined to `Status:` lines in favour of the goal branch; a `done` goal
+  with a new undone directive is set back to `running` (#25).
+
+- Plans live on the goal branch `friday/<goal>`, never on Base, so main stays protected. `friday approve
+  --goal <g>` (user-only; the hook denies it for agents) runs `friday check` and pushes the plan to
+  `friday-plan/<g>` on origin; pre-approval of `## Allowed commands` reads only that ref, and the hook
+  denies agent pushes to `friday-plan/*`. Goals already planned on Base keep working without
+  pre-approval. The plan skill and docs describe the new flow.
+
+- `friday check` warns on `## Allowed commands` patterns that pre-approve any remote command
+  (`ssh <host> *`, a remote `bash -c *`) or a remote build or install (#23). The plan skill keeps target
+  directives thin and routes iterative robot work to a worker goal; docs/fleet.md has a "Targets and
+  workers" section and a read-only probe recipe.
+
+- `friday nodes --check` probes `uv`, `gh auth status` and `claude` sign-in with fix lines. `friday nodes
+  --setup <node>` prints these prerequisites first; on a target it prints the `nodes.toml` edit that
+  promotes it to a worker, changes nothing and exits 1 (#23).
+
+### Fixed
+
+- The execute workflow runs Verify as one plain foreground Bash call (600000 ms timeout, never
+  detached) and no longer hints that it takes minutes. A Verify that was denied, timed out or never
+  ran blocks at once as `Verify not run: <reason>` instead of burning fix rounds (#28).
+
+- An explicit tag push (`refs/tags/<name>` or `tag <name>`) listed under `## Allowed commands` now runs while
+  a directive is active (#24). `friday check` errors on a listed `git push` the guard always denies (a branch
+  other than the goal branch, or a bare `*`).
+
 ## 1.1.0 - 2026-11-18
 
 Attention release: sessions waiting on a prompt are visible in status, the dash and `friday nodes --waiting`; accepting a directive refuses uncommitted work; merged branches are reported.

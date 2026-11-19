@@ -183,7 +183,7 @@ def test_nodes_no_file(tmp_path):
 FAKE = """#!/bin/bash
 echo "$@" >> "$0.argv"; cat >> "$0.stdin"
 case "$*" in
-  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE friday=ok\\nFRIDAY_PROBE trust=ok\\nFRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=ok\\n';;
+  *me@laptop*) printf 'FRIDAY_PROBE reach=ok\\nFRIDAY_PROBE claude=2.1 (Claude Code)\\nFRIDAY_PROBE tmux=ok\\nFRIDAY_PROBE git=ok\\nFRIDAY_PROBE plugin=ok\\nFRIDAY_PROBE friday=ok\\nFRIDAY_PROBE trust=ok\\nFRIDAY_PROBE workflow=ok\\nFRIDAY_PROBE auto=ok\\nFRIDAY_PROBE uv=ok\\nFRIDAY_PROBE gh=ok\\nFRIDAY_PROBE claude_auth=ok\\n';;
   *me@alfred*) exit 255;;
   *me@bot*) echo FRIDAY_PROBE reach=ok;;
 esac
@@ -261,3 +261,14 @@ def test_nodes_check_reports_session_count(tmp_path):
     assert "3 friday-* sessions" in r.stdout
     assert "FRIDAY_PROBE sessions=" in (tmp_path / "fakessh.stdin").read_text()
     assert "grep -c '^friday-'" in (tmp_path / "fakessh.stdin").read_text()
+
+
+def test_nodes_check_prereqs_uv_gh_claude_auth(tmp_path):
+    bad = FAKE.replace("FRIDAY_PROBE claude_auth=ok", "FRIDAY_PROBE claude_auth=no").replace(
+        "FRIDAY_PROBE gh=ok", "FRIDAY_PROBE gh=nologin").replace("FRIDAY_PROBE uv=ok", "FRIDAY_PROBE uv=missing")
+    r = _friday(tmp_path, GOOD, "--check", ssh_script=bad)
+    assert r.returncode == 1
+    assert "install uv on laptop" in r.stdout and "https://docs.astral.sh/uv/getting-started/installation/" in r.stdout
+    assert "gh auth login" in r.stdout and "`/login`" in r.stdout
+    src = (tmp_path / "fakessh.stdin").read_text()
+    assert "gh auth status" in src and "claude auth status" in src and "loggedIn" in src

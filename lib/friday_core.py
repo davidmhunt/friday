@@ -72,8 +72,10 @@ def directive_commits(root: Path | str, did: str) -> dict:
     [(sha, subject, files)]}. Base is the merge-base of the goal's Base (local branch, else
     origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
     `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
-    record commits. `untracked` are non-merge commits with no `Directive:` line that touch
-    anything outside docs/goals/ and docs/directives/. Raises ValueError when it cannot say."""
+    record commits and plan-only commits (files only under docs/goals/, docs/directives/, .claude/settings.json). `untracked` are non-merge commits with no `Directive:` line that touch
+    anything outside docs/goals/ and docs/directives/. `plan` are plan-only commits (trailer or not)
+    that are not ancestors of the HEAD recorded in runs/<id>/start (none when that file is absent).
+    Raises ValueError when it cannot say."""
     root = Path(root)
     try:
         parsed = parse_directive_full(directive_path(root, did).read_text())
@@ -118,6 +120,14 @@ def directive_commits(root: Path | str, did: str) -> dict:
     anytrailer = re.compile(r"(?m)^Directive:\s*\S")
     commits: list[tuple[str, str]] = []
     untracked: list[tuple[str, str, list[str]]] = []
+    plan: list[tuple[str, str]] = []
+    start = ""
+    try:
+        start = (root / "runs" / did / "start").read_text().strip()
+    except OSError:
+        pass
+    if start and not _ref_exists(root, start):
+        start = ""
     for rec in log.split("\x01"):
         rec = rec.strip("\n")
         if not rec:
@@ -126,16 +136,26 @@ def directive_commits(root: Path | str, did: str) -> dict:
         subject = msg.strip().splitlines()[0] if msg.strip() else ""
         if subject in records:
             continue
-        if trailer.search(msg):
+        has = trailer.search(msg)
+        if not has and anytrailer.search(msg):
+            continue
+        files = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha], root)
+        if files is None:
+            raise ValueError(f"git diff-tree {sha} failed")
+        fl = files.splitlines()
+        # Plan commits live on the goal branch: they touch only goal/directive files (and the
+        # settings `friday init` merges) and are never a directive's own work, trailer or not.
+        if fl and all(f.startswith(("docs/goals/", "docs/directives/")) or f == ".claude/settings.json"
+                      for f in fl):
+            # after the recorded start point (runs/<id>/start) it is a plan edit made during the run
+            if start and _git(["merge-base", "--is-ancestor", sha, start], root) is None:
+                plan.append((sha, subject))
+            continue
+        if has:
             commits.append((sha, subject))
-        elif not anytrailer.search(msg):
-            files = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha], root)
-            if files is None:
-                raise ValueError(f"git diff-tree {sha} failed")
-            fl = files.splitlines()
-            if not all(f.startswith(("docs/goals/", "docs/directives/")) for f in fl):
-                untracked.append((sha, subject, fl))
-    return {"base": base, "commits": commits, "untracked": untracked}
+        else:
+            untracked.append((sha, subject, fl))
+    return {"base": base, "commits": commits, "untracked": untracked, "plan": plan}
 
 
 # ---------------------------------------------------------------- config
@@ -155,6 +175,12 @@ def load_config(root: Path | None) -> dict:
         hw = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
         cfg["hardware_approval"] = ({r: m for r, m in ha.items() if r in hw and m in APPROVAL_MODES}
                                     if isinstance(ha, dict) else {})
+    if "rules" in cfg:
+        # a non-list (or non-string entries) is dropped; `friday check` reports it
+        r = cfg["rules"]
+        cfg["rules"] = [x.strip() for x in r if isinstance(x, str) and x.strip()] if isinstance(r, list) else []
+    if cfg.get("bash_file_io") not in (None, "deny", "allow"):
+        cfg["bash_file_io"] = "allow"       # invalid: dropped; `friday check` reports it
     return cfg
 
 
@@ -171,13 +197,21 @@ def config_issues(root: Path | None) -> list[Issue]:
         cfg = json.loads((root / rel).read_text())
     except (OSError, ValueError):
         return []
-    if not isinstance(cfg, dict) or "hardware_approval" not in cfg:
+    if not isinstance(cfg, dict):
         return []
+    out = []
+    if "bash_file_io" in cfg and cfg["bash_file_io"] not in ("deny", "allow"):
+        out.append(Issue("error", rel, 1, f"bash_file_io is {cfg['bash_file_io']!r}; use deny or allow"))
+    if "rules" in cfg:
+        r = cfg["rules"]
+        if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
+            out.append(Issue("error", rel, 1, "rules must be a list of non-empty strings"))
+    if "hardware_approval" not in cfg:
+        return out
     ha = cfg["hardware_approval"]
     if not isinstance(ha, dict):
-        return [Issue("error", rel, 1, "hardware_approval must be an object: resource -> command|session")]
+        return out + [Issue("error", rel, 1, "hardware_approval must be an object: resource -> command|session")]
     known = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
-    out = []
     for res, mode in ha.items():
         if res not in known:
             out.append(Issue("error", rel, 1, f"hardware_approval names unknown resource `{res}` (not in hardware)"))
@@ -267,6 +301,84 @@ class Issue(NamedTuple):
 
     def __str__(self) -> str:
         return f"{self.level}: {self.path}:{self.line}: {self.message}"
+
+
+def _resolve_status_hunks(text: str) -> str | None:
+    """Conflict-marked file text with every hunk replaced by its goal-branch ("ours") side, or None
+    when any hunk has a line that is not a `Status:` line on either side."""
+    out: list[str] = []
+    part, ours, theirs = None, [], []
+    for ln in text.splitlines(keepends=True):
+        if part is None:
+            if ln.startswith("<<<<<<< "):
+                part, ours, theirs = "ours", [], []
+            else:
+                out.append(ln)
+        elif ln.startswith("|||||||"):
+            part = "base"
+        elif ln.startswith("=======") and part in ("ours", "base"):
+            part = "theirs"
+        elif ln.startswith(">>>>>>> ") and part == "theirs":
+            if any(not x.startswith("Status:") for x in ours + theirs):
+                return None
+            out.extend(ours)
+            part = None
+        elif part == "ours":
+            ours.append(ln)
+        elif part == "theirs":
+            theirs.append(ln)
+    return None if part is not None else "".join(out)
+
+
+def resolve_status_conflicts(root: Path | str) -> list[str]:
+    """After a conflicted `git merge` of Base into a goal branch: when every conflicted file is a
+    docs/goals/*.md or docs/directives/*.md whose conflicting hunks are only `Status:` lines, keep the
+    goal-branch side of those lines and stage the files. Returns [] on success, else the conflicted
+    paths (nothing is changed then)."""
+    root = Path(root)
+    paths = (_git(["diff", "--name-only", "--diff-filter=U"], root) or "").split()
+    fixed: dict[str, str] = {}
+    for p in paths:
+        pp = Path(p)
+        if pp.parent not in (GOAL_DIR, DIRECTIVE_DIR) or pp.suffix != ".md":
+            return paths
+        f = root / p
+        try:
+            res = _resolve_status_hunks(f.read_text())
+        except (OSError, UnicodeDecodeError):
+            return paths
+        if res is None:
+            return paths
+        fixed[p] = res
+    for p, res in fixed.items():
+        (root / p).write_text(res)
+        if _git(["add", "--", p], root) is None:
+            return paths
+    return []
+
+
+def reopen_done_goals(root: Path | str) -> list[str]:
+    """Set a `done` goal back to `running` when it lists a directive that is not done (a goal amended
+    after its PR opened). Edits the files in the working tree; returns the goal paths changed."""
+    root = Path(root)
+    changed = []
+    gd = root / GOAL_DIR
+    for gf in sorted(gd.glob("*.md")) if gd.is_dir() else []:
+        try:
+            text = gf.read_text()
+            g = parse_goal(text)
+        except (OSError, UnicodeDecodeError):
+            continue
+        if g["status"].strip().lower() != "done":
+            continue
+        undone = [x["id"] for x in g["directives"]
+                  if ((read_directive(root, x["id"]) or {}).get("status", "").lower()
+                      not in ("done", "awaiting review"))]
+        if undone:
+            gf.write_text(re.sub(r"(?m)^Status:.*$", "Status: running", text, count=1))
+            changed.append(str(GOAL_DIR / gf.name))
+    return changed
+
 
 
 def goal_path(root: Path, gid: str) -> Path:
@@ -364,7 +476,7 @@ def _allowed_items(sec: dict | None) -> list[tuple[int, str, str | None]]:
 def parse_directive_full(text: str) -> dict:
     """The parsed shape of a directive file. Keys: id, title, status, goal, node, deliverable,
     land (default `goal`), accept (default `auto`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
-    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), allowed [str] (patterns in `## Allowed commands`, [] when absent), headers [(key, value, line)], sections [(name, line)]."""
+    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), rules [str] (`## Rules` bullets, [] when absent), allowed [str] (patterns in `## Allowed commands`, [] when absent), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     steps_sec = _section(md, "Steps")
@@ -383,6 +495,7 @@ def parse_directive_full(text: str) -> dict:
                   for s in steps],
         "acceptance": _bullets(acc["body"]) if acc else None,
         "review": _bullets(rev["body"]) if rev else None,
+        "rules": _bullets(rules["body"]) if (rules := _section(md, "Rules")) else [],
         "allowed": [p for _, _, p in _allowed_items(_section(md, "Allowed commands")) if p],
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
@@ -391,7 +504,7 @@ def parse_directive_full(text: str) -> dict:
 
 def parse_goal(text: str) -> dict:
     """The parsed shape of a goal file. Keys: goal, title, status, base, land, directives
-    [{n, id, text, line}] (in list order), headers [(key, value, line)], sections [(name, line)]."""
+    [{n, id, text, line}] (in list order), rules [str] (`## Rules` bullets), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     sec = _section(md, "Directives")
@@ -405,6 +518,7 @@ def parse_goal(text: str) -> dict:
         "goal": md["name"], "title": md["title"],
         **{k.lower(): hm.get(k, "") for k in GOAL_KEYS},
         "directives": dirs,
+        "rules": _bullets(rules["body"]) if (rules := _section(md, "Rules")) else [],
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
     }
@@ -432,7 +546,7 @@ def _check_sections(md: dict, required: tuple, path: str, acceptance: bool) -> l
     Other sections are allowed anywhere before the last required one (`## Log`)."""
     issues: list[Issue] = []
     seen: dict[str, int] = {}
-    once = required + (("Acceptance", "Review") if acceptance else ())
+    once = required + (("Acceptance", "Review") if acceptance else ()) + ("Rules",)
     last = required[-1]
     for s in md["sections"]:
         name, ln = s["name"], s["line"]
@@ -520,6 +634,93 @@ def allowed_pattern_problem(pat: str) -> str | None:
     return None
 
 
+_PUSH_PAT_VALUE_OPTS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--signed", "--recurse-submodules"}
+
+
+def push_pattern_problem(pat: str, goal_branch: str) -> str | None:
+    """Why a `git push` Allowed-commands pattern can never run (the push guard allows only the
+    goal branch and explicit refs/tags/ pushes while a directive is active), or None."""
+    try:
+        toks = shlex.split(pat)
+    except ValueError:
+        return None
+    if not toks or toks[0] != "git":
+        return None
+    i = 1
+    while i < len(toks) and toks[i].startswith("-"):
+        i += 2 if toks[i] in ("-C", "-c", "--git-dir", "--work-tree") else 1
+    if i >= len(toks) or toks[i] != "push":
+        return None
+    why = ("the push guard denies this while the directive is active: only the goal branch "
+           "and explicit refs/tags/ pushes")
+    pos, args = [], toks[i + 1:]
+    j = 0
+    while j < len(args):
+        a = args[j]
+        if a in ("--all", "--mirror", "--branches", "--tags", "--follow-tags"):
+            return f"`{a}`; {why}"
+        if a in _PUSH_PAT_VALUE_OPTS:
+            j += 2
+            continue
+        if not a.startswith("-"):
+            pos.append(a)
+        j += 1
+    specs = pos[1:]
+    if not specs:
+        return None
+    if len(specs) >= 2 and specs[0] == "tag":
+        return None if len(specs) % 2 == 0 and all(specs[k] == "tag" for k in range(0, len(specs), 2)) \
+            else f"unrecognised tag push; {why}"
+    is_tag = [sp.lstrip("+").rsplit(":", 1)[-1].startswith("refs/tags/")
+              and len(sp.lstrip("+").rsplit(":", 1)[-1]) > len("refs/tags/") for sp in specs]
+    if any(is_tag) and not all(is_tag):
+        return f"a push mixing tag and branch destinations is always denied; {why}"
+    for sp in specs:
+        dst = sp.lstrip("+").rsplit(":", 1)[-1]
+        if dst.startswith("refs/heads/"):
+            dst = dst[len("refs/heads/"):]
+        if dst == "*":
+            return f"the destination is a bare `*`; {why}"
+        if dst.startswith("refs/tags/") and len(dst) > len("refs/tags/"):
+            continue
+        if dst != goal_branch:
+            return f"destination `{dst}` is not the goal branch {goal_branch} or an explicit refs/tags/ ref; {why}"
+    return None
+
+
+_SSH_VALUE_OPTS = {"-p", "-i", "-o", "-J", "-l", "-F"}
+_REMOTE_SHELLS = {"bash", "sh", "zsh", "dash"}
+_REMOTE_BUILDS = (("docker", "build"), ("colcon", "build"), ("make",), ("cmake",), ("cargo", "build"),
+                  ("pip", "install"), ("pip3", "install"), ("uv", "sync"), ("apt",), ("apt-get",))
+_THIN_RULE = ("a target directive runs named, reviewed scripts and single-purpose writes; "
+              "iterative robot work is a worker goal (`Node: host:<robot>`, see docs/fleet.md "
+              "\"Targets and workers\")")
+
+
+def remote_pattern_warnings(pat: str) -> list[str]:
+    """Warnings for an `## Allowed commands` pattern that is an `ssh` call pre-approving any
+    remote command, a remote shell, or a remote build/install. [] for anything else."""
+    argv = argv_of(pat)
+    if not argv or argv[0] != "ssh":
+        return []
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):
+        i += 2 if argv[i] in _SSH_VALUE_OPTS else 1
+    if i >= len(argv):
+        return []
+    rest = argv[i + 1:]                      # argv[i] is the host
+    if len(rest) == 1 and " " in rest[0]:    # ssh host 'docker build .'
+        rest = argv_of(rest[0])
+    if not rest or rest[0].startswith("*"):
+        return [f"`{pat}` pre-approves any remote command; {_THIN_RULE}"]
+    if rest[0] in _REMOTE_SHELLS and ("-c" in rest[1:] or any("*" in t for t in rest[1:])):
+        return [f"`{pat}` pre-approves an arbitrary remote shell command; {_THIN_RULE}"]
+    for b in _REMOTE_BUILDS:
+        if tuple(rest[:len(b)]) == b:
+            return [f"`{pat}` is a remote build or install; {_THIN_RULE}"]
+    return []
+
+
 def validate_directive(did: str, text: str) -> list[Issue]:
     """This one directive file's own rules (no cross-checks against goal files)."""
     path = str(DIRECTIVE_DIR / f"{did}.md")
@@ -565,6 +766,10 @@ def validate_directive(did: str, text: str) -> list[Issue]:
         elif not d["acceptance"]:
             issues.append(Issue("error", path, acc["line"], "`## Acceptance` needs at least one `- ` bullet"))
 
+    rules_sec = _section(md, "Rules")
+    if rules_sec is not None and not _bullets(rules_sec["body"]):
+        issues.append(Issue("error", path, rules_sec["line"], "`## Rules` needs at least one `- ` bullet"))
+
     rev = _section(md, "Review")
     if d["accept"] == "user":
         if rev is None:
@@ -580,6 +785,12 @@ def validate_directive(did: str, text: str) -> list[Issue]:
             issues.append(Issue("error", path, ln, f"Allowed commands bullet needs exactly one backticked pattern: {text}"))
         elif (why := allowed_pattern_problem(pat)):
             issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
+        elif (why := push_pattern_problem(
+                pat, f"friday/{did}" if d["land"] == "pr" else f"friday/{d['goal']}")):
+            issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
+        else:
+            for w in remote_pattern_warnings(pat):
+                issues.append(Issue("warning", path, ln, f"Allowed commands {w}"))
 
     steps_sec = _section(md, "Steps")
     if steps_sec:
@@ -613,6 +824,9 @@ def validate_goal(gid: str, text: str) -> list[Issue]:
         issues.append(Issue("error", path, hl["Land"], f"Land `{g['land']}` is not one of {' | '.join(GOAL_LANDS)}"))
 
     issues += _check_sections(md, GOAL_SECTIONS, path, acceptance=False)
+    rules_sec = _section(md, "Rules")
+    if rules_sec is not None and not _bullets(rules_sec["body"]):
+        issues.append(Issue("error", path, rules_sec["line"], "`## Rules` needs at least one `- ` bullet"))
     sec = _section(md, "Directives")
     if sec:
         items, stray = _numbered(sec["body"])
@@ -819,12 +1033,36 @@ _SEPARATORS = ("&&", "||", ";", "|", "\n", "&")
 _SUBST = r"\$\(([^()]*)\)|`([^`]*)`"
 
 
-def split_commands(line: str) -> list[str]:
+def _drop_single_quoted(line: str) -> str:
+    """line with the contents of single-quoted spans removed: the shell does not expand $(...) there."""
+    out, dq, i = [], False, 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and i + 1 < len(line):
+            out.append("  "); i += 2        # an escaped character is literal: `\`` and `\$(` run nothing
+            continue
+        if c == '"':
+            dq = not dq
+        elif c == "'" and not dq:
+            j = line.find("'", i + 1)
+            if j < 0:
+                out.append(line[i:]); break
+            i = j + 1
+            continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+def split_commands(line: str, literal_quotes: bool = False) -> list[str]:
     """Split a shell line into simple commands on && || ; | & and newlines, outside quotes.
-    Command substitutions $(...) and backticks are returned as extra commands too.
+    Command substitutions $(...) and backticks are returned as extra commands too, wherever they
+    appear (single quotes and escaped ones included: an inner shell such as `bash -c '$(x)'` or
+    `ssh host '$(x)'` runs them, so security rules fail closed).
+    `literal_quotes=True` (word-matching rules only: run_only, bash_file_io) skips substitutions
+    that are literal to the local shell: inside single quotes or backslash-escaped.
     Heredoc bodies are scanned like any other text (fail closed)."""
     parts, buf, quote, i = [], [], None, 0
-    subs = re.findall(_SUBST, line)
+    subs = re.findall(_SUBST, _drop_single_quoted(line) if literal_quotes else line)
     while i < len(line):
         c = line[i]
         if quote:
@@ -842,13 +1080,16 @@ def split_commands(line: str) -> list[str]:
             buf.append(c); buf.append(line[i + 1]); i += 2
             continue
         sep = next((s for s in _SEPARATORS if line.startswith(s, i)), None)
+        if sep in ("|", "&") and buf and buf[-1] == ">":
+            buf.append(c); i += 1           # `>|` and `>&` are redirect operators, not separators
+            continue
         if sep:
             parts.append("".join(buf)); buf = []; i += len(sep)
             continue
         buf.append(c); i += 1
     parts.append("".join(buf))
     for a, b in subs:
-        parts.extend(split_commands(a or b))
+        parts.extend(split_commands(a or b, literal_quotes))
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -1030,3 +1271,13 @@ def uninstall_commit_hook(root: Path | str) -> bool:
     if local.exists():
         local.rename(hook)
     return True
+
+
+def merged_rules(root: Path | None, *own: list[str]) -> list[str]:
+    """Repo rules (.claude/friday.json `rules`), then each of `own` (goal's, directive's), in order, deduplicated."""
+    out: list[str] = []
+    for r in [(load_config(root).get("rules") or []), *own]:
+        for x in r:
+            if x not in out:
+                out.append(x)
+    return out

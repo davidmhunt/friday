@@ -13,6 +13,8 @@
   friday accept <id> [--note TEXT | --reject REASON]
                                     exit 8 while tracked files are uncommitted (prints the commit command)
                                     the user accepts an `awaiting review` directive (done) or rejects it (blocked: REASON)
+  friday approve --goal <g>         the user publishes the goal's plan: runs check, pushes friday/<g> and the plan ref
+                                    friday-plan/<g> (what pre-approval trusts); exit 8 while tracked files are uncommitted
   friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
   friday session-end --goal <g>     close this dispatched session's own tmux session once its goal is done
   friday land <id> [--base <branch>]
@@ -40,8 +42,9 @@
                                     check preconditions, pick a node (refusals have their own exit codes)
   friday dispatch --goal <g> --resume [--unblock ID]...
                                     resume the goal's session; --unblock ID (repeatable) unblocks that directive first
-  friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
-  friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
+  friday install [--bin-dir DIR]    install Python 3.12 with uv, record it, and write the DIR/friday shim
+                                    (default ~/.local/bin) that runs this checkout's bin/friday on it
+  friday uninstall [--bin-dir DIR]  remove that shim (or old link) when it belongs to a friday checkout, and the record
   friday dash [--bind ADDR]... [--no-self]
                                     serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port);
                                     --no-self: do not collect the master's own snapshot (it pushes it)
@@ -159,6 +162,9 @@ def cmd_status(a) -> int:
         print("\nmerged branches left on origin (friday deletes nothing):")
         for b in merged:
             print(f"  git push origin --delete {b}")
+    if not _python_recorded():
+        print("\nwarning: no friday Python is recorded (~/.local/state/friday/python), so the hooks fall back to the "
+              "system python3; run `friday install`", file=sys.stderr)
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
@@ -229,6 +235,11 @@ def cmd_init(a) -> int:
     return rc
 
 
+BASH_FILE_IO_HINT = ('option: add "bash_file_io": "deny" to .claude/friday.json so the hook denies Bash '
+                     'file reads and writes (cat, sed, grep, heredocs, redirects) and sends agents to '
+                     'Read/Grep/Edit/Write')
+
+
 def _init_settings(a) -> int:
     """Merge FRIDAY_ALLOW into the repo's tracked .claude/settings.json (never settings.local.json)."""
     path = _root() / ".claude" / "settings.json"
@@ -250,6 +261,7 @@ def _init_settings(a) -> int:
     missing = [r for r in fc.FRIDAY_ALLOW if r not in allow]
     if not missing and path.exists():
         print(f"friday init: {path} already has every friday allow rule; nothing to add")
+        print(BASH_FILE_IO_HINT)
         return 0
     allow.extend(missing)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +270,7 @@ def _init_settings(a) -> int:
     for r in missing:
         print(f"  {r}")
     print("review, then commit it (friday init does not commit)")
+    print(BASH_FILE_IO_HINT)
     return 0
 
 
@@ -300,6 +313,7 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
     else:
         return
     if _run(["git", "merge-base", "--is-ancestor", ref, "HEAD"], root).returncode == 0:
+        _reopen_done_goals(root, did)
         return
     # `ignore` is friday's own uncommitted edit (the goal's Status flip); git still refuses
     # the merge if Base touches that file too
@@ -310,11 +324,92 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
     r = _run(["git", "merge", "--no-edit", "-m", f"Merge {base} into {branch} before {did}",
               "-m", f"Directive: {did}", ref], root)
     if r.returncode != 0:
-        paths = _run(["git", "diff", "--name-only", "--diff-filter=U"], root).stdout.split()
-        _run(["git", "merge", "--abort"], root)
-        sys.exit(f"friday: merging {base} into {branch} conflicts in: {', '.join(paths) or r.stderr.strip()}; "
-                f"resolve on {base} or the branch, then start again")
+        # lifecycle state lives on the goal branch: a conflict confined to Status: lines of goal and
+        # directive files keeps the goal branch's value; anything else aborts the merge
+        paths = fc.resolve_status_conflicts(root)
+        if paths or _run(["git", "commit", "--no-edit", "--no-verify"], root).returncode != 0:
+            paths = paths or _run(["git", "diff", "--name-only", "--diff-filter=U"], root).stdout.split()
+            _run(["git", "merge", "--abort"], root)
+            sys.exit(f"friday: merging {base} into {branch} conflicts in: {', '.join(paths) or r.stderr.strip()}; "
+                    f"resolve on {base} or the branch, then start again")
     print(f"merged {base} {_run(['git', 'rev-parse', '--short', 'HEAD'], root).stdout.strip()}")
+    _reopen_done_goals(root, did)
+
+
+def _reopen_done_goals(root: Path, did: str) -> None:
+    """A done goal that now lists an undone directive becomes running (plan-only commit)."""
+    changed = fc.reopen_done_goals(root)
+    if changed:
+        _run(["git", "add", "--", *changed], root)
+        _run(["git", "commit", "--no-verify", "-qm", f"plan: reopen {', '.join(Path(c).stem for c in changed)} for {did}",
+              "-m", f"Directive: {did}"], root)
+        print(f"reopened {', '.join(changed)} (done goal lists an undone directive)")
+
+
+def _locate_directive(root: Path, did: str):
+    """The directive is not in the working tree: look for it on the goal branches, then on each
+    candidate Base (origin/<Base> after a fetch, else local). Returns (ref, goal id, base, land,
+    looked) or (None, looked-at refs)."""
+    cands = ["main"]
+    gd = root / fc.GOAL_DIR
+    for gf in sorted(gd.glob("*.md")) if gd.is_dir() else []:
+        try:
+            b = fc.parse_goal(gf.read_text()).get("base")
+        except (OSError, ValueError):
+            continue
+        if b and b not in cands:
+            cands.append(b)
+    if _run(["git", "remote", "get-url", "origin"], root).returncode == 0:
+        for b in cands:
+            try:
+                subprocess.run(["git", "fetch", "-q", "origin", b], cwd=root, capture_output=True,
+                               timeout=30, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+    refs = _run(["git", "for-each-ref", "--format=%(refname:short)", "refs/heads/friday",
+                 "refs/remotes/origin/friday"], root).stdout.split()
+    for b in cands:
+        refs += [f"origin/{b}", b]
+    looked = []
+    path = f"{fc.DIRECTIVE_DIR}/{did}.md"
+    for ref in refs:
+        if ref in looked:
+            continue
+        looked.append(ref)
+        r = _run(["git", "show", f"{ref}:{path}"], root)
+        if r.returncode != 0:
+            continue
+        parsed = fc.parse_directive_full(r.stdout)
+        gid = parsed["goal"]
+        if not gid or not fc.GOAL_RE.match(gid):
+            continue
+        g = _run(["git", "show", f"{ref}:{fc.GOAL_DIR}/{gid}.md"], root)
+        base = ""
+        if g.returncode == 0:
+            base = fc.parse_goal(g.stdout).get("base") or ""
+        return ref, gid, base or ref.removeprefix("origin/"), parsed["land"], looked
+    return None, looked
+
+
+def _switch_branch(root: Path, branch: str, base: str, gid: str) -> None:
+    if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
+        sys.exit(f"friday: uncommitted changes to tracked files; commit them before switching to {branch}")
+    if _branch_exists(root, f"refs/heads/{branch}"):
+        cmd = ["git", "switch", "-q", branch]
+    else:
+        if _branch_exists(root, f"refs/remotes/origin/{branch}"):
+            src = f"origin/{branch}"
+        elif _branch_exists(root, f"refs/heads/{base}"):
+            src = base
+        elif _branch_exists(root, f"refs/remotes/origin/{base}"):
+            src = f"origin/{base}"
+        else:
+            sys.exit(f"friday: base branch '{base}' of goal {gid} exists neither locally nor as origin/{base}")
+        cmd = ["git", "switch", "-q", "--no-track", "-c", branch, src]
+    r = _run(cmd, root)
+    if r.returncode != 0:
+        sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
+    print(f"on {branch}")
 
 
 def cmd_start(a) -> int:
@@ -322,6 +417,17 @@ def cmd_start(a) -> int:
     (friday/<goal> for Land goal|none, friday/<id> for Land pr), then mark it running."""
     import re
     root = _root()
+    if fc.read_directive(root, a.id) is None:
+        found = _locate_directive(root, a.id)
+        if found[0] is None:
+            sys.exit(f"friday: no directive {fc.DIRECTIVE_DIR / (a.id + '.md')} in the working tree "
+                     f"or on {', '.join(found[1]) or 'any friday/<goal> branch or the Base'}")
+        ref, fgid, fbase, fland, _ = found
+        fbranch = f"friday/{a.id}" if fland == "pr" else f"friday/{fgid}"
+        print(f"found {a.id} on {ref}: merging {fbase} into {fbranch}")
+        if fc.current_branch(root) != fbranch:
+            _switch_branch(root, fbranch, fbase, fgid)
+        _merge_base(root, fbase, fbranch, a.id)
     d = _need(root, a.id)
     status = d["status"].lower()
     if not status.startswith(("approved", "running")):
@@ -343,23 +449,7 @@ def cmd_start(a) -> int:
         sys.exit(f"friday: {a.id} comes after {', '.join(undone)} in goal {gid}, which must be done first")
     branch = f"friday/{a.id}" if parsed["land"] == "pr" else f"friday/{gid}"
     if fc.current_branch(root) != branch:
-        if _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.strip():
-            sys.exit(f"friday: uncommitted changes to tracked files; commit them before switching to {branch}")
-        if _branch_exists(root, f"refs/heads/{branch}"):
-            cmd = ["git", "switch", "-q", branch]
-        else:
-            base = goal["base"]
-            if _branch_exists(root, f"refs/heads/{base}"):
-                src = base
-            elif _branch_exists(root, f"refs/remotes/origin/{base}"):
-                src = f"origin/{base}"
-            else:
-                sys.exit(f"friday: base branch '{base}' of goal {gid} exists neither locally nor as origin/{base}")
-            cmd = ["git", "switch", "-q", "--no-track", "-c", branch, src]
-        r = _run(cmd, root)
-        if r.returncode != 0:
-            sys.exit(f"friday: cannot switch to {branch}: {r.stderr.strip()}")
-        print(f"on {branch}")
+        _switch_branch(root, branch, goal["base"], gid)
     _merge_base(root, goal["base"], branch, a.id, str(fc.GOAL_DIR / f"{gid}.md"))
     if goal["status"] == "approved":
         gp = fc.goal_path(root, gid)
@@ -370,6 +460,10 @@ def cmd_start(a) -> int:
         old = fc.read_marker(Path.cwd())
         base = old["base"] if old and old.get("id") == a.id and old.get("base") else \
             _run(["git", "rev-parse", "HEAD"], root).stdout.strip()
+    sf = root / "runs" / a.id / "start"
+    if not sf.exists():
+        sf.parent.mkdir(parents=True, exist_ok=True)
+        sf.write_text(_run(["git", "rev-parse", "HEAD"], root).stdout.strip() + "\n")
     _install_hook(root)
     fc.write_marker(Path.cwd(), {"id": a.id, "started": time.time(), "host": socket.gethostname(),
                                  "gate": not a.no_gate, "base": base, "goal_base": goal["base"]})
@@ -507,6 +601,54 @@ def cmd_finish(a) -> int:
             print(f"- {b}")
         print(f"When satisfied, run: friday accept {a.id}")
         print(f"To send it back:     friday accept {a.id} --reject REASON")
+    return 0
+
+
+def cmd_approve(a) -> int:
+    """The user publishes the goal's plan: `friday check --goal <g>` must pass and tracked files must be
+    committed; then push friday/<g> and HEAD to refs/heads/friday-plan/<g> (no force). The plan ref is
+    what pre-approval of `## Allowed commands` trusts. Exit 0; 1 check errors, wrong branch, push refused; 8 dirty tree."""
+    root = _root()
+    g = a.goal
+    if not fc.GOAL_RE.match(g) or not fc.goal_path(root, g).is_file():
+        sys.exit(f"friday: no goal {g!r}")
+    issues = fc.check_repo(root, goal=g)
+    for i in issues:
+        print(i)
+    errs = sum(1 for i in issues if i.level == "error")
+    if errs:
+        print(f"friday: {errs} check error(s); nothing pushed", file=sys.stderr)
+        return 1
+    br = fc.current_branch(root)
+    if br != f"friday/{g}":
+        sys.exit(f"friday: approve runs on branch friday/{g}, not {br}")
+    dirty = [l[3:] for l in _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines() if l.strip()]
+    if dirty:
+        print("friday: tracked files are uncommitted; commit the plan first (nothing pushed):", file=sys.stderr)
+        for pth in dirty:
+            print(f"  {pth}", file=sys.stderr)
+        print(f'Then run:\n  git commit -am "plan: {g}"\n  friday approve --goal {g}', file=sys.stderr)
+        return 8
+    for ref in (f"friday/{g}", f"HEAD:refs/heads/friday-plan/{g}"):
+        r = _run(["git", "push", "origin", ref], root)
+        if r.returncode != 0:
+            why = (r.stderr or r.stdout).strip()
+            if "non-fast-forward" in why or "rejected" in why or "fetch first" in why:
+                why = f"{ref} is not a fast-forward of origin (not forced): {why}"
+            print(f"friday: push of {ref} failed: {why}", file=sys.stderr)
+            return 1
+    print(f"approved: friday-plan/{g} is now at {_run(['git', 'rev-parse', '--short', 'HEAD'], root).stdout.strip()}")
+    gd = fc.parse_goal(fc.goal_path(root, g).read_text())["directives"]
+    listed = False
+    for x in gd:
+        dp = fc.directive_path(root, x["id"])
+        if not dp.is_file():
+            continue
+        for pat in fc.parse_directive_full(dp.read_text())["allowed"]:
+            print(f"pre-approved for {x['id']}: {pat}")
+            listed = True
+    if not listed:
+        print("no directive of this goal lists `## Allowed commands`: nothing is pre-approved")
     return 0
 
 
@@ -920,10 +1062,72 @@ print("FRIDAY_PROBE reads_outside=" + ("blocked:" + ",".join(blocked) if blocked
 """
 
 
-def probe_script(node) -> str:
+_PREREQ_SH = "\n".join([
+    'PATH="$HOME/.local/bin:$PATH"',
+    'command -v uv >/dev/null 2>&1 && echo "FRIDAY_PROBE uv=ok" || echo "FRIDAY_PROBE uv=missing"',
+    'if ! command -v gh >/dev/null 2>&1; then echo "FRIDAY_PROBE gh=missing"',
+    'elif gh auth status >/dev/null 2>&1; then echo "FRIDAY_PROBE gh=ok"',
+    'else echo "FRIDAY_PROBE gh=nologin"; fi',
+    'a=$(claude auth status 2>/dev/null)',
+    'case "$a" in',
+    '  *\'"loggedIn": true\'*|*\'"loggedIn":true\'*) echo "FRIDAY_PROBE claude_auth=ok";;',
+    '  *\'"loggedIn": false\'*|*\'"loggedIn":false\'*) echo "FRIDAY_PROBE claude_auth=no";;',
+    '  *) echo "FRIDAY_PROBE claude_auth=unknown";;',
+    'esac',
+])
+
+
+_PYVER_SH = "\n".join([
+    'rp=$(head -n 1 "$HOME/.local/state/friday/python" 2>/dev/null)',
+    'if [ -z "$rp" ] || [ ! -x "$rp" ]; then echo "FRIDAY_PROBE python=none"',
+    'else echo "FRIDAY_PROBE python=$rp"',
+    "  pv=$(\"$rp\" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null)",
+    '  echo "FRIDAY_PROBE pyver=${pv:-broken}"; fi',
+])
+
+
+def python_fixes(node, got) -> list:
+    """Fix lines for the recorded friday interpreter (none when the probe did not report it)."""
+    py = got.get("python")
+    if py is None:
+        return []
+    if py == "none":
+        return [f"fix: no friday Python is recorded on {node.name}; run `uv python install 3.12` then `friday install` there "
+                f"(or `friday nodes --setup {node.name}`); hooks fall back to the system python3"]
+    import re
+    m = re.match(r"\((\d+), (\d+)\)", got.get("pyver", ""))
+    if not m:
+        return [f"fix: the recorded Python {py} does not run on {node.name}; run `uv python install 3.12` then `friday install` there"]
+    if (int(m.group(1)), int(m.group(2))) < (3, 11):
+        return [f"fix: the recorded Python {py} on {node.name} is {m.group(1)}.{m.group(2)}, friday needs 3.11+; "
+                f"run `uv python install 3.12` then `friday install` there"]
+    return []
+
+
+def prereq_fixes(node, got) -> list:
+    """Fix lines for the worker prerequisites uv, gh login and claude sign-in (empty list when all are ok)."""
+    fixes = []
+    if got.get("uv") != "ok":
+        fixes.append(f"fix: install uv on {node.name} (https://docs.astral.sh/uv/getting-started/installation/)")
+    gh = got.get("gh", "missing")
+    if gh == "missing":
+        fixes.append(f"fix: install gh on {node.name}, then run `gh auth login` on {node.name}")
+    elif gh != "ok":
+        fixes.append(f"fix: run `gh auth login` on {node.name} (push credentials for `friday land`)")
+    ca = got.get("claude_auth", "unknown")
+    if ca == "no":
+        fixes.append(f"fix: run `claude` and `/login` on {node.name} (claude is not signed in)")
+    elif ca != "ok":
+        fixes.append(f"warning: could not tell whether claude is signed in on {node.name}; "
+                     f"if not, run `claude` and `/login` on {node.name}")
+    return fixes
+
+
+def probe_script(node, prereqs=False) -> str:
     if node.role == "target":
-        return "echo FRIDAY_PROBE reach=ok\n"
+        return "echo FRIDAY_PROBE reach=ok\n" + (_PREREQ_SH + "\n" if prereqs else "")
     repos, plug = _remote_path(node.repos), _remote_path(node.plugin_dir)
+    py = f"{plug}/bin/friday-python"
     return "\n".join([
         "echo FRIDAY_PROBE reach=ok",
         'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
@@ -934,19 +1138,25 @@ def probe_script(node) -> str:
         'f=$(command -v friday 2>/dev/null)',
         f'if [ -z "$f" ]; then echo "FRIDAY_PROBE friday=missing"',
         f'elif [ "$(readlink -f "$f")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
+        f'elif grep -q "^# friday shim" "$f" 2>/dev/null; then',
+        f'  t=$(sed -n \'s/^exec .* \\(.*\\) "\\$@"$/\\1/p\' "$f" | tr -d "\'")',
+        f'  if [ "$(readlink -f "$t")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
+        '  else echo "FRIDAY_PROBE friday=$t"; fi',
         'else echo "FRIDAY_PROBE friday=$(readlink -f "$f")"; fi',
-        "if command -v python3 >/dev/null 2>&1; then",
-        f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
+        f"if [ -x {py} ]; then",
+        f'  t=$(FRIDAY_P={repos} {py} -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
-        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
-        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_READS_PY)} 2>/dev/null; fi",
+        f"if [ -x {py} ]; then {py} -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
+        f"if [ -x {py} ]; then {py} -c {shlex.quote(_READS_PY)} 2>/dev/null; fi",
+        _PYVER_SH,
+        _PREREQ_SH,
         ff.plugin_install_lines(node),
     ]) + "\n"
 
 
-def check_node(node) -> tuple:
+def check_node(node, prereqs=False) -> tuple:
     """Probe one node. Returns (summary_text, [fix lines]); fixes empty means it passes (lines starting `warning:` do not fail it)."""
-    argv, stdin = ff.ssh_cmd(node, probe_script(node))
+    argv, stdin = ff.ssh_cmd(node, probe_script(node, prereqs))
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
         out, rc = r.stdout, r.returncode
@@ -958,7 +1168,7 @@ def check_node(node) -> tuple:
         return "unreachable", [f"fix: check that `ssh {node.ssh}` works non-interactively "
                                f"(key auth, tailnet up, host awake)"]
     if node.role == "target":
-        return "reachable", []
+        return "reachable", (prereq_fixes(node, got) if prereqs else [])
     fixes = []
     cl = got.get("claude", "missing")
     if cl == "missing":
@@ -975,9 +1185,12 @@ def check_node(node) -> tuple:
         fixes.append(f"friday on PATH: points at {fr}; fix: `friday nodes --setup {node.name}`")
     trust = got.get("trust")
     if trust == "unknown":
-        fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
+        fixes.append(f"fix: trust in ~/.claude.json cannot be read on {node.name} (no friday Python); "
+                     f"run `uv python install 3.12` then `friday install` there")
     elif trust != "ok":
         fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
+    fixes += prereq_fixes(node, got)
+    fixes += python_fixes(node, got)
     for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
@@ -995,7 +1208,8 @@ def check_node(node) -> tuple:
         fixes.append(f"warning: friday is installed but disabled on {node.name}; dispatch keeps --plugin-dir")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}, "
-               f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}")
+               f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}, "
+               f"python {got.get('pyver', got.get('python', '?'))}, uv {got.get('uv', '?')}, gh {got.get('gh', '?')}, claude auth {got.get('claude_auth', '?')}")
     return summary, fixes
 
 
@@ -1069,8 +1283,9 @@ def timer_units(n) -> dict:
 
 
 def timer_script(n) -> str:
-    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_TIMER nopython'; exit 1; }}\n"
-            f"FRIDAY_UNITS={shlex.quote(json.dumps(timer_units(n)))} python3 -c {shlex.quote(_TIMER_PY)}\n")
+    py = _node_py(n)
+    return (f"[ -x {py} ] || {{ echo 'FRIDAY_TIMER nopython'; exit 1; }}\n"
+            f"FRIDAY_UNITS={shlex.quote(json.dumps(timer_units(n)))} {py} -c {shlex.quote(_TIMER_PY)}\n")
 
 
 _NODEFILE_PY = """
@@ -1105,8 +1320,9 @@ def node_file_text(n, reg) -> str:
 
 
 def node_file_script(n, reg) -> str:
-    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_NODEFILE nopython'; exit 1; }}\n"
-            f"FRIDAY_NODETOML={shlex.quote(node_file_text(n, reg))} python3 -c {shlex.quote(_NODEFILE_PY)}\n")
+    py = _node_py(n)
+    return (f"[ -x {py} ] || {{ echo 'FRIDAY_NODEFILE nopython'; exit 1; }}\n"
+            f"FRIDAY_NODETOML={shlex.quote(node_file_text(n, reg))} {py} -c {shlex.quote(_NODEFILE_PY)}\n")
 
 
 def setup_node_file(n, reg) -> int:
@@ -1120,15 +1336,21 @@ def setup_node_file(n, reg) -> int:
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: ~/.config/friday/node.toml written")
         return 0
-    why = {"nopython": "python3 is missing on the node",
+    why = {"nopython": "the plugin checkout (bin/friday-python) is missing on the node",
            "error": "could not write ~/.config/friday"}.get(res, f"ssh failed (exit {r.returncode})")
     print(f"friday: {n.name}: node.toml not written: {why}")
     return 1
 
 
-def setup_script() -> str:
-    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
-            f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} python3 -c {shlex.quote(_SETUP_PY)}\n")
+def _node_py(n) -> str:
+    """The node's `<plugin_dir>/bin/friday-python`, as a remote-shell word."""
+    return ff.remote_path(n.plugin_dir.rstrip("/") + "/bin/friday-python")
+
+
+def setup_script(n) -> str:
+    py = _node_py(n)
+    return (f"[ -x {py} ] || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
+            f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} {py} -c {shlex.quote(_SETUP_PY)}\n")
 
 
 def setup_timer(n) -> int:
@@ -1142,7 +1364,7 @@ def setup_timer(n) -> int:
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: friday-push.timer enabled (pushes every 30 s)")
         return 0
-    why = {"nopython": "python3 is missing on the node", "nosystemd": "systemctl is not available on the node",
+    why = {"nopython": "the plugin checkout (bin/friday-python) is missing on the node", "nosystemd": "systemctl is not available on the node",
            "error": "could not write ~/.config/systemd/user"}.get(
         res, res.removeprefix("systemd ") if res.startswith("systemd") else f"ssh failed (exit {r.returncode})")
     print(f"friday: {n.name}: friday-push.timer not installed: {why}")
@@ -1151,7 +1373,9 @@ def setup_timer(n) -> int:
 
 def setup_install(n) -> int:
     """Run `<plugin_dir>/bin/friday install` on the node so `friday` is on its PATH."""
-    script = f"python3 {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n"
+    # install runs `uv python install 3.12` itself; ~/.local/bin (where uv lives) is not on a non-interactive PATH
+    script = (f'PATH="$HOME/.local/bin:$PATH"\n'
+              f"{_node_py(n)} {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n")
     argv, stdin = ff.ssh_cmd(n, script)
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
@@ -1167,13 +1391,54 @@ def setup_install(n) -> int:
     return 0
 
 
+def prerequisite_lines(node, got) -> list:
+    """One line per worker prerequisite the probe covers: `name: ok`, or `name: missing` plus its fix."""
+    ca = got.get("claude_auth", "unknown")
+    items = [("uv", got.get("uv") == "ok", "missing"), ("gh auth", got.get("gh") == "ok", "missing"),
+             ("claude signed in", ca == "ok", "unknown" if ca == "unknown" else "missing")]
+    fixes = iter(prereq_fixes(node, got))  # one fix per failing item, in the same order
+    lines = []
+    for label, ok, state in items:
+        if ok:
+            lines.append(f"  {label}: ok")
+        else:
+            fx = next(fixes, "fix: see docs/fleet.md")
+            lines.append(f"  {label}: {state}; {fx}")
+    return lines
+
+
+def print_prerequisites(n) -> None:
+    """Probe the node and print `prerequisites:` with one line each. Person-only items are reported, never done."""
+    script = "echo FRIDAY_PROBE reach=ok\n" + _PREREQ_SH + "\n"
+    argv, stdin = ff.ssh_cmd(n, script)
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+        out = r.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        out = ""
+    got = dict(l[len("FRIDAY_PROBE "):].split("=", 1) for l in out.splitlines()
+               if l.startswith("FRIDAY_PROBE ") and "=" in l)
+    print(f"prerequisites on {n.name} ({n.ssh}):")
+    if got.get("reach") != "ok":
+        print(f"  unreachable: check that `ssh {n.ssh}` works non-interactively")
+        return
+    for line in prerequisite_lines(n, got):
+        print(line)
+
+
 def cmd_nodes_setup(a, reg) -> int:
     n = reg.nodes.get(a.setup)
     if n is None:
         print(f"friday: no node named {a.setup!r}; pick one from `friday nodes`")
         return 1
+    print_prerequisites(n)
     if n.role == "target":
-        print(f"friday: {n.name} is a target node; --setup applies to master and worker nodes")
+        print(f"{n.name} is a target node; --setup changes nothing on a target. To make it a worker, "
+              f"edit its entry in the nodes.toml registry:")
+        print('  role = "worker"')
+        print('  repos = "<directory on the node that holds the repos>"')
+        print('  plugin_dir = "~/friday"   # where the friday plugin is cloned on the node')
+        print(f"then re-run `friday nodes --setup {n.name}`.")
         return 1
     print(f"friday will set these keys in ~/.claude/settings.json on {n.name} ({n.ssh}):")
     for k, v in SETUP_KEYS.items():
@@ -1183,8 +1448,8 @@ def cmd_nodes_setup(a, reg) -> int:
     print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
           "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
           "every 30 s.")
-    print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which links "
-          "~/.local/bin/friday to that checkout.")
+    print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which runs "
+          "`uv python install 3.12` if needed and writes ~/.local/bin/friday as a shim onto that checkout.")
     print(f"and it writes ~/.config/friday/node.toml on {n.name} (name, repos, dash URL), which "
           "`friday status --push` reads when the node has no nodes.toml.")
     if not a.yes:
@@ -1195,7 +1460,7 @@ def cmd_nodes_setup(a, reg) -> int:
         if input("proceed? [y/N] ").strip().lower() not in ("y", "yes"):
             print("aborted; nothing changed")
             return 1
-    argv, stdin = ff.ssh_cmd(n, setup_script())
+    argv, stdin = ff.ssh_cmd(n, setup_script(n))
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -1208,7 +1473,7 @@ def cmd_nodes_setup(a, reg) -> int:
         rc = setup_install(n) or rc
         return setup_timer(n) or rc
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
-           "nopython": "python3 is missing on the node",
+           "nopython": "the plugin checkout (bin/friday-python) is missing on the node",
            "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")
     print(f"friday: {n.name}: {why}; nothing changed")
     return 1
@@ -1642,13 +1907,16 @@ def cmd_commits(a) -> int:
     if a.json:
         print(json.dumps({"base": r["base"],
                           "commits": [{"sha": s, "subject": m} for s, m in r["commits"]],
-                          "untracked": [{"sha": s, "subject": m, "files": f} for s, m, f in r["untracked"]]}, indent=2))
+                          "untracked": [{"sha": s, "subject": m, "files": f} for s, m, f in r["untracked"]],
+                          "plan": [{"sha": s, "subject": m} for s, m in r["plan"]]}, indent=2))
     else:
         print(f"base {r['base']}")
         for s, m in r["commits"]:
             print(f"{s} {m}")
         for s, m, _f in r["untracked"]:
             print(f"untracked {s} {m}")
+        for s, m in r["plan"]:
+            print(f"plan {s} {m}")
     return 0 if r["commits"] else 3
 
 
@@ -1675,7 +1943,7 @@ def cmd_parse(a) -> int:
                          "land": d["land"] if d else None,
                          "title": d["title"] if d else x["text"]})
         out = {"goal": g["goal"], "title": g["title"], "status": g["status"], "base": g["base"],
-               "land": g["land"], "directives": rows,
+               "land": g["land"], "directives": rows, "rules": fc.merged_rules(root, g["rules"]),
                "errors": _msgs(issues, "error"), "warnings": _msgs(issues, "warning")}
     else:
         path = fc.directive_path(root, a.id)
@@ -1694,7 +1962,8 @@ def cmd_parse(a) -> int:
         ids = [x["id"] for x in gd]
         out = {"id": d["id"], "title": d["title"], "status": d["status"], "goal": d["goal"],
                "base": g["base"] if g else None, "node": d["node"], "deliverable": d["deliverable"],
-               "land": d["land"], "accept": d["accept"], "review": d["review"] or [], "verify": d["verify"], "hardware": d["hardware"],
+               "land": d["land"], "accept": d["accept"], "review": d["review"] or [],
+               "rules": fc.merged_rules(root, g["rules"] if g else [], d["rules"]), "verify": d["verify"], "hardware": d["hardware"],
                "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"]} for s in d["steps"]],
                "acceptance": d["acceptance"] or [], "goal_directives": gd,
                "position": ids.index(a.id) + 1 if a.id in ids else None,
@@ -1736,12 +2005,71 @@ def _bin_dir(a) -> Path:
     return Path(os.path.expanduser(a.bin_dir or "~/.local/bin"))
 
 
+def _python_recorded() -> bool:
+    """True when `friday install` recorded an interpreter that still exists."""
+    try:
+        py = _state_python().read_text().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return False
+    return bool(py) and os.access(py, os.X_OK)
+
+
+def _state_python() -> Path:
+    return Path(os.path.expanduser("~/.local/state/friday/python"))
+
+
+def _shim_target(link: Path) -> Path | None:
+    """The bin/friday a friday shim file execs, or None when `link` is not a friday shim."""
+    try:
+        if link.is_symlink() or not link.is_file() or link.stat().st_size > 4096:
+            return None
+        lines = link.read_text().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if len(lines) < 3 or lines[0] != "#!/bin/sh" or not lines[1].startswith("# friday shim"):
+        return None
+    for ln in lines[2:]:
+        if ln.startswith("exec "):
+            try:
+                parts = shlex.split(ln)
+            except ValueError:
+                return None
+            return Path(parts[-2]) if len(parts) >= 4 and parts[-1] == "$@" else None
+    return None
+
+
 def _is_friday_link(link: Path) -> bool:
-    """True when the symlink's target is a friday checkout's bin/friday (a dangling one counts by name)."""
+    """True when `link` is a symlink to a friday checkout's bin/friday (a dangling one counts by name)
+    or a shim written by `friday install`."""
+    if not link.is_symlink():
+        return _shim_target(link) is not None
     t = Path(os.path.abspath(link.parent / os.readlink(link)))
     if t.name != "friday" or t.parent.name != "bin":
         return False
     return (t.parent.parent / "lib" / "friday_core.py").is_file() or not t.exists()
+
+
+def _shim_text(py: str, me: Path) -> str:
+    return ("#!/bin/sh\n# friday shim (written by `friday install`; `friday uninstall` removes it)\n"
+            f"exec {shlex.quote(py)} {shlex.quote(str(me))} \"$@\"\n")
+
+
+def _uv_python() -> str | None:
+    """Install Python 3.12 with uv if needed and return its path; None (after saying why) on failure."""
+    if shutil.which("uv") is None:
+        print("friday: uv is not installed; install it (https://docs.astral.sh/uv/getting-started/installation/) "
+              "and run `friday install` again", file=sys.stderr)
+        return None
+    for args in (["python", "install", "3.12"], ["python", "find", "3.12"]):
+        r = subprocess.run(["uv", *args], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"friday: `uv {' '.join(args)}` failed: {(r.stderr or r.stdout).strip()}", file=sys.stderr)
+            return None
+    py = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    if not py:
+        print("friday: `uv python find 3.12` printed nothing", file=sys.stderr)
+        return None
+    return py
 
 
 def cmd_install(a) -> int:
@@ -1749,23 +2077,27 @@ def cmd_install(a) -> int:
     link = d / "friday"
     me = Path(__file__).resolve()
     if link.is_symlink():
-        old = os.readlink(link)
-        if Path(os.path.abspath(d / old)) == me or link.resolve() == me:
-            print(f"friday: {link} already points at {me}")
-        elif _is_friday_link(link):
-            link.unlink()
-            link.symlink_to(me)
-            print(f"friday: repointed {link}\n  old: {old}\n  new: {me}")
-        else:
-            print(f"friday: {link} is a link to {old}, which is not friday; not touching it", file=sys.stderr)
+        if not _is_friday_link(link):
+            print(f"friday: {link} is a link to {os.readlink(link)}, which is not friday; not touching it",
+                  file=sys.stderr)
             return 1
-    elif link.exists():
+    elif link.exists() and _shim_target(link) is None:
         print(f"friday: {link} is a regular file; not overwriting it", file=sys.stderr)
         return 1
-    else:
-        d.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(me)
-        print(f"friday: linked {link} -> {me}")
+    py = _uv_python()
+    if py is None:
+        return 1
+    rec = _state_python()
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(py + "\n")
+    print(f"friday: recorded {py} in {rec}")
+    d.mkdir(parents=True, exist_ok=True)
+    if link.is_symlink():
+        print(f"friday: replacing the old link {link} -> {os.readlink(link)}")
+        link.unlink()
+    link.write_text(_shim_text(py, me))
+    link.chmod(0o755)
+    print(f"friday: wrote shim {link} (runs {me} on {py})")
     on_path = str(d) in [os.path.expanduser(x) for x in os.environ.get("PATH", "").split(":")]
     if on_path:
         print(f"{d} is on PATH")
@@ -1783,17 +2115,19 @@ def cmd_uninstall(a) -> int:
 
 def _uninstall_link(a) -> int:
     link = _bin_dir(a) / "friday"
-    if link.is_symlink():
-        if _is_friday_link(link):
-            old = os.readlink(link)
-            link.unlink()
-            print(f"friday: removed {link} (was -> {old})")
-            return 0
-        print(f"friday: {link} is a link to {os.readlink(link)}, which is not friday; not removing it", file=sys.stderr)
-        return 1
-    if link.exists():
-        print(f"friday: {link} is a regular file; not removing it", file=sys.stderr)
-        return 1
+    if link.is_symlink() or link.exists():
+        if not _is_friday_link(link):
+            what = f"a link to {os.readlink(link)}" if link.is_symlink() else "a regular file"
+            print(f"friday: {link} is {what}, which is not friday; not removing it", file=sys.stderr)
+            return 1
+        old = os.readlink(link) if link.is_symlink() else "shim"
+        link.unlink()
+        print(f"friday: removed {link} (was -> {old})")
+        rec = _state_python()
+        if rec.exists():
+            rec.unlink()
+            print(f"friday: removed {rec}")
+        return 0
     print(f"friday: no link at {link}; nothing to do")
     return 0
 
@@ -1849,6 +2183,7 @@ def main() -> int:
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
     s = sub.add_parser("accept"); s.add_argument("id"); s.add_argument("--note", metavar="TEXT"); s.add_argument("--reject", metavar="REASON"); s.set_defaults(f=cmd_accept)
+    s = sub.add_parser("approve"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_approve)
     s = sub.add_parser("unblock"); s.add_argument("id"); s.set_defaults(f=cmd_unblock)
     s = sub.add_parser("commits"); s.add_argument("id"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_commits)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)
