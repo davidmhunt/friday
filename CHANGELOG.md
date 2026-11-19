@@ -20,6 +20,11 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
 
 ### Fixed
 
+- `friday dispatch` and `--resume` launch without `--plugin-dir` when the node has `friday@` installed and enabled
+  from its `plugin_dir`, so hooks and skills load once; otherwise `--plugin-dir` is kept, and `friday nodes --check`
+  warns when the plugin is installed from a different directory (two copies). `nodes --check` also reports whether
+  the node prompts for reads outside the working directories and the plugin install state (disp-01).
+
 - A Bash call of several commands (newlines, `&&`, `||`, `;`, `|`) is pre-approved when every command in it
   matches a pattern in the directive's `## Allowed commands`; command or process substitution, a heredoc or
   `&` backgrounding anywhere refuses it. Leases are taken for every hardware resource any part touches, and

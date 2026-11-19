@@ -61,7 +61,7 @@ def test_launch_line_plugin_dir(state, has_flag):
     assert ("--plugin-dir /opt/friday" in line) is has_flag
 
 
-def run_check(tmp_path, monkeypatch, settings, install="same"):
+def run_check(tmp_path, monkeypatch, settings, plugins=None):
     """check_node against a fake ssh that runs the probe script locally with a fake HOME."""
     import importlib.machinery, importlib.util
     loader = importlib.machinery.SourceFileLoader(
@@ -77,7 +77,7 @@ def run_check(tmp_path, monkeypatch, settings, install="same"):
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     (bindir / "claude").write_text("#!/bin/bash\n[ \"$1\" = --version ] && echo '2.1.0 (Claude Code)' && exit 0\n"
-                                   "echo '[]'\n")
+                                   f"cat <<'EOF'\n{json.dumps(plugins or [])}\nEOF\n")
     (bindir / "claude").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
     monkeypatch.setenv("HOME", str(home))
@@ -98,3 +98,16 @@ def test_nodes_check_warns_when_reads_blocked(tmp_path, monkeypatch):
     w = [f for f in fixes if "outside the working directories" in f]
     assert len(w) == 1 and w[0].startswith("warning:")
     assert "permissions.blockReadsOutsideWorkingDirectories" in w[0]
+
+
+def test_nodes_check_plugin_install_states(tmp_path, monkeypatch):
+    pd, other = tmp_path / "pd", tmp_path / "copy"
+    pd.mkdir()
+    other.mkdir()
+    summary, fixes = run_check(tmp_path, monkeypatch, {}, [entry(pd)])
+    assert "plugin install same" in summary
+    assert not [f for f in fixes if "two copies" in f]
+    summary, fixes = run_check(tmp_path, monkeypatch, {}, [entry(other)])
+    assert "plugin install other" in summary
+    w = [f for f in fixes if "two copies" in f]
+    assert len(w) == 1 and w[0].startswith("warning:")
