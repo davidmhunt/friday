@@ -103,6 +103,34 @@ def test_merging_base_into_goal_branch_keeps_commits_and_adds_no_untracked(repo)
     assert r.stdout.startswith("base " + _g(repo, "rev-parse", "main").strip())
 
 
+def test_teammate_commit_merged_by_start_is_not_untracked(repo, tmp_path):
+    import subprocess
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+    _g(repo, "remote", "add", "origin", str(origin))
+    _g(repo, "push", "-q", "origin", "main")
+    # a teammate pushes to origin/main after the plan commit
+    mate = tmp_path / "mate"
+    subprocess.run(["git", "clone", "-q", str(origin), str(mate)], check=True)
+    for k, v in (("user.name", "m"), ("user.email", "m@t")):
+        subprocess.run(["git", "-C", str(mate), "config", k, v], check=True)
+    (mate / "t.txt").write_text("t")
+    subprocess.run(["git", "-C", str(mate), "add", "t.txt"], check=True)
+    subprocess.run(["git", "-C", str(mate), "commit", "--no-verify", "-qm", "teammate work"], check=True)
+    subprocess.run(["git", "-C", str(mate), "push", "-q", "origin", "main"], check=True)
+    r = cli(repo, "start", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert (repo / "t.txt").exists()  # start merged it
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert _subjects(r) == ["mine a"] and not _untracked(r)
+    assert "teammate work" not in r.stdout
+    _commit(repo, "oops.txt", "forgot the trailer")
+    r = cli(repo, "commits", "core-01")
+    assert len(_untracked(r)) == 1 and "forgot the trailer" in _untracked(r)[0]
+
+
 def test_merging_unrelated_branch_still_surfaces_its_commits(repo):
     cli(repo, "start", "core-01")
     _commit(repo, "a.txt", "mine a\n\nDirective: core-01")

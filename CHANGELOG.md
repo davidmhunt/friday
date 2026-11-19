@@ -20,6 +20,10 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
 
 ### Fixed
 
+- `friday commits` (and the review and `friday finish`) no longer lists a teammate's upstream commits, merged in by
+  `friday start`, as untracked; commits reachable from Base or `origin/<Base>`, or through a Base merge, are
+  excluded, while untagged code commits on the goal branch and commits of an unrelated merged branch still show (#21).
+
 - `friday dispatch` and `--resume` launch without `--plugin-dir` when the node has `friday@` installed and enabled
   from its `plugin_dir`, so hooks and skills load once; otherwise `--plugin-dir` is kept, and `friday nodes --check`
   warns when the plugin is installed from a different directory (two copies). `nodes --check` also reports whether
