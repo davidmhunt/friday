@@ -93,3 +93,81 @@ def test_awaiting_review_reported_for_land_none_and_pr():
     pr_i = SRC.index("if (landMode === 'pr') {")
     pr_block = SRC[pr_i:SRC.index("// Land goal", pr_i)]
     assert "if (awaiting) return" in pr_block and "acceptLine" in pr_block
+
+
+# ---- Verify prompt and the ran=false path (tt-08, #28)
+
+def _verify_prompt():
+    i = SRC.index("async function verifyLoop")
+    m = re.search(r"\bagent\(\s*`", SRC[i:])
+    return _template_at(i + m.end() - 1)[0]
+
+
+def test_verify_prompt_is_one_foreground_call():
+    p = _verify_prompt()
+    assert "one plain foreground" in p
+    assert "600000" in p
+    assert "several minutes" not in SRC
+
+
+def test_verify_schema_has_ran():
+    i = SRC.index("const VERIFY = {")
+    block = SRC[i:SRC.index("\n}\n", i)]
+    assert "ran: { type: 'boolean'" in block and "not_run_reason" in block
+    assert "'ran'" in block.split("required:")[1].split("]")[0]
+
+
+def _run_verify_loop(results):
+    """Run the real verifyLoop under node with scripted agent results; return (outcome, calls)."""
+    import json
+    import shutil
+    import subprocess
+    import pytest
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    i = SRC.index("const verifyLineOf")
+    j = SRC.index("// ---------------------------------------------------------------- prepare")
+    k = SRC.index("const MAX_FIX_ROUNDS")
+    consts = SRC[k:SRC.index("\n", SRC.index("const MAX_SAME_FAILURE"))]
+    js = f"""
+const id = 'x-01', directive = 'x'
+const STEP = {{}}, VERIFY = {{}}
+{consts}
+const rulesBlock = () => ''
+const state = {{ verify: '', review: '' }}
+const results = {json.dumps(results)}
+const calls = []
+async function agent(prompt, opts) {{
+  calls.push(opts.agentType)
+  if (opts.agentType === 'friday:implementer') return {{ status: 'done' }}
+  return results.shift()
+}}
+{SRC[i:j]}
+verifyLoop({{ verify: 'make test', rules: [] }}, 'initial').then(r => console.log(JSON.stringify({{ r, calls }})))
+"""
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, check=True).stdout
+    data = json.loads(out)
+    return data["r"], data["calls"]
+
+
+def test_ran_false_blocks_without_fix_rounds():
+    r, calls = _run_verify_loop([
+        {"ran": False, "not_run_reason": "denied", "passed": False, "exit_code": -1, "signature": "", "tail": ""}])
+    assert r["ok"] is False and r["why"].startswith("Verify not run")
+    assert "denied" in r["why"]
+    assert "friday:implementer" not in calls
+
+
+def test_ran_false_timeout_says_raise_timeout():
+    r, _ = _run_verify_loop([
+        {"ran": False, "not_run_reason": "timed out", "passed": False, "exit_code": -1, "signature": "", "tail": ""}])
+    assert "Verify not run" in r["why"] and "raise the timeout" in r["why"]
+
+
+def test_failing_ran_true_still_gets_fix_rounds():
+    fail = {"ran": True, "passed": False, "exit_code": 1, "signature": "FAILED a", "tail": "t"}
+    ok = {"ran": True, "passed": True, "exit_code": 0, "signature": "", "tail": ""}
+    r, calls = _run_verify_loop([fail, ok])
+    assert r["ok"] is True
+    assert calls == ["friday:runner", "friday:implementer", "friday:runner"]
