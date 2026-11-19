@@ -302,6 +302,7 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
     else:
         return
     if _run(["git", "merge-base", "--is-ancestor", ref, "HEAD"], root).returncode == 0:
+        _reopen_done_goals(root, did)
         return
     # `ignore` is friday's own uncommitted edit (the goal's Status flip); git still refuses
     # the merge if Base touches that file too
@@ -312,11 +313,26 @@ def _merge_base(root: Path, base: str, branch: str, did: str, ignore: str = "") 
     r = _run(["git", "merge", "--no-edit", "-m", f"Merge {base} into {branch} before {did}",
               "-m", f"Directive: {did}", ref], root)
     if r.returncode != 0:
-        paths = _run(["git", "diff", "--name-only", "--diff-filter=U"], root).stdout.split()
-        _run(["git", "merge", "--abort"], root)
-        sys.exit(f"friday: merging {base} into {branch} conflicts in: {', '.join(paths) or r.stderr.strip()}; "
-                f"resolve on {base} or the branch, then start again")
+        # lifecycle state lives on the goal branch: a conflict confined to Status: lines of goal and
+        # directive files keeps the goal branch's value; anything else aborts the merge
+        paths = fc.resolve_status_conflicts(root)
+        if paths or _run(["git", "commit", "--no-edit", "--no-verify"], root).returncode != 0:
+            paths = paths or _run(["git", "diff", "--name-only", "--diff-filter=U"], root).stdout.split()
+            _run(["git", "merge", "--abort"], root)
+            sys.exit(f"friday: merging {base} into {branch} conflicts in: {', '.join(paths) or r.stderr.strip()}; "
+                    f"resolve on {base} or the branch, then start again")
     print(f"merged {base} {_run(['git', 'rev-parse', '--short', 'HEAD'], root).stdout.strip()}")
+    _reopen_done_goals(root, did)
+
+
+def _reopen_done_goals(root: Path, did: str) -> None:
+    """A done goal that now lists an undone directive becomes running (plan-only commit)."""
+    changed = fc.reopen_done_goals(root)
+    if changed:
+        _run(["git", "add", "--", *changed], root)
+        _run(["git", "commit", "--no-verify", "-qm", f"plan: reopen {', '.join(Path(c).stem for c in changed)} for {did}",
+              "-m", f"Directive: {did}"], root)
+        print(f"reopened {', '.join(changed)} (done goal lists an undone directive)")
 
 
 def _locate_directive(root: Path, did: str):

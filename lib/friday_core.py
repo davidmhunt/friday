@@ -276,6 +276,84 @@ class Issue(NamedTuple):
         return f"{self.level}: {self.path}:{self.line}: {self.message}"
 
 
+def _resolve_status_hunks(text: str) -> str | None:
+    """Conflict-marked file text with every hunk replaced by its goal-branch ("ours") side, or None
+    when any hunk has a line that is not a `Status:` line on either side."""
+    out: list[str] = []
+    part, ours, theirs = None, [], []
+    for ln in text.splitlines(keepends=True):
+        if part is None:
+            if ln.startswith("<<<<<<< "):
+                part, ours, theirs = "ours", [], []
+            else:
+                out.append(ln)
+        elif ln.startswith("|||||||"):
+            part = "base"
+        elif ln.startswith("=======") and part in ("ours", "base"):
+            part = "theirs"
+        elif ln.startswith(">>>>>>> ") and part == "theirs":
+            if any(not x.startswith("Status:") for x in ours + theirs):
+                return None
+            out.extend(ours)
+            part = None
+        elif part == "ours":
+            ours.append(ln)
+        elif part == "theirs":
+            theirs.append(ln)
+    return None if part is not None else "".join(out)
+
+
+def resolve_status_conflicts(root: Path | str) -> list[str]:
+    """After a conflicted `git merge` of Base into a goal branch: when every conflicted file is a
+    docs/goals/*.md or docs/directives/*.md whose conflicting hunks are only `Status:` lines, keep the
+    goal-branch side of those lines and stage the files. Returns [] on success, else the conflicted
+    paths (nothing is changed then)."""
+    root = Path(root)
+    paths = (_git(["diff", "--name-only", "--diff-filter=U"], root) or "").split()
+    fixed: dict[str, str] = {}
+    for p in paths:
+        pp = Path(p)
+        if pp.parent not in (GOAL_DIR, DIRECTIVE_DIR) or pp.suffix != ".md":
+            return paths
+        f = root / p
+        try:
+            res = _resolve_status_hunks(f.read_text())
+        except (OSError, UnicodeDecodeError):
+            return paths
+        if res is None:
+            return paths
+        fixed[p] = res
+    for p, res in fixed.items():
+        (root / p).write_text(res)
+        if _git(["add", "--", p], root) is None:
+            return paths
+    return []
+
+
+def reopen_done_goals(root: Path | str) -> list[str]:
+    """Set a `done` goal back to `running` when it lists a directive that is not done (a goal amended
+    after its PR opened). Edits the files in the working tree; returns the goal paths changed."""
+    root = Path(root)
+    changed = []
+    gd = root / GOAL_DIR
+    for gf in sorted(gd.glob("*.md")) if gd.is_dir() else []:
+        try:
+            text = gf.read_text()
+            g = parse_goal(text)
+        except (OSError, UnicodeDecodeError):
+            continue
+        if g["status"].strip().lower() != "done":
+            continue
+        undone = [x["id"] for x in g["directives"]
+                  if ((read_directive(root, x["id"]) or {}).get("status", "").lower()
+                      not in ("done", "awaiting review"))]
+        if undone:
+            gf.write_text(re.sub(r"(?m)^Status:.*$", "Status: running", text, count=1))
+            changed.append(str(GOAL_DIR / gf.name))
+    return changed
+
+
+
 def goal_path(root: Path, gid: str) -> Path:
     return root / GOAL_DIR / f"{gid}.md"
 
