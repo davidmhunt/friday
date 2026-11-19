@@ -239,8 +239,10 @@ how an unattended or dispatched run gets past the commands that would otherwise 
   `Base:` on the goal branch cannot widen the list. To change the list, amend the plan on Base and
   push it (section 6); `friday start` fetches `origin/<Base>`, the hook never does.
 - **Scope.** Only the active directive's list applies (the marker names it), only to a command
-  that is a single simple command (no `&`, `;`, `|`, backticks, `$(`, `<(`, `>(`, or newlines), and
-  only in the worktree where the directive is active.
+  command line whose every simple command matches a pattern. The line is split on newlines, `&&`,
+  `||`, `;` and `|`; each part must match. It is never pre-approved when it contains command or
+  process substitution (`$(`, backticks, `<(`, `>(`), a heredoc (`<<`) or backgrounding `&`. Nothing
+  is built in as harmless: list helpers such as `grep *` explicitly. Applies only in the worktree where the directive is active.
 - **`friday check` errors** on a pattern that is only `*`, contains `&&`, `;`, `|`, a backtick or
   `$(`, starts with `friday accept`, or matches the hook's deny list.
 - **What it overrides.** Only the permission prompt. It answers `allow` where Claude Code would
@@ -421,8 +423,8 @@ beats `allow`.
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
 | Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`), including `--all`, `--mirror` and an unjudgeable target |
 | Commit guard | while a directive is active, deny `git commit` on main, master or the goal's Base (create or switch to `friday/<goal>`); with no directive active, ask before a commit directly on main or master. The repository judged is the one the command commits in (`cd DIR && git commit`, `git -C DIR commit`) |
-| Pre-approval | allow a single simple command that matches the active directive's `## Allowed commands` as committed on `origin/<Base>` (section 5) |
-| Hardware | a command matching a `hardware` pattern of `.claude/friday.json`: deny when another session holds the resource's lease; otherwise take the lease and ask the user (allow when pre-approved or session-approved). The ask reason says the lease is held for this session and the approval covers this command only (when the resource is `session` in `hardware_approval`, that approving it once approves the rest of the session). Allow reasons: `<resource> approved for this session`, or the pre-approval reason. Pre-approval matches one simple command (no `cd DIR && ...`, pipes or chains; use `git -C DIR`, or `ssh host cmd > local.txt` and process locally) |
+| Pre-approval | allow a command line (a batch) when every simple command in it matches the active directive's `## Allowed commands` as committed on `origin/<Base>` (section 5) |
+| Hardware | a command matching a `hardware` pattern of `.claude/friday.json`: deny when another session holds the resource's lease; otherwise take the lease and ask the user (allow when pre-approved or session-approved). The ask reason says the lease is held for this session and the approval covers this command only (when the resource is `session` in `hardware_approval`, that approving it once approves the rest of the session). Allow reasons: `<resource> approved for this session`, or the pre-approval reason. Pre-approval matches a batch when every simple command matches (one hardware command per line, no substitution; leases for every resource any part touches, in order); session approval still covers a single simple command only |
 
 The deny list, each rule traced to an incident or a hard rule:
 

@@ -23,9 +23,10 @@ directive, the step, and the check that proves it.
 - Never edit the directive's Status or Log by hand. `friday start` commits nothing and
   `friday finish` writes the record (Log entry, Status) in one commit.
 - Hardware: a command that touches a device asks the user first (a hook does this). Never try to
-  route around that prompt. Write one simple command per hardware query (`git -C DIR`, not
-  `cd DIR &&`; `ssh host cmd > local.txt`, then process locally) so pre-approval and session
-  approval apply.
+  route around that prompt. Put each hardware-touching command on its own line, with no
+  `$(...)`, backticks, `<(` or heredoc, and no `&`, so a batch of lines qualifies for
+  pre-approval when every line matches `## Allowed commands`. Prefer `git -C DIR` to `cd DIR &&`.
+  Session approval still covers only a single simple command.
 - A decision only the user can make (scope, an approach the directive doesn't settle, a missing
   credential): stop and put it in your report with your recommendation. Never guess.
 

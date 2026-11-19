@@ -14,8 +14,9 @@ You run one command that takes a while, then report its outcome. You do not chan
   check. A run is finished only when its `.exit` file exists.
 - Remote targets: run the command as `ssh <host> '<cmd>'` exactly as the brief gives it. A
   command that touches hardware asks the user first; wait for that answer, never route around it. Keep it one simple
-  command (`git -C DIR`, not `cd DIR &&`; `ssh host cmd > local.txt`, then process locally) so
-  pre-approval and session approval apply.
+  command, one per line, with no `$(...)`, backticks, `<(`, heredoc or `&`, so a batch qualifies for
+  pre-approval when every line matches `## Allowed commands` (prefer `git -C DIR` to `cd DIR &&`).
+  Session approval still covers only a single simple command.
 - Report: the command, pass or fail (exit code), the numbers or lines the brief asked for, the log
   path, and on failure the first error with up to 20 lines of context.
 - If you write notes to `runs/<directive-id>/notes.md`, use plain lines or `- ` bullets, never `#`
