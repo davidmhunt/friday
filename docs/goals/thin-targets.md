@@ -1,5 +1,5 @@
 # thin-targets: Targets stay thin: pre-approved tag pushes, target scope checks, cheap worker setup
-Status: done
+Status: blocked: tt-09
 Base: main
 Land: pr
 
