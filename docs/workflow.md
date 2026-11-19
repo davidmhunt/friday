@@ -92,10 +92,11 @@ section, one command per bullet in backticks, `*` matching any text:
 - `./run tools/bench.sh *`
 ```
 
-- The list is read from the directive as committed on `origin/<Base>`, not from the goal branch. To
-  add or change it after approval, amend the plan on Base, run `friday check`, and push Base; the
-  session picks it up at its next `friday start` (before the next directive, or after a block and
-  `friday unblock`).
+- The list is read only from `origin/friday-plan/<goal>`, the ref the user's `friday approve`
+  publishes from the plan on the goal branch. To add or change it after approval, amend the plan as
+  a commit on `friday/<goal>` (never on Base), run `friday check`, and ask the user to run
+  `friday approve` again; the session picks it up at its next `friday start` (before the next
+  directive, or after a block and `friday unblock`).
 - It applies only to the active directive, only to a single simple command (no `&`, `;`, `|`,
   backticks, `$(`), and only answers the prompt.
 - Still denied or prompted: the deny list (so privilege escalation, force-push and push to main stay

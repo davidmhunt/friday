@@ -171,3 +171,15 @@ def test_no_prompt_mentions_review_base():
     for f in ("workflows/execute.js", "agents/verifier.md", "skills/directive/SKILL.md"):
         t = (root / f).read_text()
         assert "reviewBase" not in t and "review_base" not in t, f
+
+
+def test_plan_commit_on_goal_branch_with_trailer_is_not_own_work(repo):
+    cli(repo, "start", "core-01")
+    g = repo / "docs/goals/core.md"
+    g.write_text(g.read_text() + "\n")
+    _g(repo, "add", "docs/goals/core.md")
+    _g(repo, "commit", "--no-verify", "-qm", "plan: core\n\nDirective: core-01\nDirective: core-02")
+    _commit(repo, "a.txt", "work\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert _subjects(r) == ["work"] and not _untracked(r)

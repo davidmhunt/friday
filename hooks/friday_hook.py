@@ -385,7 +385,8 @@ def check_push(cmd: str, cwd: Path) -> str | None:
             if pre and pre[0] == "allow":
                 continue
             return (f"While {did} is active, a tag push ({', '.join(dests)}) needs a matching "
-                    f"`## Allowed commands` entry on Base (origin/<Base>:docs/directives/{did}.md).")
+                    f"`## Allowed commands` entry in the approved plan "
+                    f"(origin/friday-plan/<goal>:docs/directives/{did}.md, published by the user's `friday approve`).")
         if dests is None or not dests or any(d not in ok for d in dests):
             return (f"While {did} is active, `git push` may only update {' or '.join(sorted(ok)) or 'the goal branch'}"
                     f" (got {', '.join(dests) if dests else 'an unjudgeable target'}). Push the goal branch explicitly: "

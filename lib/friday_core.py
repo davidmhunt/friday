@@ -72,7 +72,7 @@ def directive_commits(root: Path | str, did: str) -> dict:
     [(sha, subject, files)]}. Base is the merge-base of the goal's Base (local branch, else
     origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
     `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
-    record commits. `untracked` are non-merge commits with no `Directive:` line that touch
+    record commits and plan-only commits (files only under docs/goals/, docs/directives/, .claude/settings.json). `untracked` are non-merge commits with no `Directive:` line that touch
     anything outside docs/goals/ and docs/directives/. Raises ValueError when it cannot say."""
     root = Path(root)
     try:
@@ -126,15 +126,22 @@ def directive_commits(root: Path | str, did: str) -> dict:
         subject = msg.strip().splitlines()[0] if msg.strip() else ""
         if subject in records:
             continue
-        if trailer.search(msg):
+        has = trailer.search(msg)
+        if not has and anytrailer.search(msg):
+            continue
+        files = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha], root)
+        if files is None:
+            raise ValueError(f"git diff-tree {sha} failed")
+        fl = files.splitlines()
+        # Plan commits live on the goal branch: they touch only goal/directive files (and the
+        # settings `friday init` merges) and are never a directive's own work, trailer or not.
+        if fl and all(f.startswith(("docs/goals/", "docs/directives/")) or f == ".claude/settings.json"
+                      for f in fl):
+            continue
+        if has:
             commits.append((sha, subject))
-        elif not anytrailer.search(msg):
-            files = _git(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha], root)
-            if files is None:
-                raise ValueError(f"git diff-tree {sha} failed")
-            fl = files.splitlines()
-            if not all(f.startswith(("docs/goals/", "docs/directives/")) for f in fl):
-                untracked.append((sha, subject, fl))
+        else:
+            untracked.append((sha, subject, fl))
     return {"base": base, "commits": commits, "untracked": untracked}
 
 
