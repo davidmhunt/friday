@@ -1880,7 +1880,7 @@ def cmd_parse(a) -> int:
                          "land": d["land"] if d else None,
                          "title": d["title"] if d else x["text"]})
         out = {"goal": g["goal"], "title": g["title"], "status": g["status"], "base": g["base"],
-               "land": g["land"], "directives": rows,
+               "land": g["land"], "directives": rows, "rules": fc.merged_rules(root, g["rules"]),
                "errors": _msgs(issues, "error"), "warnings": _msgs(issues, "warning")}
     else:
         path = fc.directive_path(root, a.id)
@@ -1899,7 +1899,8 @@ def cmd_parse(a) -> int:
         ids = [x["id"] for x in gd]
         out = {"id": d["id"], "title": d["title"], "status": d["status"], "goal": d["goal"],
                "base": g["base"] if g else None, "node": d["node"], "deliverable": d["deliverable"],
-               "land": d["land"], "accept": d["accept"], "review": d["review"] or [], "verify": d["verify"], "hardware": d["hardware"],
+               "land": d["land"], "accept": d["accept"], "review": d["review"] or [],
+               "rules": fc.merged_rules(root, g["rules"] if g else [], d["rules"]), "verify": d["verify"], "hardware": d["hardware"],
                "steps": [{"n": s["n"], "text": s["text"], "heavy": s["heavy"]} for s in d["steps"]],
                "acceptance": d["acceptance"] or [], "goal_directives": gd,
                "position": ids.index(a.id) + 1 if a.id in ids else None,

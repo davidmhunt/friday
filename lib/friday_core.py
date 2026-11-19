@@ -162,6 +162,10 @@ def load_config(root: Path | None) -> dict:
         hw = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
         cfg["hardware_approval"] = ({r: m for r, m in ha.items() if r in hw and m in APPROVAL_MODES}
                                     if isinstance(ha, dict) else {})
+    if "rules" in cfg:
+        # a non-list (or non-string entries) is dropped; `friday check` reports it
+        r = cfg["rules"]
+        cfg["rules"] = [x.strip() for x in r if isinstance(x, str) and x.strip()] if isinstance(r, list) else []
     return cfg
 
 
@@ -178,13 +182,19 @@ def config_issues(root: Path | None) -> list[Issue]:
         cfg = json.loads((root / rel).read_text())
     except (OSError, ValueError):
         return []
-    if not isinstance(cfg, dict) or "hardware_approval" not in cfg:
+    if not isinstance(cfg, dict):
         return []
+    out = []
+    if "rules" in cfg:
+        r = cfg["rules"]
+        if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
+            out.append(Issue("error", rel, 1, "rules must be a list of non-empty strings"))
+    if "hardware_approval" not in cfg:
+        return out
     ha = cfg["hardware_approval"]
     if not isinstance(ha, dict):
-        return [Issue("error", rel, 1, "hardware_approval must be an object: resource -> command|session")]
+        return out + [Issue("error", rel, 1, "hardware_approval must be an object: resource -> command|session")]
     known = cfg.get("hardware") if isinstance(cfg.get("hardware"), dict) else {}
-    out = []
     for res, mode in ha.items():
         if res not in known:
             out.append(Issue("error", rel, 1, f"hardware_approval names unknown resource `{res}` (not in hardware)"))
@@ -449,7 +459,7 @@ def _allowed_items(sec: dict | None) -> list[tuple[int, str, str | None]]:
 def parse_directive_full(text: str) -> dict:
     """The parsed shape of a directive file. Keys: id, title, status, goal, node, deliverable,
     land (default `goal`), accept (default `auto`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
-    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), allowed [str] (patterns in `## Allowed commands`, [] when absent), headers [(key, value, line)], sections [(name, line)]."""
+    (None when there is no `## Acceptance`), review [str] (None when there is no `## Review`), rules [str] (`## Rules` bullets, [] when absent), allowed [str] (patterns in `## Allowed commands`, [] when absent), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     steps_sec = _section(md, "Steps")
@@ -468,6 +478,7 @@ def parse_directive_full(text: str) -> dict:
                   for s in steps],
         "acceptance": _bullets(acc["body"]) if acc else None,
         "review": _bullets(rev["body"]) if rev else None,
+        "rules": _bullets(rules["body"]) if (rules := _section(md, "Rules")) else [],
         "allowed": [p for _, _, p in _allowed_items(_section(md, "Allowed commands")) if p],
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
@@ -476,7 +487,7 @@ def parse_directive_full(text: str) -> dict:
 
 def parse_goal(text: str) -> dict:
     """The parsed shape of a goal file. Keys: goal, title, status, base, land, directives
-    [{n, id, text, line}] (in list order), headers [(key, value, line)], sections [(name, line)]."""
+    [{n, id, text, line}] (in list order), rules [str] (`## Rules` bullets), headers [(key, value, line)], sections [(name, line)]."""
     md = _parse_md(text)
     hm = _header_map(md)
     sec = _section(md, "Directives")
@@ -490,6 +501,7 @@ def parse_goal(text: str) -> dict:
         "goal": md["name"], "title": md["title"],
         **{k.lower(): hm.get(k, "") for k in GOAL_KEYS},
         "directives": dirs,
+        "rules": _bullets(rules["body"]) if (rules := _section(md, "Rules")) else [],
         "headers": md["headers"],
         "sections": [(s["name"], s["line"]) for s in md["sections"]],
     }
@@ -737,6 +749,10 @@ def validate_directive(did: str, text: str) -> list[Issue]:
         elif not d["acceptance"]:
             issues.append(Issue("error", path, acc["line"], "`## Acceptance` needs at least one `- ` bullet"))
 
+    rules_sec = _section(md, "Rules")
+    if rules_sec is not None and not _bullets(rules_sec["body"]):
+        issues.append(Issue("error", path, rules_sec["line"], "`## Rules` needs at least one `- ` bullet"))
+
     rev = _section(md, "Review")
     if d["accept"] == "user":
         if rev is None:
@@ -791,6 +807,9 @@ def validate_goal(gid: str, text: str) -> list[Issue]:
         issues.append(Issue("error", path, hl["Land"], f"Land `{g['land']}` is not one of {' | '.join(GOAL_LANDS)}"))
 
     issues += _check_sections(md, GOAL_SECTIONS, path, acceptance=False)
+    rules_sec = _section(md, "Rules")
+    if rules_sec is not None and not _bullets(rules_sec["body"]):
+        issues.append(Issue("error", path, rules_sec["line"], "`## Rules` needs at least one `- ` bullet"))
     sec = _section(md, "Directives")
     if sec:
         items, stray = _numbered(sec["body"])
@@ -1208,3 +1227,13 @@ def uninstall_commit_hook(root: Path | str) -> bool:
     if local.exists():
         local.rename(hook)
     return True
+
+
+def merged_rules(root: Path | None, *own: list[str]) -> list[str]:
+    """Repo rules (.claude/friday.json `rules`), then each of `own` (goal's, directive's), in order, deduplicated."""
+    out: list[str] = []
+    for r in [(load_config(root).get("rules") or []), *own]:
+        for x in r:
+            if x not in out:
+                out.append(x)
+    return out
