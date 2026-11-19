@@ -37,6 +37,10 @@
 
 ### Fixed
 
+- The execute workflow runs Verify as one plain foreground Bash call (600000 ms timeout, never
+  detached) and no longer hints that it takes minutes. A Verify that was denied, timed out or never
+  ran blocks at once as `Verify not run: <reason>` instead of burning fix rounds (#28).
+
 - An explicit tag push (`refs/tags/<name>` or `tag <name>`) listed under `## Allowed commands` now runs while
   a directive is active (#24). `friday check` errors on a listed `git push` the guard always denies (a branch
   other than the goal branch, or a bare `*`).

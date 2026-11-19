@@ -398,9 +398,12 @@ allow rules match it.
 2. **Implement.** One `implementer` agent per step, in order; `[heavy]` steps run on Opus. A step
    commits only if it changed tracked files, last line `Directive: <id>`. A step that needs a
    decision or fails stops the run as blocked.
-3. **Verify.** The `runner` agent runs `Verify`. On failure an implementer fixes the root cause and
-   it runs again, up to 4 rounds or until the same failure repeats twice. Skipped for
-   `Deliverable: external`.
+3. **Verify.** The `runner` agent runs `Verify` as one plain foreground Bash call with a 600000 ms
+   timeout (never detached: no `setsid`, `nohup`, `&` or `run_in_background`). On failure an
+   implementer fixes the root cause and it runs again, up to 4 rounds or until the same failure
+   repeats twice. If Verify never ran (the call was denied, timed out before finishing, or was not
+   made) the runner reports `ran: false` and the run blocks at once with `Verify not run: <reason>`,
+   with no fix rounds; raise the timeout or narrow Verify. Skipped for `Deliverable: external`.
 4. **Review.** The `verifier` (Opus, read-only, fresh context) runs `friday commits <id>`, reviews
    each commit and the touched files against the steps, `## Acceptance` and `## Out of scope`, and
    reports every untracked commit as a gap. Real gaps get one fix round, then Verify and a second

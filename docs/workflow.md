@@ -28,8 +28,10 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
    - **Prepare**: `friday start <id> --no-gate` switches to the goal branch `friday/<goal>` (created
      from Base on the first directive), merges Base in, and commits nothing.
    - **Implement**: one `implementer` per step, in order; `[heavy]` steps run on Opus.
-   - **Verify**: the `runner` runs the Verify command; on failure an implementer fixes the root
-     cause and it runs again, up to 4 rounds or until the same failure repeats twice.
+   - **Verify**: the `runner` runs the Verify command as one plain foreground call; on failure an
+     implementer fixes the root cause and it runs again, up to 4 rounds or until the same failure
+     repeats twice. A Verify that never ran blocks at once as `Verify not run: <reason>`, with no
+     fix rounds.
    - **Review**: the `verifier` (Opus, read-only, fresh context) checks the directive's commits
      (`friday commits <id>`) against the directive; real gaps get one fix round, then Verify and
      review again.
