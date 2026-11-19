@@ -7,12 +7,12 @@ from pathlib import Path
 FRIDAY = Path(__file__).resolve().parent.parent / "bin" / "friday"
 
 
-def fake_uv(tmp_path):
+def fake_uv(tmp_path, real=False):
     """A `uv` that 'installs' and 'finds' a fake interpreter; returns the directory to put on PATH."""
     d = tmp_path / "fakeuv"
     d.mkdir(exist_ok=True)
     py = tmp_path / "py312"
-    py.write_text("#!/bin/sh\n")
+    py.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n' if real else "#!/bin/sh\n")
     py.chmod(0o755)
     uv = d / "uv"
     uv.write_text(f'#!/bin/sh\n[ "$2" = find ] && echo {py}\nexit 0\n')
@@ -121,7 +121,7 @@ def _setup(tmp_path, *extra, stdin=subprocess.DEVNULL):
     ctl.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "FRIDAY_NODES": str(tmp_path / "n.toml"),
            "FRIDAY_SSH": str(ssh), "FRIDAY_SYSTEMCTL": str(ctl),
-           "PATH": f"{fake_uv(tmp_path)}:{os.environ['PATH']}"}
+           "PATH": f"{fake_uv(tmp_path, real=True)}:{os.environ['PATH']}"}
     return subprocess.run([sys.executable, str(FRIDAY), "nodes", "--setup", "laptop", *extra],
                           capture_output=True, text=True, env=env, stdin=stdin), home
 

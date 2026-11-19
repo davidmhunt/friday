@@ -37,6 +37,10 @@ def _wt(clone, goal):
 
 def _inventory(tmp_path, repos, panes=None):
     home = tmp_path / "home"
+    fp = home / "f" / "bin" / "friday-python"  # the node's <plugin_dir>/bin/friday-python
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    fp.write_text('#!/bin/sh\nexec python3 "$@"\n')
+    fp.chmod(0o755)
     bin_ = home / ".local" / "bin"
     bin_.mkdir(parents=True, exist_ok=True)
     panes = panes or {}
@@ -167,6 +171,10 @@ def _clean(tmp_path, repos, items, dry_run=False, sessions=()):
     bin_ = home / ".local" / "bin"
     bin_.mkdir(parents=True, exist_ok=True)
     log = tmp_path / "tmux.log"
+    fp = home / "f" / "bin" / "friday-python"
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    fp.write_text('#!/bin/sh\nexec python3 "$@"\n')
+    fp.chmod(0o755)
     (bin_ / "tmux").write_text(
         "#!/bin/bash\nsub=$1; shift; t=; while [ $# -gt 0 ]; do [ \"$1\" = -t ] && t=$2; shift; done\n"
         f"t=${{t#=}}; t=${{t%:}}; echo \"$sub $t\" >> {log}\n"

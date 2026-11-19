@@ -162,6 +162,9 @@ def cmd_status(a) -> int:
         print("\nmerged branches left on origin (friday deletes nothing):")
         for b in merged:
             print(f"  git push origin --delete {b}")
+    if not _python_recorded():
+        print("\nwarning: no friday Python is recorded (~/.local/state/friday/python), so the hooks fall back to the "
+              "system python3; run `friday install`", file=sys.stderr)
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
@@ -1070,6 +1073,33 @@ _PREREQ_SH = "\n".join([
 ])
 
 
+_PYVER_SH = "\n".join([
+    'rp=$(head -n 1 "$HOME/.local/state/friday/python" 2>/dev/null)',
+    'if [ -z "$rp" ] || [ ! -x "$rp" ]; then echo "FRIDAY_PROBE python=none"',
+    'else echo "FRIDAY_PROBE python=$rp"',
+    "  pv=$(\"$rp\" -c 'import sys; print(sys.version_info[:2])' 2>/dev/null)",
+    '  echo "FRIDAY_PROBE pyver=${pv:-broken}"; fi',
+])
+
+
+def python_fixes(node, got) -> list:
+    """Fix lines for the recorded friday interpreter (none when the probe did not report it)."""
+    py = got.get("python")
+    if py is None:
+        return []
+    if py == "none":
+        return [f"fix: no friday Python is recorded on {node.name}; run `uv python install 3.12` then `friday install` there "
+                f"(or `friday nodes --setup {node.name}`); hooks fall back to the system python3"]
+    import re
+    m = re.match(r"\((\d+), (\d+)\)", got.get("pyver", ""))
+    if not m:
+        return [f"fix: the recorded Python {py} does not run on {node.name}; run `uv python install 3.12` then `friday install` there"]
+    if (int(m.group(1)), int(m.group(2))) < (3, 11):
+        return [f"fix: the recorded Python {py} on {node.name} is {m.group(1)}.{m.group(2)}, friday needs 3.11+; "
+                f"run `uv python install 3.12` then `friday install` there"]
+    return []
+
+
 def prereq_fixes(node, got) -> list:
     """Fix lines for the worker prerequisites uv, gh login and claude sign-in (empty list when all are ok)."""
     fixes = []
@@ -1093,6 +1123,7 @@ def probe_script(node, prereqs=False) -> str:
     if node.role == "target":
         return "echo FRIDAY_PROBE reach=ok\n" + (_PREREQ_SH + "\n" if prereqs else "")
     repos, plug = _remote_path(node.repos), _remote_path(node.plugin_dir)
+    py = f"{plug}/bin/friday-python"
     return "\n".join([
         "echo FRIDAY_PROBE reach=ok",
         'v=$(claude --version 2>/dev/null | head -n1); echo "FRIDAY_PROBE claude=${v:-missing}"',
@@ -1108,11 +1139,12 @@ def probe_script(node, prereqs=False) -> str:
         f'  if [ "$(readlink -f "$t")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
         '  else echo "FRIDAY_PROBE friday=$t"; fi',
         'else echo "FRIDAY_PROBE friday=$(readlink -f "$f")"; fi',
-        "if command -v python3 >/dev/null 2>&1; then",
-        f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
+        f"if [ -x {py} ]; then",
+        f'  t=$(FRIDAY_P={repos} {py} -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
-        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
-        f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_READS_PY)} 2>/dev/null; fi",
+        f"if [ -x {py} ]; then {py} -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
+        f"if [ -x {py} ]; then {py} -c {shlex.quote(_READS_PY)} 2>/dev/null; fi",
+        _PYVER_SH,
         _PREREQ_SH,
         ff.plugin_install_lines(node),
     ]) + "\n"
@@ -1149,10 +1181,12 @@ def check_node(node, prereqs=False) -> tuple:
         fixes.append(f"friday on PATH: points at {fr}; fix: `friday nodes --setup {node.name}`")
     trust = got.get("trust")
     if trust == "unknown":
-        fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
+        fixes.append(f"fix: trust in ~/.claude.json cannot be read on {node.name} (no friday Python); "
+                     f"run `uv python install 3.12` then `friday install` there")
     elif trust != "ok":
         fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
     fixes += prereq_fixes(node, got)
+    fixes += python_fixes(node, got)
     for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
@@ -1171,7 +1205,7 @@ def check_node(node, prereqs=False) -> tuple:
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}, "
                f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}, "
-               f"uv {got.get('uv', '?')}, gh {got.get('gh', '?')}, claude auth {got.get('claude_auth', '?')}")
+               f"python {got.get('pyver', got.get('python', '?'))}, uv {got.get('uv', '?')}, gh {got.get('gh', '?')}, claude auth {got.get('claude_auth', '?')}")
     return summary, fixes
 
 
@@ -1245,8 +1279,9 @@ def timer_units(n) -> dict:
 
 
 def timer_script(n) -> str:
-    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_TIMER nopython'; exit 1; }}\n"
-            f"FRIDAY_UNITS={shlex.quote(json.dumps(timer_units(n)))} python3 -c {shlex.quote(_TIMER_PY)}\n")
+    py = _node_py(n)
+    return (f"[ -x {py} ] || {{ echo 'FRIDAY_TIMER nopython'; exit 1; }}\n"
+            f"FRIDAY_UNITS={shlex.quote(json.dumps(timer_units(n)))} {py} -c {shlex.quote(_TIMER_PY)}\n")
 
 
 _NODEFILE_PY = """
@@ -1281,8 +1316,9 @@ def node_file_text(n, reg) -> str:
 
 
 def node_file_script(n, reg) -> str:
-    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_NODEFILE nopython'; exit 1; }}\n"
-            f"FRIDAY_NODETOML={shlex.quote(node_file_text(n, reg))} python3 -c {shlex.quote(_NODEFILE_PY)}\n")
+    py = _node_py(n)
+    return (f"[ -x {py} ] || {{ echo 'FRIDAY_NODEFILE nopython'; exit 1; }}\n"
+            f"FRIDAY_NODETOML={shlex.quote(node_file_text(n, reg))} {py} -c {shlex.quote(_NODEFILE_PY)}\n")
 
 
 def setup_node_file(n, reg) -> int:
@@ -1296,15 +1332,21 @@ def setup_node_file(n, reg) -> int:
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: ~/.config/friday/node.toml written")
         return 0
-    why = {"nopython": "python3 is missing on the node",
+    why = {"nopython": "the plugin checkout (bin/friday-python) is missing on the node",
            "error": "could not write ~/.config/friday"}.get(res, f"ssh failed (exit {r.returncode})")
     print(f"friday: {n.name}: node.toml not written: {why}")
     return 1
 
 
-def setup_script() -> str:
-    return (f"command -v python3 >/dev/null 2>&1 || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
-            f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} python3 -c {shlex.quote(_SETUP_PY)}\n")
+def _node_py(n) -> str:
+    """The node's `<plugin_dir>/bin/friday-python`, as a remote-shell word."""
+    return ff.remote_path(n.plugin_dir.rstrip("/") + "/bin/friday-python")
+
+
+def setup_script(n) -> str:
+    py = _node_py(n)
+    return (f"[ -x {py} ] || {{ echo 'FRIDAY_SETUP nopython'; exit 1; }}\n"
+            f"FRIDAY_KEYS={shlex.quote(json.dumps(SETUP_KEYS))} {py} -c {shlex.quote(_SETUP_PY)}\n")
 
 
 def setup_timer(n) -> int:
@@ -1318,7 +1360,7 @@ def setup_timer(n) -> int:
     if r.returncode == 0 and res == "ok":
         print(f"{n.name}: friday-push.timer enabled (pushes every 30 s)")
         return 0
-    why = {"nopython": "python3 is missing on the node", "nosystemd": "systemctl is not available on the node",
+    why = {"nopython": "the plugin checkout (bin/friday-python) is missing on the node", "nosystemd": "systemctl is not available on the node",
            "error": "could not write ~/.config/systemd/user"}.get(
         res, res.removeprefix("systemd ") if res.startswith("systemd") else f"ssh failed (exit {r.returncode})")
     print(f"friday: {n.name}: friday-push.timer not installed: {why}")
@@ -1327,7 +1369,9 @@ def setup_timer(n) -> int:
 
 def setup_install(n) -> int:
     """Run `<plugin_dir>/bin/friday install` on the node so `friday` is on its PATH."""
-    script = f"python3 {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n"
+    # install runs `uv python install 3.12` itself; ~/.local/bin (where uv lives) is not on a non-interactive PATH
+    script = (f'PATH="$HOME/.local/bin:$PATH"\n'
+              f"{_node_py(n)} {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n")
     argv, stdin = ff.ssh_cmd(n, script)
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
@@ -1400,8 +1444,8 @@ def cmd_nodes_setup(a, reg) -> int:
     print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
           "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
           "every 30 s.")
-    print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which links "
-          "~/.local/bin/friday to that checkout.")
+    print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which runs "
+          "`uv python install 3.12` if needed and writes ~/.local/bin/friday as a shim onto that checkout.")
     print(f"and it writes ~/.config/friday/node.toml on {n.name} (name, repos, dash URL), which "
           "`friday status --push` reads when the node has no nodes.toml.")
     if not a.yes:
@@ -1412,7 +1456,7 @@ def cmd_nodes_setup(a, reg) -> int:
         if input("proceed? [y/N] ").strip().lower() not in ("y", "yes"):
             print("aborted; nothing changed")
             return 1
-    argv, stdin = ff.ssh_cmd(n, setup_script())
+    argv, stdin = ff.ssh_cmd(n, setup_script(n))
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -1425,7 +1469,7 @@ def cmd_nodes_setup(a, reg) -> int:
         rc = setup_install(n) or rc
         return setup_timer(n) or rc
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
-           "nopython": "python3 is missing on the node",
+           "nopython": "the plugin checkout (bin/friday-python) is missing on the node",
            "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")
     print(f"friday: {n.name}: {why}; nothing changed")
     return 1
@@ -1952,6 +1996,15 @@ def cmd_session_end(a) -> int:
 
 def _bin_dir(a) -> Path:
     return Path(os.path.expanduser(a.bin_dir or "~/.local/bin"))
+
+
+def _python_recorded() -> bool:
+    """True when `friday install` recorded an interpreter that still exists."""
+    try:
+        py = _state_python().read_text().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return False
+    return bool(py) and os.access(py, os.X_OK)
 
 
 def _state_python() -> Path:
