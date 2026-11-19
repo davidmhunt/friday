@@ -1204,13 +1204,54 @@ def setup_install(n) -> int:
     return 0
 
 
+def prerequisite_lines(node, got) -> list:
+    """One line per worker prerequisite the probe covers: `name: ok`, or `name: missing` plus its fix."""
+    ca = got.get("claude_auth", "unknown")
+    items = [("uv", got.get("uv") == "ok", "missing"), ("gh auth", got.get("gh") == "ok", "missing"),
+             ("claude signed in", ca == "ok", "unknown" if ca == "unknown" else "missing")]
+    fixes = iter(prereq_fixes(node, got))  # one fix per failing item, in the same order
+    lines = []
+    for label, ok, state in items:
+        if ok:
+            lines.append(f"  {label}: ok")
+        else:
+            fx = next(fixes, "fix: see docs/fleet.md")
+            lines.append(f"  {label}: {state}; {fx}")
+    return lines
+
+
+def print_prerequisites(n) -> None:
+    """Probe the node and print `prerequisites:` with one line each. Person-only items are reported, never done."""
+    script = "echo FRIDAY_PROBE reach=ok\n" + _PREREQ_SH + "\n"
+    argv, stdin = ff.ssh_cmd(n, script)
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
+        out = r.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        out = ""
+    got = dict(l[len("FRIDAY_PROBE "):].split("=", 1) for l in out.splitlines()
+               if l.startswith("FRIDAY_PROBE ") and "=" in l)
+    print(f"prerequisites on {n.name} ({n.ssh}):")
+    if got.get("reach") != "ok":
+        print(f"  unreachable: check that `ssh {n.ssh}` works non-interactively")
+        return
+    for line in prerequisite_lines(n, got):
+        print(line)
+
+
 def cmd_nodes_setup(a, reg) -> int:
     n = reg.nodes.get(a.setup)
     if n is None:
         print(f"friday: no node named {a.setup!r}; pick one from `friday nodes`")
         return 1
+    print_prerequisites(n)
     if n.role == "target":
-        print(f"friday: {n.name} is a target node; --setup applies to master and worker nodes")
+        print(f"{n.name} is a target node; --setup changes nothing on a target. To make it a worker, "
+              f"edit its entry in the nodes.toml registry:")
+        print('  role = "worker"')
+        print('  repos = "<directory on the node that holds the repos>"')
+        print('  plugin_dir = "~/friday"   # where the friday plugin is cloned on the node')
+        print(f"then re-run `friday nodes --setup {n.name}`.")
         return 1
     print(f"friday will set these keys in ~/.claude/settings.json on {n.name} ({n.ssh}):")
     for k, v in SETUP_KEYS.items():

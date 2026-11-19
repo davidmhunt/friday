@@ -66,7 +66,9 @@ def test_setup_refuses_without_tty(tmp_path):
     r, cfg = _run(tmp_path, "--setup", "laptop", settings=old)
     assert r.returncode == 1 and "--yes" in r.stdout
     assert "skipWorkflowUsageWarning" in r.stdout  # shows what it would set
-    assert cfg.read_text() == old and not (tmp_path / "fakessh.argv").exists()
+    assert "prerequisites" in r.stdout  # the probe runs first; the settings script does not
+    assert cfg.read_text() == old and "FRIDAY_SETUP" not in (tmp_path / "fakessh.argv").read_text()
+    assert not (cfg.parent / "settings.json.friday-bak").exists()
 
 
 def test_setup_unparsable_file_untouched(tmp_path):
@@ -76,9 +78,11 @@ def test_setup_unparsable_file_untouched(tmp_path):
 
 
 def test_setup_unknown_and_target_node(tmp_path):
-    for name in ("nope", "bot"):
-        r, _ = _run(tmp_path, "--setup", name, "--yes")
-        assert r.returncode == 1 and not (tmp_path / "fakessh.argv").exists()
+    r, _ = _run(tmp_path, "--setup", "nope", "--yes")
+    assert r.returncode == 1 and not (tmp_path / "fakessh.argv").exists()
+    r, cfg = _run(tmp_path, "--setup", "bot", "--yes")  # a target: prerequisites and the registry edit, nothing changed
+    assert r.returncode == 1 and "prerequisites" in r.stdout and 'role = "worker"' in r.stdout
+    assert not cfg.exists() and not (tmp_path / "home" / ".config" / "friday").exists()
 
 
 def _check(tmp_path, settings):
