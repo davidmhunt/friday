@@ -4,6 +4,10 @@
 
 ### Added
 
+- `friday start <id>` finds a directive that exists only on Base or the goal branch, merges Base first, and
+  resolves a Base-merge conflict confined to `Status:` lines in favour of the goal branch; a `done` goal
+  with a new undone directive is set back to `running` (#25).
+
 - Plans live on the goal branch `friday/<goal>`, never on Base, so main stays protected. `friday approve
   --goal <g>` (user-only; the hook denies it for agents) runs `friday check` and pushes the plan to
   `friday-plan/<g>` on origin; pre-approval of `## Allowed commands` reads only that ref, and the hook

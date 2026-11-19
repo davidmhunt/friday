@@ -110,8 +110,10 @@ Details: [spec.md](spec.md) section 5. For dispatch see [fleet.md](fleet.md).
 
 Amendments to an approved goal are commits on its goal branch `friday/<goal>`, checked with
 `friday check` and pushed; run `friday approve --goal <g>` again when `## Allowed commands` changed.
-`friday start` still merges Base into the goal branch before each directive; a conflict aborts the
-merge and start exits non-zero. An amendment to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
+`friday start` still merges Base into the goal branch before each directive, and finds a directive that
+exists only on Base (`found <id> on <ref>: merging ...`). A conflict confined to `Status:` lines is
+resolved in favour of the goal branch; any other conflict aborts the merge and start exits non-zero. A
+`done` goal that gains an undone directive is set back to `running`. An amendment to the running directive takes effect when it restarts. While a directive is active, a `commit-msg`
 git hook (installed by `friday init` and `friday start`, removed by `friday uninstall`) refuses commits
 without `Directive: <id>`; `git commit --no-verify` overrides it deliberately.
 

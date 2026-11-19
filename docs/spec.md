@@ -288,8 +288,12 @@ Verify, `## Allowed commands`, a new directive), commit the change on the goal b
 `friday check`, push the branch, and when `## Allowed commands` changed run `friday approve --goal
 <g>` again (the published `friday-plan/<g>` does not follow the branch). `friday start` still merges
 Base into the goal branch before each directive (`origin/<Base>` after a fetch with a 30 s limit; a
-failed fetch warns and uses the local Base) for upstream changes; a merge conflict aborts the merge
-and `start` exits non-zero. The running session sees an amendment only at its next `friday start`:
+failed fetch warns and uses the local Base) for upstream changes. A directive that exists only on
+Base (or only on the goal branch) is found there: `start` prints `found <id> on <ref>: merging <Base>
+into friday/<goal>`, switches to the goal branch and merges Base first. A conflict confined to the
+`Status:` lines of goal and directive files is resolved in favour of the goal branch (lifecycle state
+lives there); any other conflict aborts the merge and `start` exits non-zero with the conflicted paths.
+A goal that is `done` but now lists a directive that is not done is set back to `running`. The running session sees an amendment only at its next `friday start`:
 before the next directive, or when the current directive is restarted (for example after a block and
 `friday unblock`). An amendment to the running directive does not reach the session that is
 executing it. While a directive is active, the `commit-msg` git hook refuses a commit without
@@ -316,7 +320,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo, the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
 | `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing. Reports whether the GitHub repo deletes head branches on merge and prints the `gh api -X PATCH` command to turn it on (changes nothing; skipped when `gh` is missing or signed out) | 0; 1 unreadable settings file |
 | `friday new <loop>` | print the next free directive id for a loop (`core` -> `core-04`) | 0 |
-| `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base, set the goal `running`, install the guard, write the marker, print `base <sha>`. Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
+| `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base (finding a directive that exists only on the goal branch or Base first; a Status-only conflict keeps the goal branch's lines), set the goal `running` (a `done` goal with an undone directive reopens), install the guard, write the marker, print `base <sha>`. Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
 | `friday verify [<id>]` | run the directive's `Verify` (default: the active one); `none` is skipped | Verify's own exit code; 0 for `none`; 1 no directive |
 | `friday finish <id> [--verify TEXT] [--review TEXT] [--base SHA] [--blocked REASON]` | append the Log entry (commits, notes, Verify, review) and set Status: `done`, `awaiting review` (`Accept: user`) or `blocked: REASON` (goal also blocked); one commit; clear the marker. `--base SHA` lists commits since SHA instead of using `friday commits` | 0; 1 other tracked files uncommitted, commit failed |
 | `friday accept <id> [--note TEXT] [--reject REASON]` | the user accepts an `awaiting review` directive (`done`) or rejects it (`blocked: REASON`, goal blocked); one commit; must run on the directive's branch. Refuses, changing nothing, while any tracked file is modified or staged: lists them and prints the `git commit -am` to run first; untracked files do not count. Denied to agents | 0; 1 not awaiting review, wrong branch; 8 tracked files uncommitted |
