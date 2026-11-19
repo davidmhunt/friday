@@ -21,6 +21,8 @@ working in a branch so that this can work more smoothly and also to protect the 
 tt-05 (#25) and tt-06/tt-07 (#27) added on 2026-11-19 at the user's request ("I also just filed
 another issue with the harness that I'd like to get addressed, can you handle that as well"); #25
 was hit by this goal itself (tt-04 had to be merged in by hand).
+tt-08 (#28) and tt-09 (#29) added on 2026-11-19 after the user filed them; for #29 the user chose
+"Full uv, hooks too" over a tomli fallback or a CLI-only shim.
 
 ## Directives
 1. tt-01: A pre-approved tag push runs while a directive is active; `friday check` errors on a listed push the guard always denies (fixes #24)
@@ -30,6 +32,8 @@ was hit by this goal itself (tt-04 had to be merged in by hand).
 5. tt-05: `friday start` merges Base first when the directive is only there, and keeps the goal branch's Status lines (fixes #25)
 6. tt-06: Rules for the whole directive reach every agent: a `## Rules` section on directives and goals (fixes #27)
 7. tt-07: Opt-in `bash_file_io: "deny"` hook rule sends file reads and writes to the file tools; `run_only` ignores quoted text (fixes #27)
+8. tt-08: Verify runs as one plain foreground call, and a Verify that was never run is reported as such, not as a failure (fixes #28)
+9. tt-09: friday runs on a uv-managed Python everywhere (CLI, hooks, remote snippets), so nodes with an old system Python work (fixes #29)
 
 ## Log
 - 2026-11-19: Landed: 3 directive(s) reverified on friday/thin-targets; PR into main.
