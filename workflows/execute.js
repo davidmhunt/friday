@@ -97,6 +97,15 @@ const directive = `docs/directives/${id}.md`
 // patterns, and a chained or prefixed command does not match them, so the classifier refuses it.
 const ALONE = 'Run each friday command as its own single Bash call. The session\'s current directory is already the repo root, so no `cd` is needed. Do not use `cd`, `&&`, `;` or `|`, and do not add `echo $?` or any other echo: chained commands do not match the repo\'s `Bash(friday ...)` allow rules, and the Bash tool result already carries the exit code.'
 
+// The directive's rules (repo, goal, directive; merged by `friday parse --json`), appended to the
+// prompts of the agents that change or judge the work. Empty when there are none.
+const rulesBlock = rules => {
+  const list = (Array.isArray(rules) ? rules : []).map(x => String(x).trim()).filter(Boolean)
+  return list.length ? `\n\nRules for this directive (from the plan; they apply to every step):\n${list.map(x => `- ${x}`).join('\n')}` : ''
+}
+
+const RULE_GAP = rules => (Array.isArray(rules) && rules.some(x => String(x).trim()) ? '\nA broken rule is a gap: report each one with the evidence.' : '')
+
 // Verify/review state known so far, recorded by `friday finish --blocked`.
 const state = { verify: '', review: '' }
 const q = t => String(t).replace(/\s+/g, ' ').replace(/[`"$\\]/g, "'").trim()
@@ -142,7 +151,7 @@ async function verifyLoop(d, label) {
       return { ok: false, why: `Verify still fails after ${round} round(s): ${sig}` }
     }
     const fix = await agent(
-      `Directive ${id} (${directive}): its Verify command fails.\n\nCommand: ${d.verify}\nFirst failure: ${sig}\nOutput tail:\n${v ? v.tail : '(none)'}\n\nFind and fix the root cause within the directive's scope. Do not weaken, skip or delete tests or checks. Run the failing part again to confirm, then commit (last line \`Directive: ${id}\`).`,
+      `Directive ${id} (${directive}): its Verify command fails.\n\nCommand: ${d.verify}\nFirst failure: ${sig}\nOutput tail:\n${v ? v.tail : '(none)'}\n\nFind and fix the root cause within the directive's scope. Do not weaken, skip or delete tests or checks. Run the failing part again to confirm, then commit (last line \`Directive: ${id}\`).${rulesBlock(d.rules)}`,
       { agentType: 'friday:implementer', schema: STEP, label: `${label === 'initial' ? '' : label + ' '}fix ${round}/${MAX_FIX_ROUNDS}`, phase: 'Verify' },
     )
     if (fix && fix.status === 'needs_user') return { ok: false, why: fix.question }
@@ -187,7 +196,7 @@ for (const s of d.steps) {
   const opts = { agentType: 'friday:implementer', schema: STEP, label: `step ${s.n}/${d.steps.length}${s.heavy ? ' [heavy]' : ''}`, phase: 'Implement' }
   if (s.heavy) opts.model = 'opus'
   const r = await agent(
-    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` (plain lines or \`- \` bullets, never \`#\` headings) and do not commit.`,
+    `Implement step ${s.n} of friday directive ${id} (${directive}) on branch ${d.land === 'pr' ? `friday/${id}` : `friday/${d.goal}`}.\n\nStep ${s.n}: ${s.text}\n\nRead the whole directive first (goal, out of scope). Earlier steps are already committed. Prove the step with a focused check. Commit only if you changed tracked files (last line \`Directive: ${id}\`); if the step only reproduces, measures or inspects, append your findings to \`runs/${id}/notes.md\` (plain lines or \`- \` bullets, never \`#\` headings) and do not commit.${rulesBlock(d.rules)}`,
     opts,
   )
   if (!r) return await block(`step ${s.n} agent did not return`)
@@ -214,7 +223,7 @@ const verifyNote = external ? 'Verify was skipped (Deliverable external).' : 'It
 
 phase('Review')
 let review = await agent(
-  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}`,
+  `Review friday directive ${id}: read ${directive}, then the change. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). ${verifyNote} Deliverable: ${d.deliverable}. Report only gaps that affect correctness or the directive's stated requirements.\n\n${accept}${rulesBlock(d.rules)}${RULE_GAP(d.rules)}`,
   { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier', phase: 'Review' },
 )
 let reviewVerdict = 'no gaps'
@@ -230,7 +239,7 @@ if (review && allGaps(review).length) {
     if (!v.ok) return await block(v.why)
   }
   review = await agent(
-    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Report only gaps that still affect correctness or the stated requirements.\n\n${accept}`,
+    `Second review of friday directive ${id}. Earlier gaps:\n${list}\n\nRead ${directive}. Run \`friday commits ${id}\` (alone: ${ALONE}) and review each commit it lists with \`git show <sha>\` plus the current state of the files those commits touch. Any \`untracked\` line is a gap (a commit with no \`Directive: ${id}\` line that touches more than plan docs). Report only gaps that still affect correctness or the stated requirements.\n\n${accept}${rulesBlock(d.rules)}${RULE_GAP(d.rules)}`,
     { agentType: 'friday:verifier', schema: REVIEW, label: 'verifier (2nd)', phase: 'Review' },
   )
   if (review && allGaps(review).length) {
