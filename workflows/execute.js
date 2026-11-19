@@ -49,8 +49,10 @@ const STEP = {
 }
 const VERIFY = {
   type: 'object',
-  required: ['passed', 'exit_code', 'signature', 'tail'],
+  required: ['ran', 'passed', 'exit_code', 'signature', 'tail'],
   properties: {
+    ran: { type: 'boolean', description: 'false when the command was denied, timed out before finishing, or was never run' },
+    not_run_reason: { type: 'string', description: 'why it did not run to completion; empty if ran' },
     passed: { type: 'boolean' },
     exit_code: { type: 'integer' },
     signature: { type: 'string', description: 'the first failing test or error line, verbatim; empty if passed' },
@@ -140,9 +142,14 @@ async function verifyLoop(d, label) {
   let last = '', same = 0
   for (let round = 1; ; round++) {
     const v = await agent(
-      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, and wait for it to finish (it can take several minutes):\n\n${d.verify}\n\nReturn whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
+      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, as one plain foreground Bash call with timeout 600000 ms. Do not use setsid, nohup, &, run_in_background or any detached job. If the call is denied, is not made, or hits the timeout before finishing, return ran=false with not_run_reason (for a timeout, say it needs a higher timeout or a narrower Verify); do not guess a result.\n\n${d.verify}\n\nOtherwise return ran=true, whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
       { agentType: 'friday:runner', schema: VERIFY, label: `${label} verify ${round}`, phase: 'Verify' },
     )
+    if (v && v.ran === false) {
+      const r = v.not_run_reason || 'no reason given'
+      const hint = /time/i.test(r) ? ' (raise the timeout or narrow Verify)' : ''
+      return { ok: false, why: `Verify not run: ${r}${hint}` }
+    }
     if (v && v.passed) { state.verify = verifyLineOf(); return { ok: true, rounds: round } }
     const sig = v ? v.signature : 'the verify run returned nothing'
     same = sig === last ? same + 1 : 1
