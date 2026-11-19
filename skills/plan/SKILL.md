@@ -62,7 +62,7 @@ user approves the plan.
      remote `bash -c *` or a remote build or install under `## Allowed commands`; `friday check`
      warns on them. When steps need iteration on a robot (debugging, building, editing its
      checkout, hardware tests), propose a worker goal with `Node: host:<robot>` instead, run by
-     the robot's own session (`friday nodes --setup <robot>` first if it is not a worker yet; see
+     the robot's own session (the user sets the robot up as a worker first if it is not one yet, per
      "Targets and workers" in docs/fleet.md), and say so in the approval summary.
 4. **Check the format.** Run `friday check --goal <goal>` and fix every error before asking for
    approval. Do not show the user files that do not pass.
