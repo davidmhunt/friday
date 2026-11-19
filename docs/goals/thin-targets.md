@@ -16,10 +16,14 @@ Asked for by the user on 2026-11-18 ("A few more issues came up. Go ahead and ad
 overnight"); the design follows the proposals in the two issues. The issue's fallback (classifying
 remote commands, a per-robot deny list) is out of scope. #13 and #20 stay later goals.
 
+tt-04 added and approved by the user on 2026-11-19 ("I like the default of agents always
+working in a branch so that this can work more smoothly and also to protect the main branches").
+
 ## Directives
 1. tt-01: A pre-approved tag push runs while a directive is active; `friday check` errors on a listed push the guard always denies (fixes #24)
 2. tt-02: Target directives stay thin: `friday check` warns on raw remote globs and remote builds; the plan skill routes iterative robot work to workers
 3. tt-03: `friday nodes --setup <node>` reports each worker prerequisite with its fix, also for a target being promoted (fixes #23)
+4. tt-04: Plans live on the goal branch; pre-approval trusts a plan ref only the user's `friday approve` pushes
 
 ## Log
 - 2026-11-19: Landed: 3 directive(s) reverified on friday/thin-targets; PR into main.
