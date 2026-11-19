@@ -253,28 +253,32 @@ def _git_show(root: Path, spec: str) -> str | None:
 
 def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     """A command matching `## Allowed commands` of the active directive, as committed on
-    origin/<Base> (the plan the user approved), so a goal-branch edit cannot widen it. Base comes from
-    the marker (outside the working tree) and is trusted only when it is not a friday/* branch and the
-    goal file on origin/<Base> names the same Base. None (no decision) on any doubt."""
+    origin/friday-plan/<goal>: the ref only the user's `friday approve` pushes, so neither a goal-branch
+    edit nor an agent-written plan can widen it. The goal is read from the directive in the working
+    tree and trusted only when the directive on that ref names the same goal. No ref, no
+    pre-approval. None (no decision) on any doubt."""
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
         if not marker or not root or not cmd.strip() or _unsafe_batch(cmd):
             return None
         did = marker["id"]
-        base = str(marker.get("goal_base") or "").strip()
-        if not base or base.startswith("friday/") or base.startswith("-"):
+        if not isinstance(did, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", did):
             return None
-        text = _git_show(root, f"origin/{base}:docs/directives/{did}.md")
+        try:
+            local = fc.parse_directive_full((root / "docs" / "directives" / f"{did}.md").read_text())
+        except OSError:
+            return None
+        goal = (local.get("goal") or "").strip()
+        if not goal or not fc.GOAL_RE.match(goal):
+            return None
+        text = _git_show(root, f"origin/friday-plan/{goal}:docs/directives/{did}.md")
         if text is None:
             return None
         parsed = fc.parse_directive_full(text)
-        goal = (parsed.get("goal") or "").strip()
-        if not goal or not fc.GOAL_RE.match(goal) or base == f"friday/{goal}":
+        if (parsed.get("goal") or "").strip() != goal:
             return None
-        gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
-        if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
-            return None
+        base = f"friday-plan/{goal}"
         simples = fc.split_commands(cmd)
         rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
                for pat in parsed.get("allowed") or []]
@@ -287,7 +291,7 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
                 used.append(hit)
         if simples:
             pats = ", ".join(f"`{p}`" for p in used)
-            return "allow", f"pre-approved in {did} (on {base}): every command matches {pats}"
+            return "allow", f"pre-approved in {did} (on origin/{base}): every command matches {pats}"
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None

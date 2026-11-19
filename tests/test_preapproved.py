@@ -77,7 +77,7 @@ def make_repo(tmp_path, monkeypatch, base_allowed, branch_allowed=None):
     dpath.write_text(DIRECTIVE.format(allowed=allowed_section(base_allowed) if base_allowed else ""))
     git(r, "add", ".")
     git(r, "commit", "--no-verify", "-qm", "init")
-    git(r, "update-ref", "refs/remotes/origin/main", "main")   # the pushed Base the hook trusts
+    git(r, "update-ref", "refs/remotes/origin/friday-plan/core", "main")   # the plan ref `friday approve` pushed
     git(r, "checkout", "-qb", "friday/core")
     if branch_allowed is not None:
         dpath.write_text(DIRECTIVE.format(allowed=allowed_section(branch_allowed)))
@@ -105,7 +105,7 @@ def pre(repo, cmd, session="s1"):
 
 def test_matching_command_allowed(repo):
     d, why = pre(repo, "friday dispatch core-01 --node robot")
-    assert d == "allow" and "pre-approved in core-01 (on main)" in why
+    assert d == "allow" and "pre-approved in core-01 (on origin/friday-plan/core)" in why
     assert pre(repo, "friday nodes --clean")[0] == "allow"
     assert pre(repo, "friday nodes --list")[0] is None
 
@@ -192,9 +192,29 @@ def test_editing_goal_base_header_cannot_widen(tmp_path, monkeypatch):
     assert pre(r, "friday release radar")[0] is None
 
 
-def test_marker_without_goal_base_gives_no_decision(repo):
+def test_marker_goal_base_is_not_consulted(repo):
     fc.write_marker(repo, {"id": "core-01"})
-    assert pre(repo, "friday nodes --clean")[0] is None
+    assert pre(repo, "friday nodes --clean")[0] == "allow"
+
+
+def test_pattern_only_on_origin_base_gives_no_decision(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, ALLOWED)
+    git(r, "update-ref", "-d", "refs/remotes/origin/friday-plan/core")
+    git(r, "update-ref", "refs/remotes/origin/main", "main")
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    assert pre(r, "friday nodes --clean")[0] is None
+
+
+def test_plan_ref_naming_another_goal_gives_no_decision(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, ALLOWED)
+    git(r, "checkout", "-q", "main")
+    p = r / "docs" / "directives" / "core-01.md"
+    p.write_text(p.read_text().replace("Goal: core", "Goal: other"))
+    git(r, "commit", "--no-verify", "-qam", "other")
+    git(r, "update-ref", "refs/remotes/origin/friday-plan/core", "main")
+    git(r, "checkout", "-q", "friday/core")
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    assert pre(r, "friday nodes --clean")[0] is None
 
 
 BIN = ROOT / "bin" / "friday"
