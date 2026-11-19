@@ -1,5 +1,5 @@
 # thin-targets: Targets stay thin: pre-approved tag pushes, target scope checks, cheap worker setup
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -39,3 +39,4 @@ tt-08 (#28) and tt-09 (#29) added on 2026-11-19 after the user filed them; for #
 - 2026-11-19: Landed: 3 directive(s) reverified on friday/thin-targets; PR into main.
 - 2026-11-19: Landed: 4 directive(s) reverified on friday/thin-targets; PR into main.
 - 2026-11-19: Landed: 7 directive(s) reverified on friday/thin-targets; PR into main.
+- 2026-11-19: Landed: 9 directive(s) reverified on friday/thin-targets; PR into main.
