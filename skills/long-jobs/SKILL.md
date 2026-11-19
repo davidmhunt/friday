@@ -10,6 +10,9 @@ turn re-reads the whole context. Long runs go to the `runner` agent, which is sm
 
 - **Threshold:** more than about 4 minutes (full suites, release or Docker or firmware builds,
   benchmarks, hardware runs, training, sweeps). Short checks stay with the implementer.
+- **Verify is never detached.** A directive's Verify command is one plain foreground call (600000
+  ms timeout, no `setsid`, `nohup`, `&` or `run_in_background`). Detaching is only for long runs a
+  step names, never for Verify.
 - **Detached launch:** the run must survive the session. Output to `runs/<id>/<name>.log`, exit
   code to `runs/<id>/<name>.exit` (see the `runner` agent for the exact form). Never `sleep` for
   more than a few minutes in one turn.
