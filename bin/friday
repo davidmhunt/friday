@@ -231,6 +231,11 @@ def cmd_init(a) -> int:
     return rc
 
 
+BASH_FILE_IO_HINT = ('option: add "bash_file_io": "deny" to .claude/friday.json so the hook denies Bash '
+                     'file reads and writes (cat, sed, grep, heredocs, redirects) and sends agents to '
+                     'Read/Grep/Edit/Write')
+
+
 def _init_settings(a) -> int:
     """Merge FRIDAY_ALLOW into the repo's tracked .claude/settings.json (never settings.local.json)."""
     path = _root() / ".claude" / "settings.json"
@@ -252,6 +257,7 @@ def _init_settings(a) -> int:
     missing = [r for r in fc.FRIDAY_ALLOW if r not in allow]
     if not missing and path.exists():
         print(f"friday init: {path} already has every friday allow rule; nothing to add")
+        print(BASH_FILE_IO_HINT)
         return 0
     allow.extend(missing)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -260,6 +266,7 @@ def _init_settings(a) -> int:
     for r in missing:
         print(f"  {r}")
     print("review, then commit it (friday init does not commit)")
+    print(BASH_FILE_IO_HINT)
     return 0
 
 

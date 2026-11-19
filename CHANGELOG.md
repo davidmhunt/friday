@@ -4,6 +4,12 @@
 
 ### Added
 
+- `"bash_file_io": "deny"` in `.claude/friday.json` makes the PreToolUse hook deny Bash file reads and
+  writes the file tools cover (`cat`, `sed`, `grep`, heredocs, `>` redirects, `python3 -`), naming
+  Read/Grep/Glob and Edit/Write; tools reading a pipe stay allowed. `friday init` prints it as an
+  option. `run_only` and other `split_commands` rules no longer match words inside quoted arguments
+  (#27).
+
 - A `## Rules` section on directives and goals and `"rules": [...]` in `.claude/friday.json` hold
   constraints for the whole directive. `friday parse --json` returns them merged (repo, goal, directive,
   deduplicated); the execute workflow puts them into every implementer, verify-fix, runner and reviewer prompt, and
