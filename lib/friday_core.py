@@ -529,7 +529,7 @@ def _check_sections(md: dict, required: tuple, path: str, acceptance: bool) -> l
     Other sections are allowed anywhere before the last required one (`## Log`)."""
     issues: list[Issue] = []
     seen: dict[str, int] = {}
-    once = required + (("Acceptance", "Review") if acceptance else ())
+    once = required + (("Acceptance", "Review") if acceptance else ()) + ("Rules",)
     last = required[-1]
     for s in md["sections"]:
         name, ln = s["name"], s["line"]

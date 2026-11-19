@@ -230,7 +230,7 @@ let reviewVerdict = 'no gaps'
 if (review && allGaps(review).length) {
   const list = allGaps(review).map((g, i) => `${i + 1}. ${g.where}: ${g.problem} (evidence: ${g.evidence})`).join('\n')
   const fix = await agent(
-    `An independent review of directive ${id} (${directive}) found these gaps:\n${list}\n\nFix each one that is real, within scope. If you disagree with one, leave it and explain why with evidence. Commit (last line \`Directive: ${id}\`).`,
+    `An independent review of directive ${id} (${directive}) found these gaps:\n${list}\n\nFix each one that is real, within scope. If you disagree with one, leave it and explain why with evidence. Commit (last line \`Directive: ${id}\`).${rulesBlock(d.rules)}`,
     { agentType: 'friday:implementer', schema: STEP, label: 'fix review gaps', phase: 'Review' },
   )
   if (fix && fix.status === 'needs_user') return await block(fix.question)

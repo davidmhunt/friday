@@ -93,11 +93,11 @@ def test_list_rules_is_fine(tmp_path):
 def test_rules_block_in_every_implementer_and_reviewer_prompt():
     found = set()
     for body in tp._agent_prompts():
-        for key in ("Implement step", "Review friday directive", "Second review", "its Verify command fails"):
+        for key in ("Implement step", "Review friday directive", "Second review", "its Verify command fails", "found these gaps"):
             if key in body:
                 found.add(key)
                 assert "${rulesBlock(d.rules)}" in body, key
-    assert found == {"Implement step", "Review friday directive", "Second review", "its Verify command fails"}
+    assert found == {"Implement step", "Review friday directive", "Second review", "its Verify command fails", "found these gaps"}
 
 
 def test_reviewers_treat_broken_rule_as_gap():
@@ -105,3 +105,10 @@ def test_reviewers_treat_broken_rule_as_gap():
         if "Review friday directive" in body or "Second review" in body:
             assert "${RULE_GAP(d.rules)}" in body
     assert "A broken rule is a gap" in tp.SRC
+
+
+def test_duplicate_rules_section_is_an_error():
+    dup_d = DIRECTIVE.replace("## Out of scope", "## Rules\n- second\n\n## Out of scope", 1)
+    dup_g = GOAL + "\n## Rules\n- second\n"
+    for validate, name, text in ((fc.validate_directive, "tt-99", dup_d), (fc.validate_goal, "g1", dup_g)):
+        assert [i for i in validate(name, text) if i.level == "error" and "duplicate section `## Rules`" in i.message], name
