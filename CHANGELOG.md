@@ -18,6 +18,11 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
   it on; `friday status` lists `origin/friday/*` branches whose PR is merged with the `git push origin --delete`
   command for each. Neither changes anything; both skip quietly without `gh`.
 
+- A goal is one user-visible capability (typically 3 to 10 directives, one PR) and related work extends the
+  open goal as a Base amendment instead of opening a new PR. The plan skill starts by finding open goals;
+  `friday status` (and `--json`, and the dash) reports each goal's PR as `none|open|merged` with its URL,
+  skipped quietly without `gh`; `friday land --goal` on an open PR updates it and says so (scope-01).
+
 ### Fixed
 
 - `friday commits` (and the review and `friday finish`) no longer lists a teammate's upstream commits, merged in by
