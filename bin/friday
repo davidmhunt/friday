@@ -920,9 +920,43 @@ print("FRIDAY_PROBE reads_outside=" + ("blocked:" + ",".join(blocked) if blocked
 """
 
 
-def probe_script(node) -> str:
+_PREREQ_SH = "\n".join([
+    'PATH="$HOME/.local/bin:$PATH"',
+    'command -v uv >/dev/null 2>&1 && echo "FRIDAY_PROBE uv=ok" || echo "FRIDAY_PROBE uv=missing"',
+    'if ! command -v gh >/dev/null 2>&1; then echo "FRIDAY_PROBE gh=missing"',
+    'elif gh auth status >/dev/null 2>&1; then echo "FRIDAY_PROBE gh=ok"',
+    'else echo "FRIDAY_PROBE gh=nologin"; fi',
+    'a=$(claude auth status 2>/dev/null)',
+    'case "$a" in',
+    '  *\'"loggedIn": true\'*|*\'"loggedIn":true\'*) echo "FRIDAY_PROBE claude_auth=ok";;',
+    '  *\'"loggedIn": false\'*|*\'"loggedIn":false\'*) echo "FRIDAY_PROBE claude_auth=no";;',
+    '  *) echo "FRIDAY_PROBE claude_auth=unknown";;',
+    'esac',
+])
+
+
+def prereq_fixes(node, got) -> list:
+    """Fix lines for the worker prerequisites uv, gh login and claude sign-in (empty list when all are ok)."""
+    fixes = []
+    if got.get("uv") != "ok":
+        fixes.append(f"fix: install uv on {node.name} (https://docs.astral.sh/uv/getting-started/installation/)")
+    gh = got.get("gh", "missing")
+    if gh == "missing":
+        fixes.append(f"fix: install gh on {node.name}, then run `gh auth login` on {node.name}")
+    elif gh != "ok":
+        fixes.append(f"fix: run `gh auth login` on {node.name} (push credentials for `friday land`)")
+    ca = got.get("claude_auth", "unknown")
+    if ca == "no":
+        fixes.append(f"fix: run `claude` and `/login` on {node.name} (claude is not signed in)")
+    elif ca != "ok":
+        fixes.append(f"warning: could not tell whether claude is signed in on {node.name}; "
+                     f"if not, run `claude` and `/login` on {node.name}")
+    return fixes
+
+
+def probe_script(node, prereqs=False) -> str:
     if node.role == "target":
-        return "echo FRIDAY_PROBE reach=ok\n"
+        return "echo FRIDAY_PROBE reach=ok\n" + (_PREREQ_SH + "\n" if prereqs else "")
     repos, plug = _remote_path(node.repos), _remote_path(node.plugin_dir)
     return "\n".join([
         "echo FRIDAY_PROBE reach=ok",
@@ -940,13 +974,14 @@ def probe_script(node) -> str:
         'else echo "FRIDAY_PROBE trust=unknown"; fi',
         f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_SETTINGS_PY)} 2>/dev/null; fi",
         f"if command -v python3 >/dev/null 2>&1; then python3 -c {shlex.quote(_READS_PY)} 2>/dev/null; fi",
+        _PREREQ_SH,
         ff.plugin_install_lines(node),
     ]) + "\n"
 
 
-def check_node(node) -> tuple:
+def check_node(node, prereqs=False) -> tuple:
     """Probe one node. Returns (summary_text, [fix lines]); fixes empty means it passes (lines starting `warning:` do not fail it)."""
-    argv, stdin = ff.ssh_cmd(node, probe_script(node))
+    argv, stdin = ff.ssh_cmd(node, probe_script(node, prereqs))
     try:
         r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=60)
         out, rc = r.stdout, r.returncode
@@ -958,7 +993,7 @@ def check_node(node) -> tuple:
         return "unreachable", [f"fix: check that `ssh {node.ssh}` works non-interactively "
                                f"(key auth, tailnet up, host awake)"]
     if node.role == "target":
-        return "reachable", []
+        return "reachable", (prereq_fixes(node, got) if prereqs else [])
     fixes = []
     cl = got.get("claude", "missing")
     if cl == "missing":
@@ -978,6 +1013,7 @@ def check_node(node) -> tuple:
         fixes.append(f"fix: install python3 on {node.name} so trust in ~/.claude.json can be read")
     elif trust != "ok":
         fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
+    fixes += prereq_fixes(node, got)
     for key, label in (("workflow", "workflow prompt"), ("auto", "auto-mode prompt")):
         if got.get(key) != "ok":
             fixes.append(f"{label}: run `friday nodes --setup {node.name}`")
@@ -995,7 +1031,8 @@ def check_node(node) -> tuple:
         fixes.append(f"warning: friday is installed but disabled on {node.name}; dispatch keeps --plugin-dir")
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}, "
-               f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}")
+               f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}, "
+               f"uv {got.get('uv', '?')}, gh {got.get('gh', '?')}, claude auth {got.get('claude_auth', '?')}")
     return summary, fixes
 
 
