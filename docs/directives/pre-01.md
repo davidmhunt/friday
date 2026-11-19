@@ -1,5 +1,5 @@
 # pre-01: A chained or multi-line command is pre-approved when every command in it is (fixes #17)
-Status: approved
+Status: done
 Goal: field-fixes
 Node: any
 Deliverable: code
@@ -36,3 +36,12 @@ tests/test_preapproved.py proves it.
 - Classifying commands as harmless without the user listing them.
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 78447a9 hooks: pre-approval covers batches; every simple command must match, no substitution, heredoc or backgrounding
+- 3f3a31d hooks: hardware leases for a batch taken in order of appearance; another session's lease denies
+- adc82e7 guidance: list read-only helpers under Allowed commands; one hardware command per line so batches qualify (#17)
+- abc8afa tests: batch pre-approval (newline batch, substitution, heredoc, backgrounding, leases); changelog (#17)
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_preapproved.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps
