@@ -17,6 +17,9 @@
   with `docs/goals` or `docs/directives`; other folders there are ignored.
 - **`friday nodes --check`** prints one `dash:` line per node (ok, stale, missing or not running)
   with its fix.
+- **`friday nodes --waiting`** lists the sessions the dash shows as waiting on a prompt, one line each
+  (node, goal, directive, age, message), by asking each node over ssh; exit 0 when none, 10 when any,
+  2 when a node is unreachable. It is on the allow list, so the planner session can run it unprompted.
 
 Adding a new machine takes three commands:
 

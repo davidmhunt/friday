@@ -39,7 +39,8 @@ the repo's `Verify:` the same as the ones you run by hand, so a red Verify is re
 A change to placement, routing or the schematic is `Accept: user`, with `## Review` naming the
 sheets and layers to open. ERC and DRC passing is the machine's half; the directive then ends
 `awaiting review` and you open KiCad and look at exactly what the review list names, then run
-`friday accept <id>` yourself.
+`friday accept <id>` yourself. Commit your own board edits first: accept exits 8 and lists the
+files while any tracked file is modified or staged, and prints the `git commit -am` to run.
 
 Be specific in `## Review`: the sheet names (not "the schematic"), the layers (`F.Cu`, `B.Cu`,
 `F.Silkscreen`, `Edge.Cuts`), the refdes to inspect and the question for each. A reviewer who

@@ -4,7 +4,9 @@
   pretool      PreToolUse on Bash: deny list, ./run enforcement, no commits on main, hardware gate
   stop         Stop: while a directive is active in this worktree, its Verify: must pass
   session-end  SessionEnd: release this session's hardware leases
-  posttool     PostToolUse on Write|Edit|MultiEdit: a goal/directive file's own format errors go
+  notification Notification: a friday session stopped on a prompt; record it for status and the dash
+  waiting-clear PreToolUse/PostToolUse/UserPromptSubmit: the session moved on; drop that record
+  posttool     PostToolUse on Bash: record session approval of a hardware resource; on Write|Edit|MultiEdit: a goal/directive file's own format errors go
                back to the model (stderr, exit 2); warnings and clean files are silent
 
 Every decision is deterministic and explained in its reason, so the agent learns the fix from
@@ -14,7 +16,9 @@ The rules and where they came from: docs/workflow.md ("Hooks") and docs/migratin
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -50,8 +54,9 @@ def _emit_pretool(decision: str, reason: str) -> None:
 
 
 def check_deny(cmd: str) -> str | None:
+    text = "\n".join([cmd] + [m for g in re.findall(fc._SUBST, cmd) for m in g if m])
     for pat, reason in DENY:
-        if re.search(pat, cmd):
+        if re.search(pat, text):
             return reason
     return None
 
@@ -147,20 +152,58 @@ def check_commit(cmd: str, cwd: Path) -> tuple[str, str] | None:
     return None
 
 
-def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
-    hw = cfg.get("hardware") or {}
-    for resource, patterns in hw.items():
-        if not any(re.search(p, cmd) for p in patterns):
+def _session_approved(cfg: dict, resource: str) -> bool:
+    return (cfg.get("hardware_approval") or {}).get(resource) == "session"
+
+
+def record_session_approval(payload: dict) -> None:
+    """PostToolUse on Bash: the command ran, so the user allowed it. For each `session` resource it
+    matched whose lease this session holds, mark the lease approved (it ends with the lease)."""
+    session = payload.get("session_id") or ""
+    cmd = (payload.get("tool_input") or {}).get("command") or ""
+    if not session or not cmd:
+        return
+    cfg = fc.load_config(fc.repo_root(Path(payload.get("cwd") or ".")))
+    for resource, patterns in (cfg.get("hardware") or {}).items():
+        if not _session_approved(cfg, resource) or not any(re.search(p, cmd) for p in patterns):
             continue
         holder = fc.lease_holder(resource)
+        if holder and holder.get("session") == session and not holder.get("approved"):
+            fc.take_lease(resource, session, holder.get("note", ""), approved=True)
+
+
+def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
+    hw = cfg.get("hardware") or {}
+    first = {}
+    for r, pats in hw.items():
+        pos = [m.start() for p in pats if (m := re.search(p, cmd))]
+        if pos:
+            first[r] = min(pos)
+    matched = sorted(first, key=first.get)         # resources in the order they appear in the command
+    if not matched:
+        return None
+    holders = {r: fc.lease_holder(r) for r in matched}
+    for resource in matched:                       # another session's lease wins, for every resource
+        holder = holders[resource]
         if holder and holder.get("session") != session:
             age = int((time.time() - holder["time"]) / 60)
             return "deny", (f"Hardware `{resource}` is held by another session on {holder.get('host')} "
                             f"({age} min ago: {holder.get('note', '')}). Wait, or ask the user to run "
                             f"`friday release {resource}`.")
-        fc.take_lease(resource, session, cmd)
-        return "ask", f"Hardware `{resource}`: this command touches a physical device. Lease taken for this session."
-    return None
+    if session and _one_simple_command(cmd) and all(
+            holders[r] and holders[r].get("approved") and _session_approved(cfg, r) for r in matched):
+        for resource in matched:
+            fc.take_lease(resource, session, cmd, approved=True)   # refresh the TTL, keep the approval
+        return "allow", f"{', '.join(matched)} approved for this session"
+    for resource in matched:
+        h = holders[resource]
+        fc.take_lease(resource, session, cmd, approved=bool(h and h.get("approved")))
+    resource = matched[0]
+    reason = (f"Hardware `{resource}`: this command touches a physical device. Lease taken and "
+              f"held for this session; this approval covers this command only.")
+    if (cfg.get("hardware_approval") or {}).get(resource) == "session":
+        reason += f" Approving it once approves `{resource}` for the rest of the session."
+    return "ask", reason
 
 
 def _one_simple_command(cmd: str) -> bool:
@@ -170,6 +213,33 @@ def _one_simple_command(cmd: str) -> bool:
     if not c or any(x in c for x in ("&", ";", "|", "`", "$(", "<(", ">(", "\n", "\r")):
         return False
     return len(fc.split_commands(c)) == 1
+
+
+def _unsafe_batch(cmd: str) -> bool:
+    """True when `cmd` holds text the pattern check cannot see: command or process substitution or a
+    heredoc anywhere (quoted or not; conservative), or an unquoted `&` that backgrounds (`&&`, `>&`,
+    `&>` and `2>&1` are not backgrounding)."""
+    if any(x in cmd for x in ("`", "$(", "<(", ">(", "<<")):
+        return True
+    quote, i = None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            i += 1
+        elif c == "&":
+            if cmd.startswith("&&", i):
+                i += 1
+            elif not ((i > 0 and cmd[i - 1] in "<>") or cmd.startswith("&>", i)):
+                return True
+        i += 1
+    return False
 
 
 def _git_show(root: Path, spec: str) -> str | None:
@@ -185,7 +255,7 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
-        if not marker or not root or not _one_simple_command(cmd):
+        if not marker or not root or not cmd.strip() or _unsafe_batch(cmd):
             return None
         did = marker["id"]
         base = str(marker.get("goal_base") or "").strip()
@@ -201,11 +271,19 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
         gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
         if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
             return None
-        c = cmd.strip()
-        for pat in parsed.get("allowed") or []:
-            rx = ".*".join(re.escape(part) for part in pat.split("*"))
-            if re.fullmatch(rx, c, re.S):
-                return "allow", f"pre-approved in {did} (on {base})"
+        simples = fc.split_commands(cmd)
+        rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
+               for pat in parsed.get("allowed") or []]
+        used: list[str] = []
+        for simple in simples:
+            hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
+            if hit is None:
+                return None
+            if hit not in used:
+                used.append(hit)
+        if simples:
+            pats = ", ".join(f"`{p}`" for p in used)
+            return "allow", f"pre-approved in {did} (on {base}): every command matches {pats}"
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None
@@ -327,6 +405,7 @@ MAX_STOP_BLOCKS = 3
 
 
 def stop(payload: dict) -> None:
+    waiting_clear(payload)
     cwd = Path(payload.get("cwd") or ".")
     marker = fc.read_marker(cwd)
     if not marker or not marker.get("gate", True):
@@ -367,9 +446,87 @@ def session_end(payload: dict) -> None:
     fc.release_leases(session=payload.get("session_id") or None)
 
 
+# ------------------------------------------------------------------ waiting on a prompt
+def _waiting_identity(cwd: Path) -> tuple[str, str] | None:
+    """(goal, directive) when `cwd` is a friday worktree (an active marker, or a dispatched
+    session), else None. The goal comes from the directive, the friday/<goal> branch, or the
+    tmux session name, in that order."""
+    marker = fc.read_marker(cwd)
+    if not marker and not os.environ.get("FRIDAY_DISPATCHED_FROM"):
+        return None
+    did = str((marker or {}).get("id") or "")
+    goal = _goal_and_base(cwd, did)[0] if did else ""
+    if not goal:
+        br = fc.current_branch(cwd) or ""
+        goal = br[len("friday/"):] if br.startswith("friday/") else ""
+    if not goal:
+        goal = _tmux_session().removeprefix("friday-")
+    return (goal, did) if goal and fc.GOAL_RE.match(goal) else None
+
+
+def _tmux_session() -> str:
+    if not os.environ.get("TMUX"):
+        return ""
+    try:
+        r = subprocess.run(["tmux", "display-message", "-p", "#S"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def notification(payload: dict) -> None:
+    """Record that this session is waiting on the user, then push a fresh snapshot (detached,
+    bounded: the session never waits on it). Idle and informational notices are not prompts."""
+    kind = payload.get("notification_type") or ""
+    if kind in ("idle_prompt", "auth_success", "auth_storage_failure", "elicitation_complete",
+                "elicitation_response", "agent_completed", "plugin_notification") or kind.startswith("quota_"):
+        return
+    ident = _waiting_identity(Path(payload.get("cwd") or "."))
+    if not ident:
+        return
+    goal, did = ident
+    d = fc.waiting_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    rec = {"goal": goal, "directive": did, "message": str(payload.get("message") or ""), "kind": kind,
+           "tmux_session": _tmux_session() or f"friday-{goal}", "session_id": payload.get("session_id", ""),
+           "time": time.time()}
+    tmp = d / f".{goal}.json.tmp"
+    tmp.write_text(json.dumps(rec))
+    tmp.replace(d / f"{goal}.json")
+    cmd = [sys.executable, str(Path(__file__).resolve().parent.parent / "bin" / "friday"), "status", "--push"]
+    if shutil.which("timeout"):
+        cmd = ["timeout", "30"] + cmd
+    try:
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
+
+
+def waiting_clear(payload: dict) -> None:
+    """The session moved on (a tool call, a prompt, a stop): remove its waiting record if any."""
+    d = fc.waiting_dir()
+    if not d.is_dir() or not any(d.glob("*.json")):
+        return                                   # the common case costs one directory listing
+    sid = payload.get("session_id") or ""
+    for p in d.glob("*.json"):
+        try:
+            rec = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if sid and rec.get("session_id") == sid:
+            p.unlink(missing_ok=True)
+    ident = _waiting_identity(Path(payload.get("cwd") or "."))
+    if ident:
+        (d / f"{ident[0]}.json").unlink(missing_ok=True)
+
+
 # ------------------------------------------------------------------ posttool
 def posttool(payload: dict) -> int:
     """Validate one edited goal/directive file (no cross-checks). Returns the exit code."""
+    if payload.get("tool_name") == "Bash":
+        record_session_approval(payload)
+        return 0
     fp = (payload.get("tool_input") or {}).get("file_path")
     if payload.get("tool_name") not in ("Write", "Edit", "MultiEdit") or not fp:
         return 0
@@ -398,7 +555,8 @@ def main() -> int:
     try:
         if sys.argv[1] == "posttool":
             return posttool(payload)
-        {"pretool": pretool, "stop": stop, "session-end": session_end}[sys.argv[1]](payload)
+        {"pretool": pretool, "stop": stop, "session-end": session_end,
+         "notification": notification, "waiting-clear": waiting_clear}[sys.argv[1]](payload)
     except Exception as e:  # fail open, but say so
         print(f"friday hook error ({sys.argv[1:]}): {e}", file=sys.stderr)
     return 0

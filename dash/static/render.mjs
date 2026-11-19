@@ -71,7 +71,12 @@ export function prsFor(state, project) {
 export function needsYou(state) {
   const items = [];
   for (const s of allSessions(state))
-    if (s.waiting) items.push({ kind: "waiting", where: s.node + " / " + s.name, text: s.waiting_line || "waiting for input" });
+    if (s.waiting) {
+      const goal = s.goal || String(s.name || "").replace(/^friday-/, "");
+      items.push({ kind: "waiting", where: s.node + " " + goal + ":",
+        text: 'waiting on "' + (s.waiting_line || "waiting for input") + '"' + (s.waiting_age == null ? "" : " (" + ago(s.waiting_age) + ")"),
+        attach: "ssh " + s.node + " -t tmux attach -t '=friday-" + goal + "'" });
+    }
   for (const p of projects(state))
     for (const g of p.goals)
       for (const d of g.directives || [])
@@ -97,7 +102,8 @@ export function renderNeeds(state) {
   return h("div", { cls: "needs" }, h("h2", {}, "Needs you (" + items.length + ")"),
     h("ul", {}, items.map((i) => h("li", { cls: "need " + i.kind },
       h("span", { cls: "kind" }, i.kind), h("strong", {}, i.where),
-      i.href ? h("a", { href: i.href, rel: "noopener" }, i.text) : h("span", { cls: "line" }, i.text)))));
+      i.href ? h("a", { href: i.href, rel: "noopener" }, i.text) : h("span", { cls: "line" }, i.text),
+      i.attach ? h("code", { cls: "attach" }, i.attach) : null))));
 }
 
 export function machineCard(n) {
@@ -174,7 +180,8 @@ export function renderProjects(state) {
   const ps = projects(state), sess = allSessions(state);
   return h("section", { cls: "view", id: "view-projects" }, h("h2", {}, "Projects"),
     ps.length ? ps.map((p) => h("div", { cls: "project-detail" }, projectCard(p, state),
-      p.goals.map((g) => [h("h3", {}, "Goal " + (g.id || "(no goal)") + ": " + g.title + " [" + g.status + "]"),
+      p.goals.map((g) => [h("h3", {}, "Goal " + (g.id || "(no goal)") + ": " + g.title + " [" + g.status + "]",
+        g.pr ? [" ", g.pr_url ? h("a", { href: g.pr_url, rel: "noopener" }, "PR " + g.pr) : h("span", { cls: "badge" }, "PR " + g.pr)] : null),
         h("div", { cls: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, ["directive", "title", "status", "deliverable", "runs on"].map((x) => h("th", {}, x)))),
           h("tbody", {}, (g.directives || []).map((d) => {
             const host = runningHost(d.status), s = sess.find((x) => x.directive === d.id);

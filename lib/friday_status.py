@@ -10,7 +10,8 @@ holds any snapshot to it. Top-level keys:
   for the filesystem that holds `repos`. Any value is null when it cannot be read.
 - gpus[]: name, util (percent), mem {used, total} in MiB, processes [{pid, name, mem}].
   Empty without `nvidia-smi`.
-- repos[]: path, origin, branch, goals[] {id, title, status, directives[] {id, status,
+- repos[]: path, origin, branch, goals[] {id, title, status, pr (none|open|merged) and pr_url (both
+  left out without gh), directives[] {id, status,
   deliverable, title}}. Directives not in any goal sit under a goal with id null.
 - leases[]: resource, session, host, time, note (live hardware leases, as friday_core keeps them).
 - runs[]: repo, id (directive), name (the `.exit` file stem), exit (int or null), mtime;
@@ -21,6 +22,7 @@ holds any snapshot to it. Top-level keys:
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import os
@@ -69,6 +71,8 @@ SCHEMA = {
             "id": STR_OR_NULL,
             "title": str,
             "status": str,
+            "pr": str,
+            "pr_url": STR_OR_NULL,
             "directives": [{"id": str, "status": str, "deliverable": str, "title": str}],
         }],
     }],
@@ -84,10 +88,15 @@ SCHEMA = {
         "step": STR_OR_NULL,
         "waiting": bool,
         "waiting_line": STR_OR_NULL,
+        "waiting_age": NUM_OR_NULL,
         "snippet": [str],
     }],
     "errors": [{"where": str, "error": str}],
 }
+
+
+# Keys a snapshot may leave out: a goal's pr / pr_url are absent when gh is unavailable.
+OPTIONAL_KEYS = {"pr", "pr_url"}
 
 
 def _check(val, spec, path: str, out: list[str]) -> None:
@@ -103,7 +112,7 @@ def _check(val, spec, path: str, out: list[str]) -> None:
         if not isinstance(val, dict):
             out.append(f"{path}: expected object, got {type(val).__name__}")
             return
-        for k in spec.keys() - val.keys():
+        for k in spec.keys() - val.keys() - OPTIONAL_KEYS:
             out.append(f"{path}.{k}: missing")
         for k in val.keys() - spec.keys():
             out.append(f"{path}.{k}: not in schema")
@@ -233,8 +242,23 @@ def make_snippet(pane: str) -> list[str]:
     return [ln.rstrip()[:SNIPPET_WIDTH] for ln in lines]
 
 
+def fmt_age(secs) -> str:
+    s = max(0, int(secs))
+    return f"{s}s" if s < 90 else f"{round(s / 60)}m" if s < 5400 else f"{round(s / 3600)}h"
+
+
+def read_waiting_record(goal: str) -> dict | None:
+    """The hook's `<goal>.json` record of a session stopped on a prompt, or None."""
+    try:
+        rec = json.loads((fc.waiting_dir() / f"{goal}.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
 def session_state(name: str, created, cwd: str | None, pane: str,
-                  marker: dict | None = None, snippet: list[str] | None = None) -> dict:
+                  marker: dict | None = None, snippet: list[str] | None = None,
+                  record: dict | None = None, now: float | None = None) -> dict:
     """One `sessions[]` entry for tmux session `name`, from its pane text and its cwd.
 
     - directive: the `id` in the friday marker (`<git dir>/friday-active`) of `cwd`, else null.
@@ -242,7 +266,9 @@ def session_state(name: str, created, cwd: str | None, pane: str,
     - phase: the running workflow's name from its status line (e.g. `execute`); `started` when
       there is a marker but no workflow line; null when neither.
     - step: the status line's `done/total` (e.g. `3/4`), else null.
-    - waiting / waiting_line: detect_waiting() over the pane.
+    - waiting / waiting_line / waiting_age: the hook's record `<state>/friday/waiting/<goal>.json`
+      (message, seconds since it was written) when there is one, else detect_waiting() over the
+      pane (waiting_age null). `record` may be passed in (tests).
     - snippet: make_snippet(pane), redacted; `snippet` may be passed in (tests).
     `marker` may be passed in (tests); otherwise it is read from `cwd`.
     """
@@ -266,7 +292,16 @@ def session_state(name: str, created, cwd: str | None, pane: str,
         goal = name[len("friday-"):]
     wf, step = detect_workflow(lines)
     phase = wf or ("started" if directive else None)
-    waiting, line = detect_waiting(lines)
+    if record is None and goal:
+        record = read_waiting_record(goal)
+    if record and record.get("message") is not None:
+        waiting, line = True, redact(str(record["message"]))[:SNIPPET_WIDTH] or "waiting for input"
+        t = record.get("time")
+        age = (max(0.0, (time.time() if now is None else now) - t)
+               if isinstance(t, (int, float)) and not isinstance(t, bool) else None)
+    else:
+        waiting, line = detect_waiting(lines)
+        age = None
     return {
         "name": name,
         "created": created,
@@ -277,6 +312,7 @@ def session_state(name: str, created, cwd: str | None, pane: str,
         "step": step,
         "waiting": waiting,
         "waiting_line": line,
+        "waiting_age": age,
         "snippet": list(snippet) if snippet is not None else make_snippet(pane),
     }
 
@@ -443,6 +479,26 @@ def find_repos(cwd, registry_path=None, node_name: str | None = None, errors: li
     return uniq
 
 
+def goal_pr(path: Path, goal: str, gh: str | None) -> tuple[str, str | None] | None:
+    """(state, url) of the PR from `friday/<goal>`: state is none, open or merged (closed unmerged
+    counts as none). None when gh is missing or fails: the caller leaves the keys out."""
+    if not gh:
+        return None
+    out = _run([gh, "pr", "list", "--head", f"friday/{goal}", "--state", "all",
+                "--json", "state,url,number"], cwd=path)
+    if out is None:
+        return None
+    try:
+        prs = json.loads(out)
+    except ValueError:
+        return None
+    for want in ("OPEN", "MERGED"):
+        for pr in sorted(prs, key=lambda x: -x.get("number", 0)):
+            if str(pr.get("state", "")).upper() == want:
+                return want.lower(), pr.get("url")
+    return "none", None
+
+
 def collect_repo(path: Path, errors: list) -> dict:
     """One repos[] entry: origin, branch, and every goal with its directives' statuses."""
     origin = _run(["git", "config", "--get", "remote.origin.url"], cwd=path)
@@ -459,6 +515,7 @@ def collect_repo(path: Path, errors: list) -> dict:
         except Exception as e:  # a broken file is an entry in errors[], not a crash
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})
     goals, listed = [], set()
+    gh = os.environ.get("FRIDAY_GH") or shutil.which("gh")
     gdir = path / fc.GOAL_DIR
     for p in sorted(gdir.glob("*.md")) if gdir.is_dir() else []:
         if p.name.upper() in ("README.MD", "TEMPLATE.MD"):
@@ -470,7 +527,11 @@ def collect_repo(path: Path, errors: list) -> dict:
                 listed.add(x["id"])
                 items.append(directives.get(x["id"]) or
                              {"id": x["id"], "status": "missing", "deliverable": "", "title": x["text"]})
-            goals.append({"id": p.stem, "title": g["title"], "status": g["status"], "directives": items})
+            entry = {"id": p.stem, "title": g["title"], "status": g["status"], "directives": items}
+            pr = goal_pr(path, p.stem, gh)
+            if pr:
+                entry["pr"], entry["pr_url"] = pr
+            goals.append(entry)
         except Exception as e:
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})
     rest = [d for i, d in directives.items() if i not in listed]

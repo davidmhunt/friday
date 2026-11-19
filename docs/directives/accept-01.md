@@ -1,5 +1,5 @@
 # accept-01: `friday accept` refuses while tracked files are uncommitted, and says how to commit them
-Status: approved
+Status: done
 Goal: attention
 Node: any
 Deliverable: code
@@ -31,3 +31,11 @@ proves it.
 - Committing the user's changes automatically (`--with-changes`).
 
 ## Log
+
+### 2026-11-18
+Commits:
+- 7d97550 accept-01: friday accept exits 8 while tracked files are uncommitted
+- f906925 accept-01: document that accept refuses with exit 8 while tracked files are uncommitted
+- 7505da9 accept-01: test that accept refuses on uncommitted tracked files; changelog
+Verify: Verify passed: uv run --with pytest pytest -q tests/test_accept_clean.py && uv run --with pytest pytest -q && claude plugin validate .
+Independent review: no gaps

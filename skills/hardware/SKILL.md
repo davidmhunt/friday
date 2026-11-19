@@ -13,6 +13,13 @@ Physical devices are single-user, and a wrong command can cost hours at the benc
 - **Pre-approved is still leased.** A directive may list a hardware command under
   `## Allowed commands` (read from its Base); the hook then answers `allow` instead of asking,
   but still takes the lease, and still denies while another session holds it.
+- **One command per line.** Pre-approval matches a batch when every simple command in it matches
+  a listed pattern (no substitution, heredoc or `&`); session approval matches a single simple
+  command only. Write `git -C DIR ...` rather than `cd DIR && ...`, and
+  `ssh host cmd > local.txt` then process the file locally rather than piping or chaining on the
+  remote side, so `## Allowed commands` and session approval apply.
+- **The prompt is per command.** The lease lasts the session, but an approval covers only that
+  command, unless the project marks the resource `session` under `hardware_approval`.
 - **One session per device.** If the hook says a resource is held by another session, stop and
   report it. Do not wait in a loop. The user frees a stale lease with `friday release <resource>`.
   Leases also end when the session ends.

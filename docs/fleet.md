@@ -20,6 +20,7 @@ From any session that loads the plugin (including over Remote Control), these ru
 |---|---|
 | `/friday:status` | `friday status` |
 | `/friday:nodes [--check]` | `friday nodes` (lists the registry; with `--check` it probes each node over ssh) |
+| `/friday:nodes --waiting` | `friday nodes --waiting`: one line per session waiting on a prompt (node, goal, directive, age, message); exit 0 none, 10 some, 2 a node unreachable |
 | `/friday:dispatch <goal>` | `friday dispatch --goal <goal>`: runs `--dry-run` first, shows it, runs for real after you say yes |
 | `/friday:clean <node>` | `friday nodes --clean <node>`: runs `--dry-run` first, shows it, runs for real after you say yes |
 
@@ -191,6 +192,16 @@ The master is a node too, and dispatch reaches it by ssh like any other:
 - `ssh` in the registry is the node's tailnet name (for example `david@laptop-ts`), not its local hostname.
 - Accept the host key once: run `ssh <user@host>` by hand and answer `yes`. `BatchMode` cannot answer it.
 - Use key auth so `BatchMode=yes` works: `ssh-copy-id <user@host>` (not needed with Tailscale SSH).
+
+### Directives that need another repo
+
+A dispatched session works in its goal worktree. When the user setting
+`permissions.blockReadsOutsideWorkingDirectories` (or `permissions.blockFileToolReadsOutsideWorkingDirectories`)
+is true on the node, a read outside the working directories prompts, and an unattended session waits.
+`friday nodes --check` prints `outside-reads prompts` and a warning for such a node. A directive that
+needs files from another repo handles it one of two ways: copy what it needs into the goal branch
+(preferred, it is reviewable and travels with the branch), or the user allows the read on the node.
+friday never changes that setting.
 
 ## Dispatching
 
