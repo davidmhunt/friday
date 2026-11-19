@@ -1,5 +1,5 @@
 # thin-targets: Targets stay thin: pre-approved tag pushes, target scope checks, cheap worker setup
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -22,3 +22,4 @@ remote commands, a per-robot deny list) is out of scope. #13 and #20 stay later 
 3. tt-03: `friday nodes --setup <node>` reports each worker prerequisite with its fix, also for a target being promoted (fixes #23)
 
 ## Log
+- 2026-11-19: Landed: 3 directive(s) reverified on friday/thin-targets; PR into main.
