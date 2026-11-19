@@ -1,5 +1,5 @@
 # thin-targets: Targets stay thin: pre-approved tag pushes, target scope checks, cheap worker setup
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -27,3 +27,4 @@ working in a branch so that this can work more smoothly and also to protect the 
 
 ## Log
 - 2026-11-19: Landed: 3 directive(s) reverified on friday/thin-targets; PR into main.
+- 2026-11-19: Landed: 4 directive(s) reverified on friday/thin-targets; PR into main.
