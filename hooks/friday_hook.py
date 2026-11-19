@@ -210,6 +210,33 @@ def _one_simple_command(cmd: str) -> bool:
     return len(fc.split_commands(c)) == 1
 
 
+def _unsafe_batch(cmd: str) -> bool:
+    """True when `cmd` holds text the pattern check cannot see: command or process substitution or a
+    heredoc anywhere (quoted or not; conservative), or an unquoted `&` that backgrounds (`&&`, `>&`,
+    `&>` and `2>&1` are not backgrounding)."""
+    if any(x in cmd for x in ("`", "$(", "<(", ">(", "<<")):
+        return True
+    quote, i = None, 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            i += 1
+        elif c == "&":
+            if cmd.startswith("&&", i):
+                i += 1
+            elif not ((i > 0 and cmd[i - 1] in "<>") or cmd.startswith("&>", i)):
+                return True
+        i += 1
+    return False
+
+
 def _git_show(root: Path, spec: str) -> str | None:
     r = subprocess.run(["git", "show", spec], cwd=str(root), capture_output=True, text=True, timeout=20)
     return r.stdout if r.returncode == 0 else None
@@ -223,7 +250,7 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
     try:
         marker = fc.read_marker(cwd)
         root = fc.repo_root(cwd)
-        if not marker or not root or not _one_simple_command(cmd):
+        if not marker or not root or not cmd.strip() or _unsafe_batch(cmd):
             return None
         did = marker["id"]
         base = str(marker.get("goal_base") or "").strip()
@@ -239,11 +266,19 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
         gtext = _git_show(root, f"origin/{base}:docs/goals/{goal}.md")
         if gtext is None or str(fc.parse_goal(gtext).get("base") or "").strip() != base:
             return None
-        c = cmd.strip()
-        for pat in parsed.get("allowed") or []:
-            rx = ".*".join(re.escape(part) for part in pat.split("*"))
-            if re.fullmatch(rx, c, re.S):
-                return "allow", f"pre-approved in {did} (on {base})"
+        simples = fc.split_commands(cmd)
+        rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
+               for pat in parsed.get("allowed") or []]
+        used: list[str] = []
+        for simple in simples:
+            hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
+            if hit is None:
+                return None
+            if hit not in used:
+                used.append(hit)
+        if simples:
+            pats = ", ".join(f"`{p}`" for p in used)
+            return "allow", f"pre-approved in {did} (on {base}): every command matches {pats}"
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None
