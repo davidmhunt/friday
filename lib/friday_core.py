@@ -73,7 +73,9 @@ def directive_commits(root: Path | str, did: str) -> dict:
     origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
     `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
     record commits and plan-only commits (files only under docs/goals/, docs/directives/, .claude/settings.json). `untracked` are non-merge commits with no `Directive:` line that touch
-    anything outside docs/goals/ and docs/directives/. Raises ValueError when it cannot say."""
+    anything outside docs/goals/ and docs/directives/. `plan` are plan-only commits (trailer or not)
+    that are not ancestors of the HEAD recorded in runs/<id>/start (none when that file is absent).
+    Raises ValueError when it cannot say."""
     root = Path(root)
     try:
         parsed = parse_directive_full(directive_path(root, did).read_text())
@@ -118,6 +120,14 @@ def directive_commits(root: Path | str, did: str) -> dict:
     anytrailer = re.compile(r"(?m)^Directive:\s*\S")
     commits: list[tuple[str, str]] = []
     untracked: list[tuple[str, str, list[str]]] = []
+    plan: list[tuple[str, str]] = []
+    start = ""
+    try:
+        start = (root / "runs" / did / "start").read_text().strip()
+    except OSError:
+        pass
+    if start and not _ref_exists(root, start):
+        start = ""
     for rec in log.split("\x01"):
         rec = rec.strip("\n")
         if not rec:
@@ -137,12 +147,15 @@ def directive_commits(root: Path | str, did: str) -> dict:
         # settings `friday init` merges) and are never a directive's own work, trailer or not.
         if fl and all(f.startswith(("docs/goals/", "docs/directives/")) or f == ".claude/settings.json"
                       for f in fl):
+            # after the recorded start point (runs/<id>/start) it is a plan edit made during the run
+            if start and _git(["merge-base", "--is-ancestor", sha, start], root) is None:
+                plan.append((sha, subject))
             continue
         if has:
             commits.append((sha, subject))
         else:
             untracked.append((sha, subject, fl))
-    return {"base": base, "commits": commits, "untracked": untracked}
+    return {"base": base, "commits": commits, "untracked": untracked, "plan": plan}
 
 
 # ---------------------------------------------------------------- config

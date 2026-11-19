@@ -34,7 +34,7 @@ import json  # noqa: E402
 
 
 def _subjects(r):
-    return [ln.split(" ", 1)[1] for ln in r.stdout.splitlines() if ln.count(" ") and not ln.startswith(("base", "untracked"))]
+    return [ln.split(" ", 1)[1] for ln in r.stdout.splitlines() if ln.count(" ") and not ln.startswith(("base", "untracked", "plan "))]
 
 
 def _untracked(r):
