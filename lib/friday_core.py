@@ -98,9 +98,21 @@ def directive_commits(root: Path | str, did: str) -> dict:
     base = _git(["merge-base", base_ref, tip], root)
     if not base:
         raise ValueError(f"no merge-base of {base_ref} and {tip}")
-    log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", f"{base}..{tip}"], root)
+    # Best-effort fetch so origin/<Base> is current; offline or no remote just keeps the local refs.
+    _git(["fetch", "--quiet", "origin", base_name], root)
+    base_refs = [r for r in (base_name, f"origin/{base_name}") if _ref_exists(root, r)]
+    # Commits that reached the branch through a Base merge are not the directive's: anything on a
+    # Base ref, and anything reachable from the second parent of a merge whose second parent is on Base.
+    excl = list(base_refs)
+    merges = _git(["rev-list", "--merges", "--parents", tip, "--not", *base_refs], root) or ""
+    for line in merges.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and any(
+                _git(["merge-base", "--is-ancestor", parts[2], r], root) is not None for r in base_refs):
+            excl.append(parts[2])
+    log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", tip, "--not", *excl], root)
     if log is None:
-        raise ValueError(f"git log {base}..{tip} failed")
+        raise ValueError(f"git log {tip} failed")
     records = {f"{did}: {w}" for w in ("blocked", "unblock", "record results", "accepted")}
     trailer = re.compile(rf"(?m)^Directive:\s*{re.escape(did)}\s*$")
     anytrailer = re.compile(r"(?m)^Directive:\s*\S")
