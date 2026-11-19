@@ -103,6 +103,18 @@ def test_merging_base_into_goal_branch_keeps_commits_and_adds_no_untracked(repo)
     assert r.stdout.startswith("base " + _g(repo, "rev-parse", "main").strip())
 
 
+def test_merging_unrelated_branch_still_surfaces_its_commits(repo):
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    _g(repo, "checkout", "-q", "-b", "side", "main")
+    _commit(repo, "s.txt", "side work")
+    _g(repo, "checkout", "-q", "friday/core-01")
+    _g(repo, "merge", "--no-verify", "-q", "--no-ff", "-m", "merge side", "side")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert any("side work" in ln for ln in _untracked(r))
+
+
 def test_finish_log_excludes_other_directives_and_untagged_plan_commits(repo):
     cli(repo, "start", "core-01")
     _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
