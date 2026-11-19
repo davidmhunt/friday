@@ -1,5 +1,5 @@
 """tt-05: friday start finds a directive that exists only on Base, merges Base, and starts it."""
-from test_friday import cli, repo, _g, DIRECTIVE, GOAL, fc  # noqa: F401
+from test_friday import cli, repo, remote_repo, _g, DIRECTIVE, GOAL, fc  # noqa: F401
 
 
 def _amend_main(repo):
@@ -74,3 +74,14 @@ def test_done_goal_with_new_directive_becomes_running(repo):
     r = cli(repo, "start", "core-02")
     assert r.returncode == 0, r.stderr
     assert "Status: running" in (repo / "docs/goals/core.md").read_text()
+
+
+def test_start_finds_directive_on_origin_base(remote_repo):
+    repo, _origin = remote_repo
+    _amend_main(repo)
+    _g(repo, "push", "-q", "origin", "main")
+    _g(repo, "reset", "-q", "--hard", "HEAD")  # keep branch friday/core-01 without the amendment
+    r = cli(repo, "start", "core-02")
+    assert r.returncode == 0, r.stderr
+    assert "found core-02 on" in r.stdout and "merging main into friday/core" in r.stdout
+    assert (repo / "docs/directives/core-02.md").exists()
