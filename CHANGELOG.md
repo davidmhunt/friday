@@ -4,6 +4,12 @@
 
 ### Added
 
+- A `## Rules` section on directives and goals and `"rules": [...]` in `.claude/friday.json` hold
+  constraints for the whole directive. `friday parse --json` returns them merged (repo, goal, directive,
+  deduplicated); the execute workflow puts them into every implementer, verify-fix and reviewer prompt, and
+  the reviewer treats a broken rule as a gap. `friday check` errors on an empty `## Rules` or a non-list
+  `rules`. The directive and plan skills describe it (#27).
+
 - `friday start <id>` finds a directive that exists only on Base or the goal branch, merges Base first, and
   resolves a Base-merge conflict confined to `Status:` lines in favour of the goal branch; a `done` goal
   with a new undone directive is set back to `running` (#25).

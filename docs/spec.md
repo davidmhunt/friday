@@ -82,6 +82,9 @@ The result, and how a reader can tell it holds.
 ## Review
 - What the user should open and what to look for (needed with `Accept: user`).
 
+## Rules
+- A constraint that holds for every step.
+
 ## Allowed commands
 - `friday dispatch --goal board-limits`
 
@@ -112,6 +115,7 @@ An unknown header key is a warning.
 | `## Steps` | yes | numbered list; at least one step. A `[heavy]` step (the marker inside an inline code span is only a mention) must contain `Heavy because:`; heavy steps run on Opus |
 | `## Acceptance` | `doc`, `slides`, `external`: yes; `code`: optional | at most once; at least one `- ` bullet where required; the verifier grades each bullet |
 | `## Review` | with `Accept: user`: yes | at most once; at least one `- ` bullet; printed when the directive reaches `awaiting review` |
+| `## Rules` | no | at most once; at least one `- ` bullet when present (error otherwise); constraints for the whole directive, given to every implementer, verify-fix, runner and reviewer prompt; the reviewer treats a broken rule as a gap |
 | `## Allowed commands` | no | bullets, each with exactly one backticked pattern (section 5) |
 | `## Out of scope` | yes | what must not change; the verifier checks it |
 | `## Log` | yes, last | written by commands, never by hand |
@@ -169,7 +173,8 @@ The goal name matches `^[a-z0-9][a-z0-9-]*$` and must not look like a directive 
 | `Land` | yes | `pr`, `none` |
 
 Unknown goal headers are ignored. Sections `## Goal`, `## Directives`, `## Log` are required once
-each, in that order, `## Log` last; others are not restricted. `## Directives` is a numbered list in
+each, in that order, `## Log` last; others are not restricted. An optional `## Rules` (`- ` bullets, at
+least one when present) applies to every directive of the goal. `## Directives` is a numbered list in
 run order; each item starts with a directive id, optionally followed by `: <text>`. A bad or repeated
 id, or an id with no directive file whose `Goal:` names this goal, is an error.
 
@@ -332,7 +337,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` | record an expensive run once in `results/<id>.json` | 0; 1 error (no HEAD, file missing) |
 | `friday result check <id> [--require 'K OP V']... [--files]` | the cheap Verify: the record exists, its commit is an ancestor of HEAD, each requirement holds (`OP` is one of `>= > <= < == !=`), with `--files` each recorded file still has its hash | 0 holds; 1 one line per unmet condition |
 | `friday check [<id> \| --goal G \| --all]` | validate goal and directive files (default all) | 0; 1 any error |
-| `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive | 0; 1 the file has errors; 2 file missing |
+| `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive and `rules` (the repo's `friday.json` rules, then the goal's `## Rules`, then the directive's, deduplicated) | 0; 1 the file has errors; 2 file missing |
 | `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash, including `uv`, `gh auth` and `claude` sign-in with fix lines | 0; 1 no registry, or a master or worker failed the check |
 | `friday nodes --waiting` | one line per session waiting on a prompt across the registry's master and worker nodes (node, goal, directive, age, message), read from each node's `friday status --json` over ssh | 0 none waiting; 10 some waiting; 2 a node unreachable |
 | `friday nodes --setup NODE [--yes]` | print the prerequisite probe (`uv`, `gh auth`, `claude` sign-in, each ok or with its fix) first; on a target print the `nodes.toml` edit that makes it a worker and change nothing; otherwise set the node's first-run prompt skips in its `~/.claude/settings.json`, write its `node.toml`, link `friday`, install the 30 s push timer; asks y/N (`--yes` skips, required without a terminal) | 0; 1 refused or failed, or the node is a target |
@@ -530,6 +535,7 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
 |---|---|---|
 | `run_wrapper` | the command builds, tests and scripts must go through | `./run` |
 | `run_only` | tool names (`python`, `uv`, `cmake`, ...) that must be run through the wrapper | none |
+| `rules` | list of strings: rules for every directive in the repo. `friday check` errors on a non-list or a non-string entry; `load_config` drops such values | none |
 | `hardware` | object: resource name -> list of regular expressions matched against a Bash command | none |
 | `hardware_approval` | object: resource name (a key of `hardware`) -> `command` or `session`. `session`: one approved command approves the resource for the rest of the session while it holds the lease. `friday check` errors on another value or an unknown resource; `load_config` ignores such entries | `command` for every resource |
 

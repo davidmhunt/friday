@@ -47,6 +47,11 @@ user approves the plan.
      open and what to look for.
    - Tag a step `[heavy]` only when it needs deeper reasoning (a new algorithm, a numerical method,
      an architecture decision), with one line saying why.
+   - `## Rules` (optional section, before `## Log`): `- ` bullets for constraints that hold for the
+     whole directive. Never bury one in a single step's text, since other steps' implementers would
+     not see it. Rules for every directive of the goal go in the goal file's `## Rules`; repo-wide
+     ones in `.claude/friday.json` `"rules": [...]`. Every agent of the run gets them, and the
+     reviewer treats a broken rule as a gap.
    - `## Allowed commands` (optional section, before `## Log`): list every command the directive
      needs that would otherwise prompt and nobody will be there to answer: `friday dispatch --goal *`,
      `friday nodes --clean *`, `friday release *`, hardware commands, `ssh <robot> ...`. One bullet
