@@ -42,8 +42,9 @@
                                     check preconditions, pick a node (refusals have their own exit codes)
   friday dispatch --goal <g> --resume [--unblock ID]...
                                     resume the goal's session; --unblock ID (repeatable) unblocks that directive first
-  friday install [--bin-dir DIR]    link DIR/friday (default ~/.local/bin) to this checkout's bin/friday
-  friday uninstall [--bin-dir DIR]  remove that link when it points at a friday checkout
+  friday install [--bin-dir DIR]    install Python 3.12 with uv, record it, and write the DIR/friday shim
+                                    (default ~/.local/bin) that runs this checkout's bin/friday on it
+  friday uninstall [--bin-dir DIR]  remove that shim (or old link) when it belongs to a friday checkout, and the record
   friday dash [--bind ADDR]... [--no-self]
                                     serve the status API on 127.0.0.1 and this node's tailnet IP (port: [dash] port);
                                     --no-self: do not collect the master's own snapshot (it pushes it)
@@ -1102,6 +1103,10 @@ def probe_script(node, prereqs=False) -> str:
         'f=$(command -v friday 2>/dev/null)',
         f'if [ -z "$f" ]; then echo "FRIDAY_PROBE friday=missing"',
         f'elif [ "$(readlink -f "$f")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
+        f'elif grep -q "^# friday shim" "$f" 2>/dev/null; then',
+        f'  t=$(sed -n \'s/^exec .* \\(.*\\) "\\$@"$/\\1/p\' "$f" | tr -d "\'")',
+        f'  if [ "$(readlink -f "$t")" = "$(readlink -f {plug}/bin/friday)" ]; then echo "FRIDAY_PROBE friday=ok"',
+        '  else echo "FRIDAY_PROBE friday=$t"; fi',
         'else echo "FRIDAY_PROBE friday=$(readlink -f "$f")"; fi',
         "if command -v python3 >/dev/null 2>&1; then",
         f'  t=$(FRIDAY_P={repos} python3 -c {shlex.quote(_TRUST_PY)} 2>/dev/null); echo "FRIDAY_PROBE trust=${{t:-unknown}}"',
@@ -1949,12 +1954,62 @@ def _bin_dir(a) -> Path:
     return Path(os.path.expanduser(a.bin_dir or "~/.local/bin"))
 
 
+def _state_python() -> Path:
+    return Path(os.path.expanduser("~/.local/state/friday/python"))
+
+
+def _shim_target(link: Path) -> Path | None:
+    """The bin/friday a friday shim file execs, or None when `link` is not a friday shim."""
+    try:
+        if link.is_symlink() or not link.is_file() or link.stat().st_size > 4096:
+            return None
+        lines = link.read_text().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if len(lines) < 3 or lines[0] != "#!/bin/sh" or not lines[1].startswith("# friday shim"):
+        return None
+    for ln in lines[2:]:
+        if ln.startswith("exec "):
+            try:
+                parts = shlex.split(ln)
+            except ValueError:
+                return None
+            return Path(parts[-2]) if len(parts) >= 4 and parts[-1] == "$@" else None
+    return None
+
+
 def _is_friday_link(link: Path) -> bool:
-    """True when the symlink's target is a friday checkout's bin/friday (a dangling one counts by name)."""
+    """True when `link` is a symlink to a friday checkout's bin/friday (a dangling one counts by name)
+    or a shim written by `friday install`."""
+    if not link.is_symlink():
+        return _shim_target(link) is not None
     t = Path(os.path.abspath(link.parent / os.readlink(link)))
     if t.name != "friday" or t.parent.name != "bin":
         return False
     return (t.parent.parent / "lib" / "friday_core.py").is_file() or not t.exists()
+
+
+def _shim_text(py: str, me: Path) -> str:
+    return ("#!/bin/sh\n# friday shim (written by `friday install`; `friday uninstall` removes it)\n"
+            f"exec {shlex.quote(py)} {shlex.quote(str(me))} \"$@\"\n")
+
+
+def _uv_python() -> str | None:
+    """Install Python 3.12 with uv if needed and return its path; None (after saying why) on failure."""
+    if shutil.which("uv") is None:
+        print("friday: uv is not installed; install it (https://docs.astral.sh/uv/getting-started/installation/) "
+              "and run `friday install` again", file=sys.stderr)
+        return None
+    for args in (["python", "install", "3.12"], ["python", "find", "3.12"]):
+        r = subprocess.run(["uv", *args], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"friday: `uv {' '.join(args)}` failed: {(r.stderr or r.stdout).strip()}", file=sys.stderr)
+            return None
+    py = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    if not py:
+        print("friday: `uv python find 3.12` printed nothing", file=sys.stderr)
+        return None
+    return py
 
 
 def cmd_install(a) -> int:
@@ -1962,23 +2017,27 @@ def cmd_install(a) -> int:
     link = d / "friday"
     me = Path(__file__).resolve()
     if link.is_symlink():
-        old = os.readlink(link)
-        if Path(os.path.abspath(d / old)) == me or link.resolve() == me:
-            print(f"friday: {link} already points at {me}")
-        elif _is_friday_link(link):
-            link.unlink()
-            link.symlink_to(me)
-            print(f"friday: repointed {link}\n  old: {old}\n  new: {me}")
-        else:
-            print(f"friday: {link} is a link to {old}, which is not friday; not touching it", file=sys.stderr)
+        if not _is_friday_link(link):
+            print(f"friday: {link} is a link to {os.readlink(link)}, which is not friday; not touching it",
+                  file=sys.stderr)
             return 1
-    elif link.exists():
+    elif link.exists() and _shim_target(link) is None:
         print(f"friday: {link} is a regular file; not overwriting it", file=sys.stderr)
         return 1
-    else:
-        d.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(me)
-        print(f"friday: linked {link} -> {me}")
+    py = _uv_python()
+    if py is None:
+        return 1
+    rec = _state_python()
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(py + "\n")
+    print(f"friday: recorded {py} in {rec}")
+    d.mkdir(parents=True, exist_ok=True)
+    if link.is_symlink():
+        print(f"friday: replacing the old link {link} -> {os.readlink(link)}")
+        link.unlink()
+    link.write_text(_shim_text(py, me))
+    link.chmod(0o755)
+    print(f"friday: wrote shim {link} (runs {me} on {py})")
     on_path = str(d) in [os.path.expanduser(x) for x in os.environ.get("PATH", "").split(":")]
     if on_path:
         print(f"{d} is on PATH")
@@ -1996,17 +2055,19 @@ def cmd_uninstall(a) -> int:
 
 def _uninstall_link(a) -> int:
     link = _bin_dir(a) / "friday"
-    if link.is_symlink():
-        if _is_friday_link(link):
-            old = os.readlink(link)
-            link.unlink()
-            print(f"friday: removed {link} (was -> {old})")
-            return 0
-        print(f"friday: {link} is a link to {os.readlink(link)}, which is not friday; not removing it", file=sys.stderr)
-        return 1
-    if link.exists():
-        print(f"friday: {link} is a regular file; not removing it", file=sys.stderr)
-        return 1
+    if link.is_symlink() or link.exists():
+        if not _is_friday_link(link):
+            what = f"a link to {os.readlink(link)}" if link.is_symlink() else "a regular file"
+            print(f"friday: {link} is {what}, which is not friday; not removing it", file=sys.stderr)
+            return 1
+        old = os.readlink(link) if link.is_symlink() else "shim"
+        link.unlink()
+        print(f"friday: removed {link} (was -> {old})")
+        rec = _state_python()
+        if rec.exists():
+            rec.unlink()
+            print(f"friday: removed {rec}")
+        return 0
     print(f"friday: no link at {link}; nothing to do")
     return 0
 

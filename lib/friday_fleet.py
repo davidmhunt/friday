@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import json
 import os
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11: last-resort fallback; `friday install` sets up 3.12
+    import tomli as tomllib
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 ROLES = ("master", "worker", "target")
