@@ -20,6 +20,11 @@ Attention release: sessions waiting on a prompt are visible in status, the dash 
 
 ### Fixed
 
+- A Bash call of several commands (newlines, `&&`, `||`, `;`, `|`) is pre-approved when every command in it
+  matches a pattern in the directive's `## Allowed commands`; command or process substitution, a heredoc or
+  `&` backgrounding anywhere refuses it. Leases are taken for every hardware resource any part touches, and
+  one held by another session denies (#17).
+
 - Hardware prompts say the lease lasts the session but the approval covers this command only; a resource set to
   `"session"` under `hardware_approval` in `.claude/friday.json` is approved once per session (#15). Agents are told
   to write one simple command per hardware query so pre-approval applies.
