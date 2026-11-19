@@ -72,7 +72,9 @@ def directive_commits(root: Path | str, did: str) -> dict:
     [(sha, subject, files)]}. Base is the merge-base of the goal's Base (local branch, else
     origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
     `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
-    record commits and plan-only commits (files only under docs/goals/, docs/directives/, .claude/settings.json). `untracked` are non-merge commits with no `Directive:` line that touch
+    record commits and plan-only commits (files only under docs/goals/ or docs/directives/). Plan-only
+    commits that are not ancestors of the sha in runs/<id>/start (written by `friday start`; when
+    absent all are treated as before it) are returned in `plan` as (sha, subject). `untracked` are non-merge commits with no `Directive:` line that touch
     anything outside docs/goals/ and docs/directives/. Raises ValueError when it cannot say."""
     root = Path(root)
     try:
@@ -118,6 +120,14 @@ def directive_commits(root: Path | str, did: str) -> dict:
     anytrailer = re.compile(r"(?m)^Directive:\s*\S")
     commits: list[tuple[str, str]] = []
     untracked: list[tuple[str, str, list[str]]] = []
+    plan: list[tuple[str, str]] = []
+    start = None
+    try:
+        start = (root / "runs" / did / "start").read_text().strip() or None
+    except OSError:
+        pass
+    if start and not _ref_exists(root, start):
+        start = None
     for rec in log.split("\x01"):
         rec = rec.strip("\n")
         if not rec:
@@ -133,16 +143,18 @@ def directive_commits(root: Path | str, did: str) -> dict:
         if files is None:
             raise ValueError(f"git diff-tree {sha} failed")
         fl = files.splitlines()
-        # Plan commits live on the goal branch: they touch only goal/directive files (and the
-        # settings `friday init` merges) and are never a directive's own work, trailer or not.
-        if fl and all(f.startswith(("docs/goals/", "docs/directives/")) or f == ".claude/settings.json"
-                      for f in fl):
+        # Plan-only commits (files only under docs/goals/ or docs/directives/) are the plan, not
+        # the directive's work. Before the start point they are excluded; after it they are an
+        # amendment made while the directive ran and are listed in `plan` for the review.
+        if fl and all(f.startswith(("docs/goals/", "docs/directives/")) for f in fl):
+            if start and _git(["merge-base", "--is-ancestor", sha, start], root) is None:
+                plan.append((sha, subject))
             continue
         if has:
             commits.append((sha, subject))
         else:
             untracked.append((sha, subject, fl))
-    return {"base": base, "commits": commits, "untracked": untracked}
+    return {"base": base, "commits": commits, "untracked": untracked, "plan": plan}
 
 
 # ---------------------------------------------------------------- config

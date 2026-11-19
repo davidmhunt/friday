@@ -34,7 +34,7 @@ import json  # noqa: E402
 
 
 def _subjects(r):
-    return [ln.split(" ", 1)[1] for ln in r.stdout.splitlines() if ln.count(" ") and not ln.startswith(("base", "untracked"))]
+    return [ln.split(" ", 1)[1] for ln in r.stdout.splitlines() if ln.count(" ") and not ln.startswith(("base", "untracked", "plan"))]
 
 
 def _untracked(r):
@@ -54,15 +54,53 @@ def test_commits_split_interleaved_directives(repo):
     assert [c["subject"] for c in j["commits"]] == ["mine a", "mine b"] and j["untracked"] == []
 
 
-def test_plan_only_commit_without_trailer_is_neither_listed_nor_untracked(repo):
-    cli(repo, "start", "core-01")
-    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+def _plan(r):
+    return [ln for ln in r.stdout.splitlines() if ln.startswith("plan ")]
+
+
+def _amend(repo, msg):
     g = repo / "docs/goals/core.md"
     g.write_text(g.read_text() + "\namended\n")
     _g(repo, "add", "docs/goals/core.md")
-    _g(repo, "commit", "--no-verify", "-qm", "amend plan")
+    _g(repo, "commit", "--no-verify", "-qm", msg)
+
+
+def test_plan_only_commit_before_start_is_excluded(repo):
+    _amend(repo, "early plan\n\nDirective: core-01")
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0 and _subjects(r) == ["mine a"] and not _untracked(r) and not _plan(r)
+
+
+def test_plan_only_commit_after_start_is_listed_as_plan(repo):
+    cli(repo, "start", "core-01")
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    _amend(repo, "amend tagged\n\nDirective: core-01")
+    _amend(repo, "amend untagged")
     r = cli(repo, "commits", "core-01")
     assert r.returncode == 0 and _subjects(r) == ["mine a"] and not _untracked(r)
+    assert [ln.split(" ", 2)[2] for ln in _plan(r)] == ["amend tagged", "amend untagged"]
+    j = json.loads(cli(repo, "commits", "core-01", "--json").stdout)
+    assert [c["subject"] for c in j["plan"]] == ["amend tagged", "amend untagged"]
+
+
+def test_restart_keeps_first_start_point(repo):
+    cli(repo, "start", "core-01")
+    first = (repo / "runs/core-01/start").read_text().strip()
+    assert first == _g(repo, "rev-parse", "HEAD").strip()
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    cli(repo, "start", "core-01")
+    assert (repo / "runs/core-01/start").read_text().strip() == first
+
+
+def test_plan_only_commit_without_start_file_is_excluded(repo):
+    cli(repo, "start", "core-01")
+    (repo / "runs/core-01/start").unlink()
+    _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
+    _amend(repo, "amend plan")
+    r = cli(repo, "commits", "core-01")
+    assert _subjects(r) == ["mine a"] and not _plan(r)
 
 
 def test_untagged_code_commit_is_untracked(repo):

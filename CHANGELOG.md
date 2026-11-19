@@ -4,6 +4,8 @@
 
 ### Added
 
+- `friday start` records `runs/<id>/start`; `friday commits` excludes plan-only commits before it and lists later ones as `plan` lines, which the review checks for edits to the directive's own goal, steps, Verify, Rules or Allowed commands.
+
 - Plans live on the goal branch `friday/<goal>`, never on Base, so main stays protected. `friday approve
   --goal <g>` (user-only; the hook denies it for agents) runs `friday check` and pushes the plan to
   `friday-plan/<g>` on origin; pre-approval of `## Allowed commands` reads only that ref, and the hook
