@@ -108,6 +108,103 @@ def check_run_only(cmd: str, cfg: dict) -> str | None:
     return None
 
 
+FILE_IO_REASON = ("use Read/Grep/Glob for reading and Edit/Write for writing files; "
+                  "Bash is for running programs (bash_file_io is \"deny\" in .claude/friday.json)")
+_FILE_READERS = {"cat", "head", "tail", "less", "more"}
+_SCRIPT_TOOLS = {"sed", "awk", "grep", "egrep", "rg"}
+# flags that take a separate value, per tool (so the value is not mistaken for a file operand)
+_VALUE_FLAGS = {"head": {"-n", "-c"}, "tail": {"-n", "-c"},
+                "grep": {"-A", "-B", "-C", "-m", "--max-count"}, "egrep": {"-A", "-B", "-C", "-m"},
+                "rg": {"-A", "-B", "-C", "-m", "-g", "--glob", "-t", "--type", "-M"}, "sed": set(), "awk": {"-F", "-v"}}
+_SCRIPT_FLAGS = {"sed": {"-e", "-f"}, "awk": {"-f"}, "grep": {"-e", "-f"}, "egrep": {"-e", "-f"}, "rg": {"-e", "-f"}}
+
+
+def _redirect_targets(simple: str) -> tuple[list[str], bool]:
+    """Targets of > / >> outside quotes in one simple command, and whether it has a heredoc (<<)."""
+    targets, heredoc, quote, i = [], False, None, 0
+    while i < len(simple):
+        c = simple[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            i += 1
+        elif simple.startswith("<<<", i):
+            i += 2
+        elif simple.startswith("<<", i):
+            heredoc = True; i += 1
+        elif c == ">":
+            j = i + 1
+            if j < len(simple) and simple[j] == ">":
+                j += 1
+            while j < len(simple) and simple[j] in " \t":
+                j += 1
+            k = j
+            while k < len(simple) and simple[k] not in " \t;&|<>":
+                k += 1
+            targets.append(simple[j:k])
+            i = max(k, i + 1) - 1
+        i += 1
+    return targets, heredoc
+
+
+def _positionals(argv: list[str], tool: str) -> tuple[list[str], bool]:
+    """Positional operands of argv[1:], and whether a script flag (-e/-f) supplied the script/pattern."""
+    vals, sflags = _VALUE_FLAGS.get(tool, set()), _SCRIPT_FLAGS.get(tool, set())
+    pos, scripted, skip = [], False, False
+    for a in argv[1:]:
+        if skip:
+            skip = False
+        elif a == "--":
+            pos.append("")      # placeholder is dropped below; operands after -- are positional
+        elif a.startswith("-") and a != "-":
+            if a in sflags:
+                scripted, skip = True, True
+            elif a in vals:
+                skip = True
+        else:
+            pos.append(a)
+    return [x for x in pos if x != ""], scripted
+
+
+def check_bash_file_io(cmd: str, cfg: dict) -> str | None:
+    """With bash_file_io: deny, deny Bash commands that do file I/O the file tools cover. A tool that
+    only reads a pipe (no file operand) is fine."""
+    if cfg.get("bash_file_io") != "deny":
+        return None
+    for simple in fc.split_commands(cmd):
+        targets, heredoc = _redirect_targets(simple)
+        if heredoc:
+            return FILE_IO_REASON
+        for t in targets:
+            if t and not (t == "/dev/null" or t.startswith("/dev/fd/") or t.startswith("&")):
+                return FILE_IO_REASON
+        argv = fc.argv_of(simple)
+        if not argv:
+            continue
+        tool = Path(argv[0]).name
+        if tool in ("python", "python3") and len(argv) > 1 and argv[1] == "-":
+            return FILE_IO_REASON
+        if tool == "tee" and any(not a.startswith("-") for a in argv[1:]):
+            return FILE_IO_REASON
+        if tool == "sed" and any(a == "-i" or a.startswith(("-i", "--in-place")) or
+                                 (a.startswith("-") and not a.startswith("--") and "i" in a[1:] and "e" not in a)
+                                 for a in argv[1:]):
+            return FILE_IO_REASON
+        if tool in _FILE_READERS:
+            if _positionals(argv, tool)[0]:
+                return FILE_IO_REASON
+        elif tool in _SCRIPT_TOOLS:
+            pos, scripted = _positionals(argv, tool)
+            if len(pos) > (0 if scripted else 1):
+                return FILE_IO_REASON
+    return None
+
+
 def _goal_and_base(cwd: Path, did: str) -> tuple[str, str]:
     """The directive's goal id and that goal's Base branch ('' when unreadable)."""
     root = fc.repo_root(cwd)
@@ -407,6 +504,8 @@ def pretool(payload: dict) -> None:
     if (r := check_accept(cmd)):
         results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
+        results.append(("deny", r))
+    if (r := check_bash_file_io(cmd, cfg)):
         results.append(("deny", r))
     if (r := check_push(cmd, cwd)):
         results.append(("deny", r))

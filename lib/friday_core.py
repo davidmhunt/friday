@@ -166,6 +166,8 @@ def load_config(root: Path | None) -> dict:
         # a non-list (or non-string entries) is dropped; `friday check` reports it
         r = cfg["rules"]
         cfg["rules"] = [x.strip() for x in r if isinstance(x, str) and x.strip()] if isinstance(r, list) else []
+    if cfg.get("bash_file_io") not in (None, "deny", "allow"):
+        cfg["bash_file_io"] = "allow"       # invalid: dropped; `friday check` reports it
     return cfg
 
 
@@ -185,6 +187,8 @@ def config_issues(root: Path | None) -> list[Issue]:
     if not isinstance(cfg, dict):
         return []
     out = []
+    if "bash_file_io" in cfg and cfg["bash_file_io"] not in ("deny", "allow"):
+        out.append(Issue("error", rel, 1, f"bash_file_io is {cfg['bash_file_io']!r}; use deny or allow"))
     if "rules" in cfg:
         r = cfg["rules"]
         if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
