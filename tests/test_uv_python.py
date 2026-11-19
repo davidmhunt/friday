@@ -72,3 +72,28 @@ def test_imports_under_tomli_fallback(tmp_path):
                         % (str(stub), str(ROOT / "lib"), str(FRIDAY))],
                        capture_output=True, text=True)
     assert "exit 0" in r.stdout, r.stdout + r.stderr
+
+
+def test_cli_imports_with_no_toml_parser():
+    """Stock 3.10 has neither tomllib nor tomli; `friday install` must still be able to start."""
+    code = ("import sys; sys.modules['tomllib'] = None; sys.modules['tomli'] = None; sys.path.insert(0, %r)\n"
+            "import runpy; sys.argv=['friday','--help']\n"
+            "try: runpy.run_path(%r, run_name='__main__')\nexcept SystemExit as e: print('exit', e.code)\n"
+            % (str(ROOT / "lib"), str(FRIDAY)))
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert "exit 0" in r.stdout, r.stdout + r.stderr
+
+
+def test_status_warns_without_recorded_python(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    env = {**os.environ, "HOME": str(home)}
+    r = subprocess.run([sys.executable, str(FRIDAY), "status"], capture_output=True, text=True, env=env, cwd=repo)
+    assert "no friday Python is recorded" in r.stderr and "friday install" in r.stderr, r.stdout + r.stderr
+    rec = home / ".local" / "state" / "friday"
+    rec.mkdir(parents=True, exist_ok=True)
+    (rec / "python").write_text(f"{sys.executable}\n")
+    r = subprocess.run([sys.executable, str(FRIDAY), "status"], capture_output=True, text=True, env=env, cwd=repo)
+    assert "no friday Python is recorded" not in r.stderr, r.stderr

@@ -21,7 +21,7 @@ agents and a dashboard (`dash/`). The single reference for what it does is `docs
 
 ## Default Verify
 A directive here normally uses:
-`uv run --with pytest pytest -q tests/test_docs.py tests/test_spec.py && uv run --with pytest --with pyyaml pytest -q && claude plugin validate .`
+`uv run --with pytest pytest -q tests/test_docs.py tests/test_spec.py && uv run --with pytest pytest -q && claude plugin validate .`
 Narrow it to the tests that prove the directive when the full run is not needed.
 
 ## Do not edit the live plugin checkout

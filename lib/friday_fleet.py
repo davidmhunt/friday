@@ -14,7 +14,20 @@ from pathlib import Path
 try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11: last-resort fallback; `friday install` sets up 3.12
-    import tomli as tomllib
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        # Neither is present (stock 3.10): stay importable so `friday install` can run and fetch 3.12;
+        # only reading a nodes file fails, with the fix named.
+        class tomllib:  # noqa: N801
+            class TOMLDecodeError(ValueError):
+                pass
+
+            @staticmethod
+            def _no(*_a, **_k):
+                raise RegistryError("no TOML parser on this Python (< 3.11); run `friday install` "
+                                   "(it installs Python 3.12 via uv)")
+            loads = load = _no
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 ROLES = ("master", "worker", "target")
