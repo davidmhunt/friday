@@ -171,3 +171,11 @@ def test_failing_ran_true_still_gets_fix_rounds():
     r, calls = _run_verify_loop([fail, ok])
     assert r["ok"] is True
     assert calls == ["friday:runner", "friday:implementer", "friday:runner"]
+
+
+def test_both_review_prompts_explain_plan_lines():
+    reviews = [p for p in _agent_prompts() if "friday commits ${id}" in p]
+    assert len(reviews) == 2
+    for p in reviews:
+        assert "A \\`plan\\` line is a plan edit made after the directive started" in p
+        assert "Verify, Rules or Allowed commands" in p
