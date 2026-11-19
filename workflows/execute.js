@@ -140,7 +140,7 @@ async function verifyLoop(d, label) {
   let last = '', same = 0
   for (let round = 1; ; round++) {
     const v = await agent(
-      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, and wait for it to finish (it can take several minutes):\n\n${d.verify}\n\nReturn whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.`,
+      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, and wait for it to finish (it can take several minutes):\n\n${d.verify}\n\nReturn whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
       { agentType: 'friday:runner', schema: VERIFY, label: `${label} verify ${round}`, phase: 'Verify' },
     )
     if (v && v.passed) { state.verify = verifyLineOf(); return { ok: true, rounds: round } }

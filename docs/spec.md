@@ -115,7 +115,7 @@ An unknown header key is a warning.
 | `## Steps` | yes | numbered list; at least one step. A `[heavy]` step (the marker inside an inline code span is only a mention) must contain `Heavy because:`; heavy steps run on Opus |
 | `## Acceptance` | `doc`, `slides`, `external`: yes; `code`: optional | at most once; at least one `- ` bullet where required; the verifier grades each bullet |
 | `## Review` | with `Accept: user`: yes | at most once; at least one `- ` bullet; printed when the directive reaches `awaiting review` |
-| `## Rules` | no | at most once; at least one `- ` bullet when present (error otherwise); constraints for the whole directive, given to every implementer, verify-fix, review-fix and reviewer prompt (not the runner, which only runs the Verify command); the reviewer treats a broken rule as a gap |
+| `## Rules` | no | at most once; at least one `- ` bullet when present (error otherwise); constraints for the whole directive, given to every implementer, verify-fix, review-fix, runner and reviewer prompt; the reviewer treats a broken rule as a gap |
 | `## Allowed commands` | no | bullets, each with exactly one backticked pattern (section 5) |
 | `## Out of scope` | yes | what must not change; the verifier checks it |
 | `## Log` | yes, last | written by commands, never by hand |
