@@ -186,6 +186,10 @@ id, or an id with no directive file whose `Goal:` names this goal, is an error.
 - `<git dir>/friday-active`, per worktree, never committed: the active marker (`id`, `host`,
   `started`, `gate`, `base`, `goal_base`), written by `friday start`, removed by `friday finish`.
 - `~/.local/state/friday/leases/<resource>.json`: hardware leases (section 9.3).
+- `~/.local/state/friday/python`: the interpreter path `friday install` recorded (from `uv python find 3.12`).
+  `bin/friday-python` (POSIX sh) resolves the Python for every friday entry point: the recorded path if it
+  runs, else `uv python find 3.12`, else `python3` with a warning on stderr naming `friday install`. Hooks
+  and remote snippets run through it; `friday status` warns when hooks would fall back to `python3`.
 - `~/.local/state/friday/dispatches.jsonl` on the master: one line per dispatch or resume.
 
 ## 3 Status lifecycle
@@ -338,15 +342,15 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday result check <id> [--require 'K OP V']... [--files]` | the cheap Verify: the record exists, its commit is an ancestor of HEAD, each requirement holds (`OP` is one of `>= > <= < == !=`), with `--files` each recorded file still has its hash | 0 holds; 1 one line per unmet condition |
 | `friday check [<id> \| --goal G \| --all]` | validate goal and directive files (default all) | 0; 1 any error |
 | `friday parse <id> --json` / `friday parse --goal G --json` | the parsed file as JSON, with `errors` and `warnings`; includes `allowed` for a directive and `rules` (the repo's `friday.json` rules, then the goal's `## Rules`, then the directive's, deduplicated) | 0; 1 the file has errors; 2 file missing |
-| `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash, including `uv`, `gh auth` and `claude` sign-in with fix lines | 0; 1 no registry, or a master or worker failed the check |
+| `friday nodes [--check]` | list the fleet registry; `--check` probes each node over ssh and the dash, including `uv`, the recorded friday Python and its version, `gh auth` and `claude` sign-in with fix lines | 0; 1 no registry, or a master or worker failed the check |
 | `friday nodes --waiting` | one line per session waiting on a prompt across the registry's master and worker nodes (node, goal, directive, age, message), read from each node's `friday status --json` over ssh | 0 none waiting; 10 some waiting; 2 a node unreachable |
 | `friday nodes --setup NODE [--yes]` | print the prerequisite probe (`uv`, `gh auth`, `claude` sign-in, each ok or with its fix) first; on a target print the `nodes.toml` edit that makes it a worker and change nothing; otherwise set the node's first-run prompt skips in its `~/.claude/settings.json`, write its `node.toml`, link `friday`, install the 30 s push timer; asks y/N (`--yes` skips, required without a terminal) | 0; 1 refused or failed, or the node is a target |
 | `friday nodes --clean NODE [--dry-run]` | remove finished goals' worktrees, branches, tmux sessions and trust entries on a node; `--dry-run` only plans | 0; 1 error; `--dry-run` without `--clean` exits 2 |
 | `friday dispatch --goal G [--node N] [--report-to S] [--dry-run]` | check, pick a node, prepare a worktree there and start a tmux session `friday-<G>` running the goal's directives; records it. `--dry-run` changes nothing | 0; 10-27 a refusal on the master (table below); 30-36 a refusal by the node; 1 launch failed |
 | `friday dispatch --goal G --resume [--unblock ID]... [--node N] [--report-to S] [--dry-run]` | restart a stopped goal in its existing worktree; `--unblock ID` (repeatable) first runs `friday unblock ID` there | 0; 16, 18, 19, 20; 21-26 (table below); 1 stop or launch failed |
 | `friday session-end --goal G` | close this dispatched session's own tmux session 10 s later, once the goal is `done` | 0; 1 refused (not dispatched, not that session, goal not done) |
-| `friday install [--bin-dir DIR]` | link `DIR/friday` (default `~/.local/bin`) to this checkout | 0; 1 would overwrite something else |
-| `friday uninstall [--bin-dir DIR]` | remove that link when it points at a friday checkout, and this repo's `commit-msg` guard | 0; 1 not a friday link |
+| `friday install [--bin-dir DIR]` | needs `uv`: run `uv python install 3.12`, record the path from `uv python find 3.12` in `~/.local/state/friday/python`, and write `DIR/friday` (default `~/.local/bin`) as an sh shim that execs that interpreter on this checkout's `bin/friday`; an old friday symlink is replaced | 0; 1 would overwrite something else, or `uv` failed |
+| `friday uninstall [--bin-dir DIR]` | remove that shim (or old link) when it is friday's, the recorded Python path, and this repo's `commit-msg` guard | 0; 1 not a friday link |
 | `friday dash [--bind ADDR]... [--no-self]` | serve the status API on 127.0.0.1 and the tailnet address (section 12) | 0; 1 |
 | `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing |
 
@@ -442,7 +446,7 @@ must already be allowed, by `.claude/settings.json` or by `## Allowed commands` 
 
 ## 9 Hooks
 
-Hooks are in `hooks/hooks.json` and run `hooks/friday_hook.py`. Each decision is deterministic and
+Hooks are in `hooks/hooks.json` and run `hooks/friday_hook.py` through `bin/friday-python` (section 2). Each decision is deterministic and
 its reason tells the agent the fix. A hook bug fails open: it prints an error to stderr and makes no
 decision rather than wedge a session. Rules in a PreToolUse run are combined: `deny` beats `ask`
 beats `allow`.

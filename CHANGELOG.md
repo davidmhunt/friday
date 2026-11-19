@@ -4,6 +4,14 @@
 
 ### Added
 
+- friday runs on a uv-managed Python 3.12 everywhere (#29). `friday install` runs `uv python install 3.12`,
+  records the interpreter in `~/.local/state/friday/python` and writes `~/.local/bin/friday` as a shim
+  (an old symlink is replaced). Hooks and remote snippets run through the new `bin/friday-python`
+  launcher (recorded path, else `uv python find 3.12`, else `python3` with a warning), so nodes with an
+  old system Python (Ubuntu 22.04, 3.10) work. `friday nodes --check` reports uv and the recorded Python
+  per node with fix lines; `friday status` warns when hooks would fall back to `python3`. `tomli` is the
+  fallback when `tomllib` is missing. uv is now a requirement.
+
 - `"bash_file_io": "deny"` in `.claude/friday.json` makes the PreToolUse hook deny Bash file reads and
   writes the file tools cover (`cat`, `sed`, `grep`, heredocs, `>` redirects, `python3 -`), naming
   Read/Grep/Glob and Edit/Write; tools reading a pipe stay allowed. `friday init` prints it as an

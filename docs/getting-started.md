@@ -10,7 +10,7 @@ command passes and an independent reviewer agrees, and you review and merge one 
 | Need | Why |
 |---|---|
 | Claude Code v2.1.154 or newer (`claude --version`) | friday's execute step is a Claude Code workflow |
-| `python3` | the `friday` CLI and the hooks are Python with no dependencies |
+| `uv` ([install](https://docs.astral.sh/uv/getting-started/installation/)) | friday runs its CLI and hooks on a uv-managed Python 3.12, so an old system Python does not matter; `friday install` fetches it |
 | `git` | friday works on branches and commits in your repo |
 | `gh`, signed in (`gh auth login`, check with `gh auth status`) | `friday land --goal` opens the pull request; without it the push still works and friday prints a compare URL |
 | an `origin` remote on the repo, pushed to GitHub | the goal branch is pushed to it and the PR targets a branch on it |
@@ -32,12 +32,12 @@ git clone https://github.com/davidmhunt/friday ~/src/friday
 ```
 
 ```bash
-python3 ~/src/friday/bin/friday install      # once per machine: links ~/.local/bin/friday to the clone
+python3 ~/src/friday/bin/friday install      # once per machine: runs `uv python install 3.12`, records it, writes the ~/.local/bin/friday shim
 friday --help                                # make sure ~/.local/bin is on PATH
 ```
 
 To update, run `git pull` in the clone, then
-`/plugin marketplace update friday`. `friday uninstall` removes the link again.
+`/plugin marketplace update friday`. `friday uninstall` removes the shim and the recorded Python again.
 
 Do not edit files in the clone while a session uses it; its hooks run from there.
 
