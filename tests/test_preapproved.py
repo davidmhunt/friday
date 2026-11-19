@@ -365,3 +365,12 @@ def test_batch_lease_held_elsewhere_denies(batch_repo):
     fc.take_lease("radar2", "other", "x")
     d, why = pre(batch_repo, "ssh robot uname\nssh radar2 uptime\ngrep x f")
     assert d == "deny" and "held by another session" in why and "radar2" in why
+
+
+def test_ssh_pattern_does_not_preapprove_quoted_inner_substitution(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, ["ssh rover *"])
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    assert pre(r, "ssh rover ls")[0] == "allow"
+    for cmd in ("ssh rover '$(friday accept x)'", 'ssh rover "\\$(friday approve --goal g)"',
+                'ssh rover "\\`friday accept x\\`"'):
+        assert pre(r, cmd)[0] != "allow", cmd

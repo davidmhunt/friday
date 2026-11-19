@@ -1040,12 +1040,16 @@ def _drop_single_quoted(line: str) -> str:
     return "".join(out)
 
 
-def split_commands(line: str) -> list[str]:
+def split_commands(line: str, literal_quotes: bool = False) -> list[str]:
     """Split a shell line into simple commands on && || ; | & and newlines, outside quotes.
-    Command substitutions $(...) and backticks are returned as extra commands too.
+    Command substitutions $(...) and backticks are returned as extra commands too, wherever they
+    appear (single quotes and escaped ones included: an inner shell such as `bash -c '$(x)'` or
+    `ssh host '$(x)'` runs them, so security rules fail closed).
+    `literal_quotes=True` (word-matching rules only: run_only, bash_file_io) skips substitutions
+    that are literal to the local shell: inside single quotes or backslash-escaped.
     Heredoc bodies are scanned like any other text (fail closed)."""
     parts, buf, quote, i = [], [], None, 0
-    subs = re.findall(_SUBST, _drop_single_quoted(line))
+    subs = re.findall(_SUBST, _drop_single_quoted(line) if literal_quotes else line)
     while i < len(line):
         c = line[i]
         if quote:
@@ -1072,7 +1076,7 @@ def split_commands(line: str) -> list[str]:
         buf.append(c); i += 1
     parts.append("".join(buf))
     for a, b in subs:
-        parts.extend(split_commands(a or b))
+        parts.extend(split_commands(a or b, literal_quotes))
     return [p.strip() for p in parts if p.strip()]
 
 

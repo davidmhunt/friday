@@ -96,7 +96,7 @@ def check_run_only(cmd: str, cfg: dict) -> str | None:
     wrapper = cfg.get("run_wrapper", "./run")
     if not tools:
         return None
-    for simple in fc.split_commands(cmd):
+    for simple in fc.split_commands(cmd, literal_quotes=True):
         argv = fc.argv_of(simple)
         if not argv:
             continue
@@ -180,7 +180,7 @@ def check_bash_file_io(cmd: str, cfg: dict) -> str | None:
     only reads a pipe (no file operand) is fine."""
     if cfg.get("bash_file_io") != "deny":
         return None
-    for simple in fc.split_commands(cmd):
+    for simple in fc.split_commands(cmd, literal_quotes=True):
         targets, heredoc = _redirect_targets(simple)
         if heredoc:
             return FILE_IO_REASON

@@ -73,20 +73,46 @@ def test_run_only_ignores_quoted_words():
     assert hook.check_run_only("python3 x.py", cfg)
 
 
-def test_split_commands_ignores_quoted_and_escaped_substitutions():
-    from friday_core import split_commands
-    assert split_commands("gh issue create --body 'use `python3 -` here'") == ["gh issue create --body 'use `python3 -` here'"]
-    assert split_commands("echo '$(python3 -)'") == ["echo '$(python3 -)'"]
-    assert split_commands('gh issue create --body "use \\`python3 -\\` here"') == \
+def test_split_commands_literal_quotes_ignores_quoted_and_escaped_substitutions():
+    from friday_core import split_commands as sc
+
+    def lit(c):
+        return sc(c, literal_quotes=True)
+    assert lit("gh issue create --body 'use `python3 -` here'") == ["gh issue create --body 'use `python3 -` here'"]
+    assert lit("echo '$(python3 -)'") == ["echo '$(python3 -)'"]
+    assert lit('gh issue create --body "use \\`python3 -\\` here"') == \
         ['gh issue create --body "use \\`python3 -\\` here"']
-    assert "python3 -" in split_commands('echo "$(python3 -)"')      # still run: double quotes expand
-    assert "python3 -" in split_commands("echo `python3 -`")
+    assert "python3 -" in lit('echo "$(python3 -)"')      # still run: double quotes expand
+    assert "python3 -" in lit("echo `python3 -`")
+
+
+def test_split_commands_default_extracts_every_substitution():
+    """Fail closed: an inner shell (bash -c, ssh) runs text that is literal to the local shell."""
+    from friday_core import split_commands as sc
+    for c in ("echo '$(python3 -)'", "echo '`python3 -`'", 'echo "\\`python3 -\\`"', 'echo "\\$(python3 -)"'):
+        assert any(p.startswith("python3 -") for p in sc(c)), c
+
+
+INNER_SHELL = [
+    "bash -c '$(friday {v} {a})'",
+    "ssh host '$(friday {v} {a})'",
+    'bash -c "\\`friday {v} {a}\\`"',
+    'ssh host "\\$(friday {v} {a})"',
+]
+
+
+@pytest.mark.parametrize("tmpl", INNER_SHELL)
+@pytest.mark.parametrize("v,a", [("accept", "x"), ("approve", "--goal g")])
+def test_accept_guard_sees_substitutions_inside_inner_shell_quotes(tmpl, v, a):
+    cmd = tmpl.format(v=v, a=a)
+    assert hook.check_accept(cmd), cmd
 
 
 def test_run_only_ignores_single_quoted_and_escaped_substitutions():
     cfg = {"run_only": ["python3"]}
     assert hook.check_run_only("gh issue create --body 'use `python3 -` here'", cfg) is None
     assert hook.check_run_only('gh issue create --body "use \\`python3 -\\` here"', cfg) is None
+    assert hook.check_bash_file_io("gh issue create --body 'use `python3 -` here'", DENY) is None
 
 
 def test_invalid_value_is_a_check_error_and_loads_as_allow(tmp_path):
