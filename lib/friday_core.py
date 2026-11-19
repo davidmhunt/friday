@@ -574,6 +574,39 @@ def push_pattern_problem(pat: str, goal_branch: str) -> str | None:
     return None
 
 
+_SSH_VALUE_OPTS = {"-p", "-i", "-o", "-J", "-l", "-F"}
+_REMOTE_SHELLS = {"bash", "sh", "zsh", "dash"}
+_REMOTE_BUILDS = (("docker", "build"), ("colcon", "build"), ("make",), ("cmake",), ("cargo", "build"),
+                  ("pip", "install"), ("pip3", "install"), ("uv", "sync"), ("apt",), ("apt-get",))
+_THIN_RULE = ("a target directive runs named, reviewed scripts and single-purpose writes; "
+              "iterative robot work is a worker goal (`Node: host:<robot>`, see docs/fleet.md "
+              "\"Targets and workers\")")
+
+
+def remote_pattern_warnings(pat: str) -> list[str]:
+    """Warnings for an `## Allowed commands` pattern that is an `ssh` call pre-approving any
+    remote command, a remote shell, or a remote build/install. [] for anything else."""
+    argv = argv_of(pat)
+    if not argv or argv[0] != "ssh":
+        return []
+    i = 1
+    while i < len(argv) and argv[i].startswith("-"):
+        i += 2 if argv[i] in _SSH_VALUE_OPTS else 1
+    if i >= len(argv):
+        return []
+    rest = argv[i + 1:]                      # argv[i] is the host
+    if len(rest) == 1 and " " in rest[0]:    # ssh host 'docker build .'
+        rest = argv_of(rest[0])
+    if not rest or rest[0].startswith("*"):
+        return [f"`{pat}` pre-approves any remote command; {_THIN_RULE}"]
+    if rest[0] in _REMOTE_SHELLS and ("-c" in rest[1:] or any("*" in t for t in rest[1:])):
+        return [f"`{pat}` pre-approves an arbitrary remote shell command; {_THIN_RULE}"]
+    for b in _REMOTE_BUILDS:
+        if tuple(rest[:len(b)]) == b:
+            return [f"`{pat}` is a remote build or install; {_THIN_RULE}"]
+    return []
+
+
 def validate_directive(did: str, text: str) -> list[Issue]:
     """This one directive file's own rules (no cross-checks against goal files)."""
     path = str(DIRECTIVE_DIR / f"{did}.md")
@@ -637,6 +670,9 @@ def validate_directive(did: str, text: str) -> list[Issue]:
         elif (why := push_pattern_problem(
                 pat, f"friday/{did}" if d["land"] == "pr" else f"friday/{d['goal']}")):
             issues.append(Issue("error", path, ln, f"Allowed commands `{pat}`: {why}"))
+        else:
+            for w in remote_pattern_warnings(pat):
+                issues.append(Issue("warning", path, ln, f"Allowed commands {w}"))
 
     steps_sec = _section(md, "Steps")
     if steps_sec:
