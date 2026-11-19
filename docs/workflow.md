@@ -51,7 +51,8 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
 
 `Accept: user` directives stop at `awaiting review`: the goal branch is pushed, later directives
 continue, and you open the `## Review` bullets and run `friday accept <id>` (or
-`friday accept <id> --reject REASON`). Agents cannot run it.
+`friday accept <id> --reject REASON`). Agents cannot run it. Likewise only you run
+`friday approve --goal <g>`, which publishes the plan's `## Allowed commands` for pre-approval.
 
 The workflow runs one agent at a time. Claude Code also caps any workflow at min(16, CPUs - 2)
 agents at once. Allow the `friday` commands in the project's `.claude/settings.json` (`friday init`

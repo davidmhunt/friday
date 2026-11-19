@@ -37,6 +37,7 @@ DENY = [
     (r"\bgit\s+push\b.*(\s--force\b|\s--force-with-lease\b|\s-f\b)", "Force-push is not allowed."),
     (r"\bgit\s+push\b[^|;&]*\s\+[\w./*-]+", "Force-push via +refspec is not allowed."),
     (r"\bgit\s+push\b[^|;&]*\s(origin\s+)?(HEAD:)?(main|master)(\s|$)", "Pushing to main/master is not allowed; push the directive branch and open a PR."),
+    (r"\bgit\s+push\b[^|;&]*[\s:](refs/heads/)?friday-plan/", "Pushing to friday-plan/* is not allowed: only the user's `friday approve` publishes a plan."),
     (r"\bgit\s+remote\s+add\b", "Adding a git remote is not allowed."),
     (r"\bgit\s+clean\b.*(\s-[a-zA-Z]*f|\s--force)", "git clean -f is not allowed."),
     (r"(?s)\b(curl|wget)\b.*(\||;|&&)\s*(bash|sh|zsh)\b", "Piping a downloaded script into a shell is not allowed."),
@@ -64,24 +65,27 @@ def check_deny(cmd: str) -> str | None:
 _SHELLISH = {"ssh", "bash", "sh", "zsh", "dash", "eval", "xargs", "docker", "podman", "run", "watch", "env"}
 
 
-def _runs_accept(cmd: str, depth: int = 0) -> bool:
-    """True when some simple command in `cmd` invokes `friday accept`: directly, through
+def _runs_accept(cmd: str, depth: int = 0, subs=("accept", "approve")) -> bool:
+    """True when some simple command in `cmd` invokes `friday accept` or `friday approve`: directly, through
     `python3 .../bin/friday`, `uv run`, or as an argument string (ssh host '...', bash -c '...')."""
     for simple in fc.split_commands(cmd):
         argv = fc.argv_of(simple)
         for i, a in enumerate(argv):
             if Path(a).name in ("friday", "friday.py"):
                 nxt = [x for x in argv[i + 1:] if not x.startswith("-")]
-                if nxt and nxt[0] == "accept":
+                if nxt and nxt[0] in subs:
                     return True
             if (depth < 4 and i and re.search(r"\s", a)
-                    and any(Path(x).name in _SHELLISH for x in argv[:i]) and _runs_accept(a, depth + 1)):
+                    and any(Path(x).name in _SHELLISH for x in argv[:i]) and _runs_accept(a, depth + 1, subs)):
                 return True
     return False
 
 
 def check_accept(cmd: str) -> str | None:
-    if _runs_accept(cmd):
+    if _runs_accept(cmd, subs=("approve",)):
+        return ("`friday approve` is not allowed from an agent session: only the user publishes a plan "
+                "for pre-approval. Tell the user to run `! friday approve --goal <g>`, and stop.")
+    if _runs_accept(cmd, subs=("accept",)):
         return ("`friday accept` is not allowed from an agent session: only the user accepts a directive "
                 "that is awaiting review. Print the review bullets and the command, and stop.")
     return None

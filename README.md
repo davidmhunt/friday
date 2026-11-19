@@ -92,7 +92,8 @@ flowchart LR
 Commands for this model: `friday check` validates the file formats; `friday parse` prints a parsed
 file; `friday land --goal <g>` reverifies every directive and opens the one PR; `friday unblock <id>`
 re-approves a blocked directive; `friday accept <id>` (typed by the user) finishes an
-`awaiting review` directive; `friday commits <id>` lists a directive's own commits; `friday result
+`awaiting review` directive; `friday approve --goal <g>` (typed by the user) publishes the plan's
+pre-approved commands; `friday commits <id>` lists a directive's own commits; `friday result
 write|check` records an expensive run once. Every command, flag and exit code is in
 [docs/spec.md](docs/spec.md#7-commands); a PostToolUse hook runs the format check on every edited goal
 or directive file. The walkthrough is [docs/workflow.md](docs/workflow.md).

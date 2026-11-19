@@ -13,6 +13,8 @@
   friday accept <id> [--note TEXT | --reject REASON]
                                     exit 8 while tracked files are uncommitted (prints the commit command)
                                     the user accepts an `awaiting review` directive (done) or rejects it (blocked: REASON)
+  friday approve --goal <g>         the user publishes the goal's plan: runs check, pushes friday/<g> and the plan ref
+                                    friday-plan/<g> (what pre-approval trusts); exit 8 while tracked files are uncommitted
   friday unblock <id>               blocked -> approved on the goal branch (Log line, one commit); the goal back to running
   friday session-end --goal <g>     close this dispatched session's own tmux session once its goal is done
   friday land <id> [--base <branch>]
@@ -507,6 +509,54 @@ def cmd_finish(a) -> int:
             print(f"- {b}")
         print(f"When satisfied, run: friday accept {a.id}")
         print(f"To send it back:     friday accept {a.id} --reject REASON")
+    return 0
+
+
+def cmd_approve(a) -> int:
+    """The user publishes the goal's plan: `friday check --goal <g>` must pass and tracked files must be
+    committed; then push friday/<g> and HEAD to refs/heads/friday-plan/<g> (no force). The plan ref is
+    what pre-approval of `## Allowed commands` trusts. Exit 0; 1 check errors, wrong branch, push refused; 8 dirty tree."""
+    root = _root()
+    g = a.goal
+    if not fc.GOAL_RE.match(g) or not fc.goal_path(root, g).is_file():
+        sys.exit(f"friday: no goal {g!r}")
+    issues = fc.check_repo(root, goal=g)
+    for i in issues:
+        print(i)
+    errs = sum(1 for i in issues if i.level == "error")
+    if errs:
+        print(f"friday: {errs} check error(s); nothing pushed", file=sys.stderr)
+        return 1
+    br = fc.current_branch(root)
+    if br != f"friday/{g}":
+        sys.exit(f"friday: approve runs on branch friday/{g}, not {br}")
+    dirty = [l[3:] for l in _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines() if l.strip()]
+    if dirty:
+        print("friday: tracked files are uncommitted; commit the plan first (nothing pushed):", file=sys.stderr)
+        for pth in dirty:
+            print(f"  {pth}", file=sys.stderr)
+        print(f'Then run:\n  git commit -am "plan: {g}"\n  friday approve --goal {g}', file=sys.stderr)
+        return 8
+    for ref in (f"friday/{g}", f"HEAD:refs/heads/friday-plan/{g}"):
+        r = _run(["git", "push", "origin", ref], root)
+        if r.returncode != 0:
+            why = (r.stderr or r.stdout).strip()
+            if "non-fast-forward" in why or "rejected" in why or "fetch first" in why:
+                why = f"{ref} is not a fast-forward of origin (not forced): {why}"
+            print(f"friday: push of {ref} failed: {why}", file=sys.stderr)
+            return 1
+    print(f"approved: friday-plan/{g} is now at {_run(['git', 'rev-parse', '--short', 'HEAD'], root).stdout.strip()}")
+    gd = fc.parse_goal(fc.goal_path(root, g).read_text())["directives"]
+    listed = False
+    for x in gd:
+        dp = fc.directive_path(root, x["id"])
+        if not dp.is_file():
+            continue
+        for pat in fc.parse_directive_full(dp.read_text())["allowed"]:
+            print(f"pre-approved for {x['id']}: {pat}")
+            listed = True
+    if not listed:
+        print("no directive of this goal lists `## Allowed commands`: nothing is pre-approved")
     return 0
 
 
@@ -1927,6 +1977,7 @@ def main() -> int:
     s = sub.add_parser("verify"); s.add_argument("id", nargs="?"); s.set_defaults(f=cmd_verify)
     s = sub.add_parser("finish"); s.add_argument("id"); s.add_argument("--verify", metavar="TEXT"); s.add_argument("--review", metavar="TEXT"); s.add_argument("--base"); s.add_argument("--blocked", metavar="REASON"); s.set_defaults(f=cmd_finish)
     s = sub.add_parser("accept"); s.add_argument("id"); s.add_argument("--note", metavar="TEXT"); s.add_argument("--reject", metavar="REASON"); s.set_defaults(f=cmd_accept)
+    s = sub.add_parser("approve"); s.add_argument("--goal", required=True); s.set_defaults(f=cmd_approve)
     s = sub.add_parser("unblock"); s.add_argument("id"); s.set_defaults(f=cmd_unblock)
     s = sub.add_parser("commits"); s.add_argument("id"); s.add_argument("--json", action="store_true"); s.set_defaults(f=cmd_commits)
     s = sub.add_parser("land"); s.add_argument("id", nargs="?"); s.add_argument("--goal"); s.add_argument("--base"); s.set_defaults(f=cmd_land)

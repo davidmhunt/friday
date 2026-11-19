@@ -317,6 +317,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday verify [<id>]` | run the directive's `Verify` (default: the active one); `none` is skipped | Verify's own exit code; 0 for `none`; 1 no directive |
 | `friday finish <id> [--verify TEXT] [--review TEXT] [--base SHA] [--blocked REASON]` | append the Log entry (commits, notes, Verify, review) and set Status: `done`, `awaiting review` (`Accept: user`) or `blocked: REASON` (goal also blocked); one commit; clear the marker. `--base SHA` lists commits since SHA instead of using `friday commits` | 0; 1 other tracked files uncommitted, commit failed |
 | `friday accept <id> [--note TEXT] [--reject REASON]` | the user accepts an `awaiting review` directive (`done`) or rejects it (`blocked: REASON`, goal blocked); one commit; must run on the directive's branch. Refuses, changing nothing, while any tracked file is modified or staged: lists them and prints the `git commit -am` to run first; untracked files do not count. Denied to agents | 0; 1 not awaiting review, wrong branch; 8 tracked files uncommitted |
+| `friday approve --goal <g>` | the user publishes the goal's plan: runs `friday check --goal <g>`, then pushes `friday/<g>` and `HEAD` to `friday-plan/<g>` on origin (no force; a non-fast-forward is refused) and lists what is now pre-approved. Must run on `friday/<g>`. Denied to agents | 0; 1 check errors, wrong branch, push refused; 8 tracked files uncommitted |
 | `friday unblock <id>` | a `blocked:` directive back to `approved` with a Log line, and a blocked goal to `running`; one commit; on the directive's branch | 0; 1 not blocked, wrong branch |
 | `friday commits <id> [--json]` | the directive's own commits and `untracked` commits (section 6); `--json` gives `base`, `commits`, `untracked` | 0 commits found; 3 none; 2 cannot say (no goal, no Base branch, no merge-base) |
 | `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR with a table of directives. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh` missing or signed out; prints `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
@@ -436,7 +437,7 @@ beats `allow`.
 | Rule | Effect |
 |---|---|
 | Deny list | deny the commands listed in the next table. Every heredoc body is scanned like any other text, so text that names a guarded command (a PR body that mentions the accept command or `sudo`) is refused even in a quoted heredoc; put such text in a file and pass it with `--body-file` or `-F` instead |
-| `friday accept` guard | deny `friday accept` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
+| `friday accept` guard | deny `friday accept` and `friday approve` in any form an agent might run it: direct, `python3 .../bin/friday`, `uv run`, inside `ssh host '...'`, `bash -c '...'`, `docker`, `xargs`, `eval`, `watch`, `env`, up to 4 levels |
 | `run_only` | with `.claude/friday.json`, deny a bare `python`, `uv`, `cmake`, ... (the `run_only` list) and name the `./run` form |
 | Push guard | while a directive is active, deny any `git push` that is not an explicit push of the goal's own branch (`friday/<goal>`; `friday/<id>` for `Land: pr`) or of explicit `refs/tags/<name>` refs that the directive's `## Allowed commands` lists (section 5); `--all`, `--mirror`, `--tags`, `--follow-tags` and an unjudgeable target stay denied |
 | Commit guard | while a directive is active, deny `git commit` on main, master or the goal's Base (create or switch to `friday/<goal>`); with no directive active, ask before a commit directly on main or master. The repository judged is the one the command commits in (`cd DIR && git commit`, `git -C DIR commit`) |
@@ -453,6 +454,7 @@ The deny list, each rule traced to an incident or a hard rule:
 | `force-push` | `git push` with `--force`, `--force-with-lease` or `-f` |
 | `+refspec` | `git push` of a `+ref` refspec |
 | `push to main` | `git push` to `main` or `master` |
+| `push to friday-plan` | `git push` whose destination is `friday-plan/*` (only `friday approve` publishes a plan) |
 | `git remote add` | adding a git remote |
 | `git clean -f` | `git clean` with `-f` or `--force` |
 | `curl pipe sh` | piping `curl` or `wget` output into `bash`, `sh` or `zsh` |
