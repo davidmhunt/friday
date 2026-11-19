@@ -557,6 +557,10 @@ def push_pattern_problem(pat: str, goal_branch: str) -> str | None:
     if len(specs) >= 2 and specs[0] == "tag":
         return None if len(specs) % 2 == 0 and all(specs[k] == "tag" for k in range(0, len(specs), 2)) \
             else f"unrecognised tag push; {why}"
+    is_tag = [sp.lstrip("+").rsplit(":", 1)[-1].startswith("refs/tags/")
+              and len(sp.lstrip("+").rsplit(":", 1)[-1]) > len("refs/tags/") for sp in specs]
+    if any(is_tag) and not all(is_tag):
+        return f"a push mixing tag and branch destinations is always denied; {why}"
     for sp in specs:
         dst = sp.lstrip("+").rsplit(":", 1)[-1]
         if dst.startswith("refs/heads/"):

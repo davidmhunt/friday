@@ -60,6 +60,13 @@ def test_check_errors_on_listed_branch_push(pat):
     assert any("push guard denies" in m or "deny list" in m for m in errs), errs
 
 
+@pytest.mark.parametrize("pat", ["git push origin friday/core-01 refs/tags/a",
+                                 "git push origin refs/tags/a friday/core-01"])
+def test_check_errors_on_mixed_tag_and_branch_push(pat):
+    errs = _errs(pat)
+    assert any("mixing tag and branch" in m for m in errs), errs
+
+
 @pytest.mark.parametrize("pat", ["git push origin refs/tags/known-good/*", "git push origin tag known-good/x",
                                  "git push origin friday/core-01"])
 def test_check_accepts_tag_and_goal_branch_push(pat):
