@@ -56,12 +56,20 @@ user approves the plan.
      nothing is treated as harmless unless listed. Keep each pattern as narrow as possible. No chained commands (`&&`, `;`, `|`), never
      `friday accept <id>`; `friday check` rejects those. Omit the section if nothing is needed.
    - Set `Node:` when the work needs a particular machine (`tag:gpu`, `tag:<board>`), else `any`.
+   - Keep a target directive thin. One that drives a device over ssh from the node running it
+     runs named, reviewed project scripts (a read-only probe, one smoke test) and single-purpose
+     writes the user approves one by one (a tag, a file copy). Never list `ssh <robot> *`, a
+     remote `bash -c *` or a remote build or install under `## Allowed commands`; `friday check`
+     warns on them. When steps need iteration on a robot (debugging, building, editing its
+     checkout, hardware tests), propose a worker goal with `Node: host:<robot>` instead, run by
+     the robot's own session (`friday nodes --setup <robot>` first if it is not a worker yet; see
+     "Targets and workers" in docs/fleet.md), and say so in the approval summary.
 4. **Check the format.** Run `friday check --goal <goal>` and fix every error before asking for
    approval. Do not show the user files that do not pass.
 5. **Ask for approval.** State which open goal is extended, or why a new one is needed. Show the goal and each directive's goal, steps, Verify and out-of-scope
    list in a few lines. Show each directive's `## Allowed commands` verbatim (helpers such as `grep *` included), since approving the
    plan approves those commands to run without a prompt while that directive is active; say so
-   explicitly. Then ask the user to approve, amend or drop each. On approval set the goal
+   explicitly. If robot work was routed to a worker goal (`Node: host:<robot>`) instead of a target directive, say so. Then ask the user to approve, amend or drop each. On approval set the goal
    and its directives to `Status: approved`, re-run `friday check --goal <goal>`, run `friday init`
    (it merges the friday allow rules into `.claude/settings.json`; it does not commit), and commit
    the plan, adding `.claude/settings.json` when `friday init` changed it (message ends `Directive: <id>`; the plan commit may list several). If this machine does not
