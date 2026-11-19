@@ -174,7 +174,12 @@ def record_session_approval(payload: dict) -> None:
 
 def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     hw = cfg.get("hardware") or {}
-    matched = [r for r, pats in hw.items() if any(re.search(p, cmd) for p in pats)]
+    first = {}
+    for r, pats in hw.items():
+        pos = [m.start() for p in pats if (m := re.search(p, cmd))]
+        if pos:
+            first[r] = min(pos)
+    matched = sorted(first, key=first.get)         # resources in the order they appear in the command
     if not matched:
         return None
     holders = {r: fc.lease_holder(r) for r in matched}
