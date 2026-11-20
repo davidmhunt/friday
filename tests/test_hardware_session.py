@@ -148,9 +148,18 @@ def test_git_naming_the_script_does_not_touch_resource(script_repo, cmd):
     'echo "unbalanced && tools/x.sh',
     "bash <<EOF\ntools/x.sh\nEOF",
     "git commit -m x && bash <<EOF\ntools/x.sh\nEOF",
+    "git commit -F - <<EOF && bash tools/x.sh\nmsg\nEOF",
+    "true; git commit -F - <<EOF\ntools/x.sh\nEOF",
+    "bash <<EOF\ngit commit -F - <<X\ntools/x.sh\nX\nEOF",
+    "git commit -F - <<EOF\ntools/x.sh",
+    "git commit -F - <<EOF\nmsg\nEOF\nbash tools/x.sh",
+    'git commit -m "$(cat <<\'EOF\'\nmsg\nEOF\n)" && tools/x.sh',
 ])
 def test_executions_and_unsplittable_lines_still_touch_resource(script_repo, cmd):
-    assert run("pretool", script_repo, cmd, "s1")["permissionDecision"] == "ask"
+    # the reason must come from the hardware check (the repo is on main, so a commit also asks for
+    # the commit-on-main reason; that alone must not satisfy this test)
+    d = run("pretool", script_repo, cmd, "s1")
+    assert d["permissionDecision"] == "ask" and "Hardware `sw`" in d["permissionDecisionReason"]
 
 
 def test_status_shows_lease_expiry(script_repo):

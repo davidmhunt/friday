@@ -292,24 +292,41 @@ def _git_cannot_run(simple: str) -> bool:
     return bool(rest) and rest[0] in _GIT_NO_RUN
 
 
-_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
-_GIT_COMMIT_LINE = re.compile(r"(?:^|[;&|(]\s*|\$\(\s*)(?:\w+=\S*\s+)*git\s+(?:-[Cc]\s+\S+\s+)*commit\b")
+_GIT_COMMIT_HEAD = r"^\s*git(?:\s+-[Cc]\s+[^\s;&|`$<>()]+)*\s+commit\b[^;&|`$<>()\n]*?"
+# The only lines whose heredoc body is dropped: the line starts with `git commit`, holds nothing
+# else (no `;`, `&`, `|`, substitution or redirect before the heredoc) and ends at the heredoc
+# marker, so the body can only be the commit message.
+_ANY_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_COMMIT_MSG_HEREDOC = (
+    re.compile(_GIT_COMMIT_HEAD + r"(?:-F|--file)(?:\s+|=)-\s*<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1\s*$"),
+    re.compile(_GIT_COMMIT_HEAD + r"-m\s*\"\$\(\s*cat\s*<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1\s*$"),
+)
 
 
 def _drop_commit_heredocs(cmd: str) -> str:
-    """Remove heredoc bodies fed to `git commit` (`-F - <<EOF`, `-m "$(cat <<'EOF'`): they are
-    the commit message, which never runs the device. Other heredocs are kept (fail closed)."""
+    """Remove the heredoc body of a `git commit -F - <<EOF` or `git commit -m "$(cat <<'EOF'` line
+    (the commit message, which never runs the device). Only a line of exactly that shape qualifies;
+    every other heredoc is kept and matched (fail closed)."""
     lines, out, i = cmd.split("\n"), [], 0
     while i < len(lines):
         line = lines[i]
         out.append(line)
         i += 1
-        m = _HEREDOC.search(line)
-        if m and _GIT_COMMIT_LINE.search(line):
-            while i < len(lines) and lines[i].strip() != m.group(2):
-                i += 1                               # skip the body
+        m = next((m for rx in _COMMIT_MSG_HEREDOC if (m := rx.match(line))), None)
+        if m and line.count("<<") == 1:
+            j = i
+            while j < len(lines) and lines[j].strip() != m.group(2):
+                j += 1
+            if j < len(lines):                       # a terminated body: drop it, keep the terminator
+                out.append(lines[j]); i = j + 1
+            continue
+        # any other heredoc: copy its bodies through unexamined, so a commit-shaped line inside
+        # them is never treated as a real `git commit` (bodies are matched as text, fail closed)
+        for w in [g[1] for g in _ANY_HEREDOC.findall(line)]:
+            while i < len(lines) and lines[i].strip() != w:
+                out.append(lines[i]); i += 1
             if i < len(lines):
-                out.append(lines[i]); i += 1         # keep the terminator
+                out.append(lines[i]); i += 1
     return "\n".join(out)
 
 
