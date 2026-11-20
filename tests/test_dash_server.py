@@ -1,5 +1,5 @@
 """status-02 step 6: friday dash end to end with a fake `tailscale` and `gh` on PATH.
-Run: uv run --with pytest pytest -q tests/test_dash_server.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_dash_server.py"""
 import io
 import json
 import os

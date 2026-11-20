@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from helpers import tool_bin  # noqa: E402
+
 FRIDAY = Path(__file__).resolve().parent.parent / "bin" / "friday"
 NODES = '''[node.laptop]
 role = "master"
@@ -35,8 +37,7 @@ def _run(tmp_path, *args, settings=None, stdin=subprocess.DEVNULL, path=None):
     ctl.chmod(0o755)
     env = dict(os.environ, FRIDAY_NODES=str(tmp_path / "n.toml"), FRIDAY_SSH=str(ssh), HOME=str(home),
                FRIDAY_SYSTEMCTL=str(ctl))
-    if path is not None:
-        env["PATH"] = path
+    env["PATH"] = path if path is not None else _tools(tmp_path, gh="ok", claude="in", uv="fake")  # fakes, never a real gh/claude
     r = subprocess.run([sys.executable, str(FRIDAY), "nodes", *args], env=env, capture_output=True,
                        text=True, cwd=tmp_path, stdin=stdin)
     return r, cfg
@@ -138,21 +139,18 @@ def test_setup_without_confirmation_installs_no_timer(tmp_path):
 def _tools(tmp_path, uv=True, gh=None, claude=None):
     """A PATH holding the system tools except uv/gh/claude, plus fakes: gh in {None, 'ok', 'nologin'}, claude in
     {None, 'in', 'out'}."""
-    import shutil
-    b = tmp_path / "tools"
-    b.mkdir()
-    for t in ("git", "python3", "bash", "sh", "cat", "grep", "sed", "mkdir", "mv", "cp", "rm", "ls", "dirname",
-              "basename", "date", "env", "tr", "head", "cut", "readlink", "mktemp", "chmod", "id", "uname", "wc",
-              "sort", "tail", "awk", "test", "true", "false"):
-        w = shutil.which(t)
-        if w:
-            (b / t).symlink_to(w)
+    b = Path(tool_bin(tmp_path / "tools"))
 
     def fake(name, body):
         f = b / name
+        f.unlink(missing_ok=True)
         f.write_text("#!/bin/bash\n" + body + "\n")
         f.chmod(0o755)
-    if uv:
+    if uv == "fake":  # a uv that installs and finds a fake interpreter under the temp HOME
+        from test_install import fake_uv
+        (b / "uv").unlink(missing_ok=True)
+        (b / "uv").symlink_to(Path(fake_uv(tmp_path, real=True)) / "uv")
+    elif uv:
         fake("uv", "exit 0")
     if gh:
         fake("gh", "exit 0" if gh == "ok" else "exit 1")

@@ -129,6 +129,6 @@ are in [CHANGELOG.md](CHANGELOG.md). Migrating a v0.20 project: [docs/migrating-
 ## Tests
 
 ```bash
-uv run --with pytest pytest tests/ -q
+uv run --with pytest --with pyyaml pytest tests/ -q
 claude plugin validate .
 ```

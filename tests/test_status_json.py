@@ -1,5 +1,5 @@
 """Tests for `friday status --json` (lib/friday_status.py) on a fixture tree, with fake
-tmux, nvidia-smi and /proc. Run: uv run --with pytest pytest -q tests/test_status_json.py"""
+tmux, nvidia-smi and /proc. Run: uv run --with pytest --with pyyaml pytest -q tests/test_status_json.py"""
 import json
 import os
 import shutil
@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 import friday_core as fc  # noqa: E402
 import friday_status as fs  # noqa: E402
+from helpers import private_bin  # noqa: E402
 
 CLI = ROOT / "bin" / "friday"
 
@@ -254,7 +255,7 @@ def test_check_schema_rejects_bad_snapshot(tree):
 
 
 def run_cli(t, *args):
-    env = {**os.environ, "PATH": os.environ["PATH"] + os.pathsep + str(Path(sys.executable).parent),
+    env = {**os.environ, "PATH": os.environ["PATH"] + os.pathsep + str(private_bin(t.tmp / "pybin")),
            "FRIDAY_NODES": str(t.reg),
            "HOME": str(t.tmp / "home"),  # hermetic: never read the real ~/.config/friday/node.toml
            "FRIDAY_NODE_FILE": str(t.tmp / "no-node.toml")}

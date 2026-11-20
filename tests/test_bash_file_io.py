@@ -1,5 +1,5 @@
 """bash_file_io: deny rule and quote-aware run_only (tt-07).
-Run: uv run --with pytest pytest -q tests/test_bash_file_io.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_bash_file_io.py"""
 import sys
 from pathlib import Path
 

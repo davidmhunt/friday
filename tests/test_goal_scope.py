@@ -1,5 +1,5 @@
 """Goal scope (scope-01): the plan skill's capability rule, per-goal PR state in `friday status --json`,
-and `land --goal` updating an open PR. Run: uv run --with pytest pytest -q tests/test_goal_scope.py"""
+and `land --goal` updating an open PR. Run: uv run --with pytest --with pyyaml pytest -q tests/test_goal_scope.py"""
 import json
 from pathlib import Path
 

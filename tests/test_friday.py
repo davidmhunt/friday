@@ -1,4 +1,4 @@
-"""Tests for friday's hooks and CLI. Run: uv run --with pytest pytest tests/ -q"""
+"""Tests for friday's hooks and CLI. Run: uv run --with pytest --with pyyaml pytest tests/ -q"""
 import json
 import os
 import shutil

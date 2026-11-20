@@ -1,5 +1,5 @@
 """Step 3 of status-02: per-node state, persistence, stale/missing, master snapshot, gh PRs.
-Run: uv run --with pytest pytest -q tests/test_dash_state.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_dash_state.py"""
 import json
 import subprocess
 import sys

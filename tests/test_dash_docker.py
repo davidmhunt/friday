@@ -1,5 +1,5 @@
 """dash-01 step 4: the compose file, `friday dash up|down` against a fake docker and gh, --no-self.
-Run: uv run --with pytest pytest -q tests/test_dash_docker.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_dash_docker.py"""
 import io
 import json
 import os
@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 import friday_dash as fd  # noqa: E402
 import friday_fleet as ff  # noqa: E402
 import friday_status as fs  # noqa: E402
+from helpers import private_bin  # noqa: E402
 
 COMPOSE = ROOT / "deploy" / "compose.yaml"
 FRIDAY = ROOT / "bin" / "friday"
@@ -102,7 +103,7 @@ def friday(fakes, *args, path=None, registry=True):
     if registry:
         (fakes / "reg.toml").write_text("")
         env["FRIDAY_NODES"] = str(fakes / "reg.toml")
-    env["PATH"] = path if path is not None else f"{fakes / 'bin'}{os.pathsep}{os.path.dirname(sys.executable)}"
+    env["PATH"] = path if path is not None else f"{fakes / 'bin'}{os.pathsep}{private_bin(fakes / 'pybin')}"
     env["HOME"] = str(fakes)
     return subprocess.run([sys.executable, str(FRIDAY), "dash", *args], env=env, capture_output=True, text=True)
 
@@ -158,6 +159,29 @@ def test_up_without_docker_fails_clearly(fakes):
     assert not (fakes / "docker.log").exists()
 
 
+def test_child_path_never_reaches_a_real_docker_or_gh(fakes, monkeypatch):
+    """A sentinel docker and gh sit next to a fake sys.executable. With the fake docker deleted, `dash up`
+    must say docker is not installed, and no directory on the child PATH may hold a docker or gh."""
+    fakepy = fakes / "fakepy"
+    fakepy.mkdir()
+    for name in ("docker", "gh"):
+        (fakepy / name).write_text(f"#!/bin/sh\necho sentinel > {fakes / 'sentinel.log'}\n")
+        (fakepy / name).chmod(0o755)
+    (fakepy / "python3").symlink_to(sys.executable)
+    monkeypatch.setattr(sys, "executable", str(fakepy / "python3"))
+    (fakes / "bin" / "docker").unlink()
+    (fakes / "bin" / "gh").unlink()
+    pybin = private_bin(fakes / "pybin")
+    assert sorted(p.name for p in pybin.iterdir()) == ["python", "python3"]
+    path = f"{fakes / 'bin'}{os.pathsep}{pybin}"
+    for d in path.split(os.pathsep):
+        assert not (Path(d) / "docker").exists() and not (Path(d) / "gh").exists(), d
+    r = friday(fakes, "up", path=path)
+    assert r.returncode == 1
+    assert "docker is not installed" in r.stderr
+    assert not (fakes / "sentinel.log").exists() and not (fakes / "docker.log").exists()
+
+
 # ---------------------------------------------------------------- --no-self and the localhost report
 def make(tmp_path, collect, no_self):
     (tmp_path / "nodes.toml").write_text(REG)
@@ -193,3 +217,13 @@ def test_localhost_report_lands_as_master_with_no_self(tmp_path):
     assert code == 200 and body["node"] == "laptop"
     assert d.state()["nodes"]["laptop"]["status"] == "ok"
     assert called == []
+
+
+def test_guarded_tools_resolve_to_the_suite_stubs():
+    """tests/conftest.py puts stubs first on PATH: an unfaked docker, gh, ssh or claude never runs the real one."""
+    import shutil
+    import conftest
+    for t in conftest.GUARDED:
+        assert Path(shutil.which(t)).parent == conftest.STUB_DIR, t
+        r = subprocess.run([t, "--version"], capture_output=True, text=True)
+        assert r.returncode == 97 and "not available to tests" in r.stderr

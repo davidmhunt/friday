@@ -127,7 +127,7 @@ On each worker (and on the master, which is also a node):
 6. `uv` installed (https://docs.astral.sh/uv/getting-started/installation/). friday runs on a uv-managed
    Python 3.12, so the node's system Python (3.10 on Ubuntu 22.04) is not used.
 7. `friday` on PATH: `python3 ~/friday/bin/friday install` once on the node (or let
-   `friday nodes --setup <node>` do it). It runs `uv python install 3.12`, records the interpreter in
+   `friday nodes --setup <node>` do it). It installs Python 3.12 into friday's private directory (`~/.local/share/friday/python`, not on PATH), records the interpreter in
    `~/.local/state/friday/python` and writes a `~/.local/bin/friday` shim. After that just `friday`; remove
    it with `ssh <node> friday uninstall`.
 8. Trust `repos` once: run `claude` in that directory on the node and accept the trust prompt.
@@ -150,7 +150,7 @@ Each is a FAIL with the fix `friday nodes --setup <node>`. A missing or unparsab
 `~/.claude/settings.json` counts as both prompts.
 
 For each node it reports `uv`, the recorded friday Python and its version, with the fixes
-`uv python install 3.12` then `friday install` when none is recorded, it does not run, or it is older than 3.11.
+`friday install` when none is recorded, it does not run, or it is older than 3.11.
 
 It also probes three worker prerequisites, each reported with a fix line when missing: `uv` (on PATH or
 `~/.local/bin`; install from https://docs.astral.sh/uv/getting-started/installation/), `gh auth status`

@@ -1,6 +1,6 @@
 """The node probe reports whether friday@ is installed and from where; launch_line drops
 --plugin-dir only when it is installed from the node's plugin_dir. The remote probe runs locally
-here with a fake `claude`. Run: uv run --with pytest pytest -q tests/test_dispatch_plugin.py"""
+here with a fake `claude`. Run: uv run --with pytest --with pyyaml pytest -q tests/test_dispatch_plugin.py"""
 import json
 import os
 import subprocess

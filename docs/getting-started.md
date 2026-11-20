@@ -32,12 +32,14 @@ git clone https://github.com/davidmhunt/friday ~/src/friday
 ```
 
 ```bash
-python3 ~/src/friday/bin/friday install      # once per machine: runs `uv python install 3.12`, records it, writes the ~/.local/bin/friday shim
+python3 ~/src/friday/bin/friday install      # once per machine: installs Python 3.12 into friday's private directory (not on PATH), records it, writes the ~/.local/bin/friday shim
 friday --help                                # make sure ~/.local/bin is on PATH
 ```
 
 To update, run `git pull` in the clone, then
-`/plugin marketplace update friday`. `friday uninstall` removes the shim and the recorded Python again.
+`/plugin marketplace update friday`. `friday uninstall` removes the shim, the recorded Python and the private Python directory again.
+
+If you installed a 1.2 pre-release, `friday install` had put uv's Python 3.12 on PATH and made other projects' `uv run` pick it. Undo that: remove `~/.local/bin/python3.12` if it links into uv's directory, run `uv python uninstall 3.12` if nothing else uses it, then run `friday install`.
 
 Do not edit files in the clone while a session uses it; its hooks run from there.
 

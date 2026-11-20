@@ -1,4 +1,4 @@
-"""Tests for `friday session-end`. Run: uv run --with pytest pytest -q tests/test_session_end.py"""
+"""Tests for `friday session-end`. Run: uv run --with pytest --with pyyaml pytest -q tests/test_session_end.py"""
 import os
 import subprocess
 import sys

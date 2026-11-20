@@ -1,4 +1,4 @@
-"""Tests for `friday dispatch` preconditions (step 1). Run: uv run --with pytest pytest -q tests/test_dispatch.py"""
+"""Tests for `friday dispatch` preconditions (step 1). Run: uv run --with pytest --with pyyaml pytest -q tests/test_dispatch.py"""
 import os
 import subprocess
 import sys

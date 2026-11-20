@@ -1,5 +1,5 @@
 """tt-04: `friday approve --goal <g>` publishes the plan ref; the hook keeps it user-only.
-Run: uv run --with pytest pytest -q tests/test_approve.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_approve.py"""
 import subprocess
 import sys
 from pathlib import Path
