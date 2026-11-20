@@ -97,3 +97,98 @@ def test_status_warns_without_recorded_python(tmp_path):
     (rec / "python").write_text(f"{sys.executable}\n")
     r = subprocess.run([sys.executable, str(FRIDAY), "status"], capture_output=True, text=True, env=env, cwd=repo)
     assert "no friday Python is recorded" not in r.stderr, r.stderr
+
+
+def _logging_uv(tmp_path, found):
+    """A fake uv that logs its args and UV_PYTHON_INSTALL_DIR, and prints `found` for `python find`."""
+    d = tmp_path / "fakeuv"
+    d.mkdir(exist_ok=True)
+    log = tmp_path / "uv.log"
+    uv = d / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$* | dir=$UV_PYTHON_INSTALL_DIR" >> {log}\n'
+                  f'[ "$2" = find ] && echo "{found}"\nexit 0\n')
+    uv.chmod(0o755)
+    return d, log
+
+
+def _install_env(tmp_path, found):
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    d, log = _logging_uv(tmp_path, found)
+    env = {**os.environ, "HOME": str(home), "PATH": f"{d}:{os.environ['PATH']}"}
+    env.pop("XDG_DATA_HOME", None)
+    return env, log, home / ".local" / "share" / "friday" / "python"
+
+
+def _py_in(pdir):
+    py = pdir / "cpython-3.12" / "bin" / "python3.12"
+    py.parent.mkdir(parents=True, exist_ok=True)
+    py.write_text("#!/bin/sh\n")
+    py.chmod(0o755)
+    return py
+
+
+def test_install_private_dir_flags_and_only_shim_in_bin(tmp_path):
+    env, log, pdir = _install_env(tmp_path, "")
+    py = _py_in(pdir)
+    (tmp_path / "uv.log").write_text("")
+    env, log, pdir = _install_env(tmp_path, str(py))
+    bindir = tmp_path / "bin"
+    r = subprocess.run([sys.executable, str(FRIDAY), "install", "--bin-dir", str(bindir)],
+                       capture_output=True, text=True, env=env, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    lines = log.read_text().splitlines()
+    inst = next(x for x in lines if x.startswith("python install"))
+    assert "--no-bin" in inst and f"--install-dir {pdir}" in inst and f"dir={pdir}" in inst
+    find = next(x for x in lines if x.startswith("python find"))
+    assert "--managed-python" in find and f"dir={pdir}" in find
+    assert [p.name for p in bindir.iterdir()] == ["friday"]
+
+
+def test_install_refuses_path_outside_private_dir(tmp_path):
+    outside = tmp_path / "elsewhere" / "python3.12"
+    outside.parent.mkdir()
+    outside.write_text("#!/bin/sh\n")
+    outside.chmod(0o755)
+    env, log, pdir = _install_env(tmp_path, str(outside))
+    bindir = tmp_path / "bin"
+    r = subprocess.run([sys.executable, str(FRIDAY), "install", "--bin-dir", str(bindir)],
+                       capture_output=True, text=True, env=env, cwd=tmp_path)
+    assert r.returncode == 1 and "outside" in r.stderr
+    assert not (tmp_path / "home" / ".local" / "state" / "friday" / "python").exists()
+    assert not (bindir / "friday").exists()
+
+
+def test_uninstall_removes_private_dir(tmp_path):
+    env, log, pdir = _install_env(tmp_path, "")
+    py = _py_in(pdir)
+    env, log, pdir = _install_env(tmp_path, str(py))
+    bindir = tmp_path / "bin"
+    args = [sys.executable, str(FRIDAY), "{}", "--bin-dir", str(bindir)]
+    r = subprocess.run([a if a != "{}" else "install" for a in args], capture_output=True, text=True, env=env, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert pdir.exists()
+    r = subprocess.run([a if a != "{}" else "uninstall" for a in args], capture_output=True, text=True, env=env, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert not pdir.exists() and not (bindir / "friday").exists()
+
+
+def test_launcher_uv_fallback_uses_private_dir_and_managed_python(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    shutil_head = subprocess.run(["which", "head"], capture_output=True, text=True).stdout.strip()
+    (fake / "head").symlink_to(shutil_head)
+    py = fake / "mypy"
+    py.write_text('#!/bin/sh\necho "uvpy $*"\n')
+    py.chmod(0o755)
+    log = tmp_path / "uv.log"
+    uv = fake / "uv"
+    uv.write_text(f'#!/bin/sh\necho "$* | dir=$UV_PYTHON_INSTALL_DIR" >> {log}\necho {py}\n')
+    uv.chmod(0o755)
+    r = subprocess.run(["/bin/sh", str(ROOT / "bin" / "friday-python"), "a"],
+                       env={"HOME": str(home), "PATH": str(fake)}, capture_output=True, text=True)
+    assert r.stdout.strip() == "uvpy a", r.stderr
+    pdir = home / ".local" / "share" / "friday" / "python"
+    assert log.read_text().strip() == f"python find --managed-python 3.12 | dir={pdir}"
