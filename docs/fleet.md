@@ -201,7 +201,9 @@ and mounts:
   `FRIDAY_DISK_PATH`, so disk use is that of the repos filesystem;
 - `~/.config/friday` read-only, for `node.toml`;
 - the lease directory read-write, so leases show up in the snapshot;
-- the tmux socket directory `/tmp/tmux-<uid>`, to count `friday-*` sessions;
+- the tmux socket directory `/tmp/tmux-<uid>`, to count `friday-*` sessions (`--setup` creates it mode
+  700 as the user, and the mount sets `create_host_path: false`, so Docker never creates it root-owned,
+  which would make tmux refuse it; after a reboot the container waits until the directory exists);
 - `/proc` read-only at `/host/proc` (`FRIDAY_PROC_ROOT`), for the host's load and memory rather than
   the container's.
 

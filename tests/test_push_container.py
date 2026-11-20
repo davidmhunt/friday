@@ -90,6 +90,9 @@ def test_setup_container_runs_compose_with_env_and_removes_timer(tmp_path):
     assert e["FRIDAY_LEASE_DIR"] == str(tmp_path / "home" / ".local/state/friday/leases")
     assert e["FRIDAY_TMUX_DIR"] == f"/tmp/tmux-{os.getuid()}"
     assert e["UID"] == str(os.getuid()) and e["GID"] == str(os.getgid())
+    # the tmux dir exists, owned by the user and not readable by others, before compose could create it
+    st = os.stat(e["FRIDAY_TMUX_DIR"])
+    assert st.st_uid == os.getuid() and not st.st_mode & 0o077
     assert not (u / "friday-push.timer").exists() and not (u / "friday-push.service").exists()
     assert "--user disable --now friday-push.timer" in _argv(tmp_path, "fakectl")
     # image was missing, so it was built; never pruned
@@ -189,12 +192,15 @@ def test_compose_file_mounts_user_restart_command():
     assert c["restart"] == "unless-stopped" and c["network_mode"] == "host"
     assert c["command"] == ["friday", "status", "--push", "--every", "30"]
     vols = c["volumes"]
+    tmux = [v for v in vols if isinstance(v, dict)]
+    assert len(tmux) == 1 and tmux[0]["type"] == "bind" and "FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}" in tmux[0]["source"]
+    assert tmux[0]["bind"]["create_host_path"] is False  # Docker must not create it root-owned
+    vols = [v for v in vols if isinstance(v, str)]
     repos = [v for v in vols if v.startswith("${FRIDAY_REPOS")]
     assert len(repos) == 1 and repos[0].endswith(":${FRIDAY_REPOS}:ro")
     assert any(v.endswith(":/home/friday/.config/friday:ro") and v.startswith("${HOME}/.config/friday") for v in vols)
     lease = [v for v in vols if v.startswith("${FRIDAY_LEASE_DIR")][0]
     assert not lease.endswith(":ro")
-    assert any("FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}" in v and not v.endswith(":ro") for v in vols)
     assert "/proc:/host/proc:ro" in vols
     env = c["environment"]
     assert "FRIDAY_PROC_ROOT=/host/proc" in env and "FRIDAY_PUSH_MODE=container" in env

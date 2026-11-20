@@ -1438,6 +1438,9 @@ def container_script(n) -> str:
         'export FRIDAY_REPOS="$R"',
         'export FRIDAY_LEASE_DIR="$HOME/.local/state/friday/leases" FRIDAY_TMUX_DIR="/tmp/tmux-$(id -u)"',
         'mkdir -p "$FRIDAY_LEASE_DIR"',
+        # Created here as the user, mode 700: if Docker creates it, it is root-owned 0755 and tmux
+        # refuses the socket directory ("unsafe permissions").
+        'mkdir -p -m 700 "$FRIDAY_TMUX_DIR"',
         'env UID="$(id -u)" GID="$(id -g)" "$dk" compose $files up -d >&2 || { echo "FRIDAY_PUSH compose"; exit 1; }',
         'u="$HOME/.config/systemd/user"',
         'if [ -e "$u/friday-push.timer" ] || [ -e "$u/friday-push.service" ]; then',
