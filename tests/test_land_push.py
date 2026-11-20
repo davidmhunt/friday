@@ -77,10 +77,13 @@ def test_land_push_failing_reverify_stops_before_push(push_goal):
     assert not log.exists()
 
 
-def test_status_shows_pushed(push_goal):
+def test_status_shows_pushed_only_after_landing(push_goal):
     repo, _, _ = push_goal
     r = cli(repo, "status")
     assert r.returncode == 0, r.stderr
+    assert "pushed" not in r.stdout, r.stdout
+    assert cli(repo, "land", "--goal", "core").returncode == 0
+    r = cli(repo, "status")
     lines = [l for l in r.stdout.splitlines() if "pushed" in l]
     assert len(lines) == 1 and "core" in lines[0] and "pr " not in lines[0], r.stdout
 

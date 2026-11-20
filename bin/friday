@@ -139,7 +139,7 @@ def cmd_status(a) -> int:
         items = g["directives"]
         done = sum(1 for x in items if x["id"] in ds and ds[x["id"]]["status"] == "done")
         if g["land"] == "push":
-            prtxt = "  pushed"
+            prtxt = "  pushed" if g["status"].lower() == "done" else ""
         else:
             pr = fs.goal_pr(root, gp.stem, gh)
             prtxt = f"  pr {pr[0]}{' ' + pr[1] if pr[1] else ''}" if pr else ""
