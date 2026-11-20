@@ -170,7 +170,11 @@ The goal name matches `^[a-z0-9][a-z0-9-]*$` and must not look like a directive 
 |---|---|---|
 | `Status` | yes | `proposed`, `approved`, `running`, `done`, `blocked: <reason>` (a goal is never `running@<host>` or `awaiting review`) |
 | `Base` | yes | the branch the PR targets; not empty |
-| `Land` | yes | `pr`, `none` |
+| `Land` | yes | `pr`, `push`, `none` |
+
+`Land: push` is the forge-neutral landing: `friday land --goal` pushes `friday/<goal>` and opens nothing
+(no `gh`, no `glab`); it prints `PUSHED: friday/<goal>` and, when the forge has a web URL, `COMPARE: <url>`.
+A directive's own `Land` is unchanged (`goal`, `pr`, `none`).
 
 Unknown goal headers are ignored. Sections `## Goal`, `## Directives`, `## Log` are required once
 each, in that order, `## Log` last; others are not restricted. An optional `## Rules` (`- ` bullets, at
@@ -343,7 +347,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday approve --goal <g>` | the user publishes the goal's plan: runs `friday check --goal <g>`, then pushes `friday/<g>` and `HEAD` to `friday-plan/<g>` on origin (no force; a non-fast-forward is refused) and lists what is now pre-approved. Must run on `friday/<g>`; when that branch does not exist yet (a goal approved before the plan ref existed) it says how to create it from Base first. Denied to agents | 0; 1 check errors, wrong branch, push refused; 8 tracked files uncommitted |
 | `friday unblock <id>` | a `blocked:` directive back to `approved` with a Log line, and a blocked goal to `running`; one commit; on the directive's branch | 0; 1 not blocked, wrong branch |
 | `friday commits <id> [--json]` | the directive's own commits, `untracked` commits and `plan` edits made after start (section 6); `--json` gives `base`, `commits`, `untracked`, `plan` | 0 commits found; 3 none; 2 cannot say (no goal, no Base branch, no merge-base) |
-| `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR with a table of directives. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh` missing or signed out; prints `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
+| `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR with a table of directives; for a goal with `Land: push` it stops after the push and Base check, prints `PUSHED: friday/<g>` and `COMPARE: <url>` (when the forge has a web URL), logs `Landed: ... pushed friday/<g> (no PR)` and exits 0, never calling `gh` or `glab`; `friday status` shows such a goal as `pushed`. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh` missing or signed out; prints `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
 | `friday release <resource>` / `friday release --all` | free a hardware lease | 0; 1 no resource named |
 | `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` | record an expensive run once in `results/<id>.json` | 0; 1 error (no HEAD, file missing) |
 | `friday result check <id> [--require 'K OP V']... [--files]` | the cheap Verify: the record exists, its commit is an ancestor of HEAD, each requirement holds (`OP` is one of `>= > <= < == !=`), with `--files` each recorded file still has its hash | 0 holds; 1 one line per unmet condition |
@@ -425,7 +429,8 @@ allow rules match it.
      workflow stops at `awaiting review` and skips `land --goal`. Otherwise, if it was the last
      directive of the goal, the workflow runs `friday land --goal <goal>`, which opens the goal's
      PR, or exits 7 if an earlier directive is not yet done (for example still `awaiting review`).
-     If it was not the last, the workflow names the next directive.
+     If it was not the last, the workflow names the next directive. For a goal with `Land: push` the
+     `land --goal` step only pushes and prints `PUSHED`/`COMPARE`; the workflow relays the `COMPARE` line.
    - `pr`: `friday land <id> --base <Base>` pushes `friday/<id>` and opens that directive's own PR.
    - `none`: nothing is pushed.
 
@@ -603,8 +608,8 @@ the user. How machines and projects appear, the API and the Docker deployment:
   stays a step the user does, even if a directive lists it.
 - **A hardware prompt in a dispatched session has nobody to answer it.** The session waits, and a
   resume (`--resume`) is needed unless the commands are pre-approved in `## Allowed commands`.
-- **Landing is GitHub pull requests only** (`gh`; the compare URL covers a missing `gh`). No GitLab
-  or other forge, and no merge: the user merges.
+- **Landing opens GitHub pull requests only** (`gh`; the compare URL covers a missing `gh`). On another
+  forge use a goal `Land: push`, which pushes the branch and prints the compare URL; no merge: the user merges.
 - **The lease is taken when the prompt is shown** and expires after 4 hours; a command the user
   then declines still leaves the lease until it expires, the session ends or `friday release`.
 - **Verify runs up to 30 minutes** in the Stop hook (and the hook entry allows 1900 s). A longer

@@ -41,7 +41,8 @@ The full rules are in [spec.md](spec.md); this page is the walkthrough.
 4. **Next directive.** Run `/friday:execute <next-id>`. Directives of a goal run in order on the
    same branch.
 5. **The goal's PR.** `friday land --goal <g>` reruns every directive's Verify on the goal branch,
-   marks the goal done, pushes `friday/<g>` and opens or updates the one PR into Base.
+   marks the goal done, pushes `friday/<g>` and opens or updates the one PR into Base. With a goal
+   `Land: push` it only pushes and prints `PUSHED` and `COMPARE: <url>` (you open the merge request).
    - It opens by itself at the end of the last directive when that directive is `Land: goal` and
      `Accept: auto` and Verify and review passed, and every earlier directive is done (an earlier
      one still `awaiting review` makes it exit 7). A dispatched session does this too.
