@@ -1,5 +1,5 @@
 # field-fixes-3: Pre-approval, hardware matching and Verify behave as the user expects in real projects
-Status: blocked: hw-02
+Status: running
 Base: main
 Land: pr
 
