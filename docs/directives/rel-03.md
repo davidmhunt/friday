@@ -1,5 +1,5 @@
 # rel-03: Release 1.2.0
-Status: approved
+Status: blocked: Verify still fails after 2 round(s): E ModuleNotFoundError: No module named 'yaml'
 Goal: release-1-2
 Node: any
 Deliverable: code
@@ -26,3 +26,10 @@ refresh installed copies (it skips a cache already at 1.1.0). Requested by the u
 - Merging the PR, tagging `v1.2.0`, updating installed copies: done after the user merges.
 
 ## Log
+
+### 2026-11-20
+Commits:
+- 7a411fd rel-03: version 1.2.0 and changelog section
+Verify: not run
+Independent review: not recorded
+Blocked: Verify still fails after 2 round(s): E ModuleNotFoundError: No module named 'yaml'
