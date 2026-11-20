@@ -172,7 +172,8 @@ def cmd_status(a) -> int:
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
-        print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min)")
+        left = max(0, int((lease["time"] + fc.LEASE_TTL_S - time.time()) / 60))
+        print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min, expires in {left} min)")
     return 0
 
 
