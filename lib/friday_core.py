@@ -197,6 +197,52 @@ def load_config(root: Path | None) -> dict:
 APPROVAL_MODES = ("command", "session")
 
 
+def _pattern_sample(pat: str) -> str | None:
+    """A literal string the regex `pat` matches, when it is only literals and escaped punctuation
+    (`tools/x\\.sh` -> `tools/x.sh`); None for anything with classes, groups, quantifiers or `\\s`."""
+    out, i = [], 0
+    while i < len(pat):
+        c = pat[i]
+        if c == "\\":
+            if i + 1 >= len(pat) or pat[i + 1].isalnum():
+                return None
+            out.append(pat[i + 1])
+            i += 2
+        elif c in ".^$*+?{}[]()|":
+            return None
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out) or None
+
+
+def _verbless_hardware_warnings(cfg: dict, rel: str) -> list[Issue]:
+    """Warn on a `hardware` pattern that also matches `git add <x>` or `echo <x>` for a literal
+    sample <x> of the pattern: it names a path, not the command that runs it."""
+    hw = cfg.get("hardware")
+    if not isinstance(hw, dict):
+        return []
+    out = []
+    for res, pats in hw.items():
+        for pat in pats if isinstance(pats, list) else []:
+            if not isinstance(pat, str):
+                continue
+            x = _pattern_sample(pat)
+            if not x or not ("/" in x or "." in x):     # only path-like samples: a bare word is a verb
+                continue
+            try:
+                hit = next((f"{v} {x}" for v in ("git add", "echo") if re.search(pat, f"{v} {x}")), None)
+            except re.error:
+                continue
+            if hit:
+                out.append(Issue("warning", rel, 1,
+                                 f"hardware `{res}` pattern `{pat}` matches `{hit}`, so it also matches commands that only "
+                                 "name the device; anchor it on the command that runs it, e.g. "
+                                 "`(^|[;&|]\\s*)(bash\\s+|sh\\s+|\\./)?" + pat + "`"))
+                break
+    return out
+
+
 def config_issues(root: Path | None) -> list[Issue]:
     """Errors for a bad `hardware_approval` in .claude/friday.json: a value other than `command`
     or `session`, or a resource that is not a key of `hardware`."""
@@ -216,6 +262,7 @@ def config_issues(root: Path | None) -> list[Issue]:
         r = cfg["rules"]
         if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
             out.append(Issue("error", rel, 1, "rules must be a list of non-empty strings"))
+    out += _verbless_hardware_warnings(cfg, rel)
     if "hardware_approval" not in cfg:
         return out
     ha = cfg["hardware_approval"]
