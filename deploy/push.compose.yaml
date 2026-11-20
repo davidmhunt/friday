@@ -1,6 +1,6 @@
 # friday push container: an alternative to the systemd timer for nodes with `push = "container"` in
 # nodes.toml. `friday nodes --setup <node>` runs this on the node (it exports FRIDAY_REPOS,
-# FRIDAY_LEASE_DIR, FRIDAY_TMUX_DIR, UID and GID, and builds friday-dash:local if missing):
+# FRIDAY_LEASE_DIR, UID and GID, and builds friday-dash:local if missing):
 #
 #   docker compose -f deploy/push.compose.yaml up -d
 #
@@ -21,6 +21,7 @@ services:
       - FRIDAY_PROC_ROOT=/host/proc
       - FRIDAY_DISK_PATH=${FRIDAY_REPOS:?run through `friday nodes --setup`}
       - FRIDAY_PUSH_MODE=container
+      - FRIDAY_TMUX_SOCKET=/host/tmp/tmux-${UID}/default
       - FRIDAY_LEASE_DIR=/home/friday/.local/state/friday/leases
       - GIT_CONFIG_COUNT=1
       - GIT_CONFIG_KEY_0=safe.directory
@@ -29,12 +30,9 @@ services:
       - ${FRIDAY_REPOS:?run through `friday nodes --setup`}:${FRIDAY_REPOS}:ro
       - ${HOME}/.config/friday:/home/friday/.config/friday:ro
       - ${FRIDAY_LEASE_DIR:?run through `friday nodes --setup`}:/home/friday/.local/state/friday/leases
-      # Long syntax with create_host_path: false: if the directory is missing (e.g. /tmp cleared by a
-      # reboot) Docker must not create it root-owned 0755, which makes every host tmux command fail
-      # with "unsafe permissions". The container then fails to start until the directory exists.
-      - type: bind
-        source: ${FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}}
-        target: ${FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}}
-        bind:
-          create_host_path: false
+      # The host's /tmp, read-only, for the tmux socket (FRIDAY_TMUX_SOCKET). /tmp always exists, so
+      # the container starts after a reboot even before any tmux server has created /tmp/tmux-<uid>
+      # (a bind of that directory itself would fail to start, and Docker never retries a failed
+      # start). Connecting to a socket works through a read-only mount; nothing is created on the host.
+      - /tmp:/host/tmp:ro
       - /proc:/host/proc:ro

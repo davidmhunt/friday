@@ -88,11 +88,8 @@ def test_setup_container_runs_compose_with_env_and_removes_timer(tmp_path):
     e = dict(l.split("=", 1) for l in (tmp_path / "fakedocker.env").read_text().splitlines())
     assert e["FRIDAY_REPOS"] == str(tmp_path / "home" / "r")
     assert e["FRIDAY_LEASE_DIR"] == str(tmp_path / "home" / ".local/state/friday/leases")
-    assert e["FRIDAY_TMUX_DIR"] == f"/tmp/tmux-{os.getuid()}"
+    assert "FRIDAY_TMUX_DIR" not in e   # nothing tmux-related is created on the host
     assert e["UID"] == str(os.getuid()) and e["GID"] == str(os.getgid())
-    # the tmux dir exists, owned by the user and not readable by others, before compose could create it
-    st = os.stat(e["FRIDAY_TMUX_DIR"])
-    assert st.st_uid == os.getuid() and not st.st_mode & 0o077
     assert not (u / "friday-push.timer").exists() and not (u / "friday-push.service").exists()
     assert "--user disable --now friday-push.timer" in _argv(tmp_path, "fakectl")
     # image was missing, so it was built; never pruned
@@ -192,10 +189,13 @@ def test_compose_file_mounts_user_restart_command():
     assert c["restart"] == "unless-stopped" and c["network_mode"] == "host"
     assert c["command"] == ["friday", "status", "--push", "--every", "30"]
     vols = c["volumes"]
-    tmux = [v for v in vols if isinstance(v, dict)]
-    assert len(tmux) == 1 and tmux[0]["type"] == "bind" and "FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}" in tmux[0]["source"]
-    assert tmux[0]["bind"]["create_host_path"] is False  # Docker must not create it root-owned
-    vols = [v for v in vols if isinstance(v, str)]
+    # only plain string mounts; the tmux socket is reached through the host's /tmp, which exists after
+    # every reboot, never through a bind of /tmp/tmux-<uid> (a missing source makes the start fail and
+    # Docker does not retry a failed start)
+    assert all(isinstance(v, str) for v in vols)
+    assert "/tmp:/host/tmp:ro" in vols
+    assert not any("tmux" in v for v in vols)
+    assert "FRIDAY_TMUX_SOCKET=/host/tmp/tmux-${UID}/default" in c["environment"]
     repos = [v for v in vols if v.startswith("${FRIDAY_REPOS")]
     assert len(repos) == 1 and repos[0].endswith(":${FRIDAY_REPOS}:ro")
     assert any(v.endswith(":/home/friday/.config/friday:ro") and v.startswith("${HOME}/.config/friday") for v in vols)
