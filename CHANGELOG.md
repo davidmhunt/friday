@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `friday install` puts its uv-managed Python 3.12 in a friday-private directory (`~/.local/share/friday/python`, `--no-bin`) instead of uv's default, so `~/.local/bin/python3.12` is no longer created and other projects' `uv run` no longer picks it; `friday uninstall` removes it. Test commands use `--with pyyaml`. Undo steps for a pre-release install are in docs/getting-started.md (py-01).
+
 - `friday commits` no longer reports as `untracked` a commit that was already on the goal branch when the directive started, or that came in through a merge trailed with another directive (#30).
 
 ### Added

@@ -186,9 +186,10 @@ id, or an id with no directive file whose `Goal:` names this goal, is an error.
 - `<git dir>/friday-active`, per worktree, never committed: the active marker (`id`, `host`,
   `started`, `gate`, `base`, `goal_base`), written by `friday start`, removed by `friday finish`.
 - `~/.local/state/friday/leases/<resource>.json`: hardware leases (section 9.3).
-- `~/.local/state/friday/python`: the interpreter path `friday install` recorded (from `uv python find 3.12`).
+- `~/.local/state/friday/python`: the interpreter path `friday install` recorded (from `uv python find --managed-python 3.12` in the private directory below).
+- `${XDG_DATA_HOME:-~/.local/share}/friday/python/`: friday's private uv Python install directory. Nothing else uses it, so the interpreter is on no PATH and other projects' `uv run` never picks it; `friday uninstall` removes it.
   `bin/friday-python` (POSIX sh) resolves the Python for every friday entry point: the recorded path if it
-  runs, else `uv python find 3.12`, else `python3` with a warning on stderr naming `friday install`. Hooks
+  runs, else `uv python find --managed-python 3.12` in the private directory (never uv's default directory or a system interpreter), else `python3` with a warning on stderr naming `friday install`. Hooks
   and remote snippets run through it; `friday status` warns when hooks would fall back to `python3`.
 - `~/.local/state/friday/dispatches.jsonl` on the master: one line per dispatch or resume.
 
@@ -349,7 +350,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday dispatch --goal G [--node N] [--report-to S] [--dry-run]` | check, pick a node, prepare a worktree there and start a tmux session `friday-<G>` running the goal's directives; records it. `--dry-run` changes nothing | 0; 10-27 a refusal on the master (table below); 30-36 a refusal by the node; 1 launch failed |
 | `friday dispatch --goal G --resume [--unblock ID]... [--node N] [--report-to S] [--dry-run]` | restart a stopped goal in its existing worktree; `--unblock ID` (repeatable) first runs `friday unblock ID` there | 0; 16, 18, 19, 20; 21-26 (table below); 1 stop or launch failed |
 | `friday session-end --goal G` | close this dispatched session's own tmux session 10 s later, once the goal is `done` | 0; 1 refused (not dispatched, not that session, goal not done) |
-| `friday install [--bin-dir DIR]` | needs `uv`: run `uv python install 3.12`, record the path from `uv python find 3.12` in `~/.local/state/friday/python`, and write `DIR/friday` (default `~/.local/bin`) as an sh shim that execs that interpreter on this checkout's `bin/friday`; an old friday symlink is replaced | 0; 1 would overwrite something else, or `uv` failed |
+| `friday install [--bin-dir DIR]` | needs `uv`: run `uv python install 3.12 --no-bin --install-dir <private dir>` (`${XDG_DATA_HOME:-~/.local/share}/friday/python`), record the path from `UV_PYTHON_INSTALL_DIR=<private dir> uv python find --managed-python 3.12` in `~/.local/state/friday/python` (refusing a path outside the private dir), and write `DIR/friday` (default `~/.local/bin`) as an sh shim that execs that interpreter on this checkout's `bin/friday`; an old friday symlink is replaced | 0; 1 would overwrite something else, or `uv` failed |
 | `friday uninstall [--bin-dir DIR]` | remove that shim (or old link) when it is friday's, the recorded Python path, and this repo's `commit-msg` guard | 0; 1 not a friday link |
 | `friday dash [--bind ADDR]... [--no-self]` | serve the status API on 127.0.0.1 and the tailnet address (section 12) | 0; 1 |
 | `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing |
