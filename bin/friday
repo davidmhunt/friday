@@ -777,6 +777,69 @@ def _compare_url(root: Path, base: str, head: str) -> str | None:
     return None
 
 
+def _open_change_request(forge: dict, root: Path, head: str, base: str, title: str, body_file: str,
+                         compare: str | None, update_body: bool = False, show_body: str = "") -> int:
+    """Open or find the PR (github) or MR (gitlab) from `head` into `base`. Prints `PR: <url>` and returns 0,
+    or prints `PR not opened: ...` plus the COMPARE line and returns 5. With update_body, an existing
+    one gets its description replaced by body_file. The body is read from a file, never built into a shell line."""
+    import json
+    gitlab = forge["kind"] == "gitlab"
+    tool = os.environ.get("FRIDAY_GLAB", "glab") if gitlab else os.environ.get("FRIDAY_GH", "gh")
+    auth = [tool, "auth", "status"] + (["--hostname", forge["host"]] if gitlab else [])
+    if _run(auth, root).returncode != 0:
+        print(f"PR not opened: `{tool}` is not installed or not signed in.")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 5
+    if gitlab:
+        repo = ["-R", f"{forge['host']}/{forge['slug']}"] if forge["slug"] else []
+        lst = _run([tool, "mr", "list", "--source-branch", head, "--output", "json"] + repo, root)
+        url = ""
+        if lst.returncode == 0:
+            try:
+                items = [i for i in json.loads(lst.stdout or "[]") if isinstance(i, dict) and i.get("web_url")]
+                url = items[0]["web_url"] if items else ""
+            except ValueError:
+                url = ""
+        description = Path(body_file).read_text()
+
+        def edit():
+            return _run([tool, "mr", "update", head, "--description", description] + repo, root)
+
+        def create():
+            return _run([tool, "mr", "create", "--source-branch", head, "--target-branch", base,
+                         "--title", title, "--description", description, "--yes"] + repo, root)
+    else:
+        existing = _run([tool, "pr", "view", head, "--json", "url", "--jq", ".url"], root)
+        url = existing.stdout.strip() if existing.returncode == 0 else ""
+
+        def edit():
+            return _run([tool, "pr", "edit", head, "--body-file", body_file], root)
+
+        def create():
+            return _run([tool, "pr", "create", "--base", base, "--head", head, "--title", title,
+                         "--body-file", body_file], root)
+    if url:
+        if update_body:
+            ed = edit()
+            if ed.returncode != 0:
+                print(f"PR body not updated: {ed.stderr.strip()}")
+            else:
+                print(f"PR already open, updated with the new push: {url}\nbody:\n{show_body}")
+        print(f"PR: {url}")
+        return 0
+    pr = create()
+    if pr.returncode != 0:
+        print(f"PR not opened: {pr.stderr.strip()}")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 5
+    lines = pr.stdout.strip().splitlines()
+    found = [w for l in lines for w in l.split() if w.startswith("http")]
+    print(f"PR: {found[-1] if found else (lines[-1] if lines else '')}")
+    return 0
+
+
 def cmd_land(a) -> int:
     """Land a directive by its Land field. Deterministic, so the workflow doesn't improvise git.
     Land pr: push friday/<id> and open its PR into the goal's Base (or --base).
@@ -824,27 +887,10 @@ def cmd_land(a) -> int:
         print(f"PR not opened: base branch '{a.base}' is not on origin. Publish it "
               f"(`git push -u origin {a.base}`), then rerun `friday land {a.id} --base {a.base}`.")
         return 4
-    gh = os.environ.get("FRIDAY_GH", "gh")
     compare = _compare_url(root, a.base, head)
-    if _run([gh, "auth", "status"], root).returncode != 0:
-        print(f"PR not opened: `{gh}` is not installed or not signed in.")
-        if compare:
-            print(f"COMPARE: {compare}")
-        return 5
-    existing = _run([gh, "pr", "view", head, "--json", "url", "--jq", ".url"], root)
-    if existing.returncode == 0 and existing.stdout.strip():
-        print(f"PR: {existing.stdout.strip()}")
-        return 0
-    pr = _run([gh, "pr", "create", "--base", a.base, "--head", head,
-               "--title", f"{a.id}: {d['title'].split(':', 1)[-1].strip()}",
-               "--body-file", str(fc.directive_path(root, a.id))], root)
-    if pr.returncode != 0:
-        print(f"PR not opened: {pr.stderr.strip()}")
-        if compare:
-            print(f"COMPARE: {compare}")
-        return 5
-    print(f"PR: {pr.stdout.strip().splitlines()[-1]}")
-    return 0
+    return _open_change_request(fc.forge(root), root, head, a.base,
+                                f"{a.id}: {d['title'].split(':', 1)[-1].strip()}",
+                                str(fc.directive_path(root, a.id)), compare)
 
 
 def _log_facts(text: str) -> tuple[str, list[str]]:
@@ -962,12 +1008,6 @@ def land_goal(gid: str) -> int:
         if compare:
             print(f"COMPARE: {compare}")
         return 0
-    gh = os.environ.get("FRIDAY_GH", "gh")
-    if _run([gh, "auth", "status"], root).returncode != 0:
-        print(f"PR not opened: `{gh}` is not installed or not signed in.")
-        if compare:
-            print(f"COMPARE: {compare}")
-        return 5
     gsec = fc._section(fc._parse_md(gp.read_text()), "Goal")
     body = ["\n".join(l for _, l in gsec["body"]).strip() if gsec else "", "",
             "| Directive | Title | Deliverable | Verify | Review |", "|---|---|---|---|---|"]
@@ -983,27 +1023,10 @@ def land_goal(gid: str) -> int:
         f.write("\n".join(body) + "\n")
         body_file = f.name
     try:
-        existing = _run([gh, "pr", "view", head, "--json", "url", "--jq", ".url"], root)
-        if existing.returncode == 0 and existing.stdout.strip():
-            url = existing.stdout.strip()
-            ed = _run([gh, "pr", "edit", head, "--body-file", body_file], root)
-            if ed.returncode != 0:
-                print(f"PR body not updated: {ed.stderr.strip()}")
-            else:
-                print(f"PR already open, updated with the new push: {url}\nbody:\n" + "\n".join(body))
-            print(f"PR: {url}")
-            return 0
-        pr = _run([gh, "pr", "create", "--base", base, "--head", head,
-                   "--title", f"{gid}: {goal['title']}", "--body-file", body_file], root)
+        return _open_change_request(fc.forge(root), root, head, base, f"{gid}: {goal['title']}", body_file,
+                                    compare, update_body=True, show_body="\n".join(body))
     finally:
         os.unlink(body_file)
-    if pr.returncode != 0:
-        print(f"PR not opened: {pr.stderr.strip()}")
-        if compare:
-            print(f"COMPARE: {compare}")
-        return 5
-    print(f"PR: {pr.stdout.strip().splitlines()[-1]}")
-    return 0
 
 
 def cmd_release(a) -> int:
