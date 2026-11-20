@@ -1,5 +1,5 @@
 # push-container: A node can push its status from a container instead of a host systemd timer
-Status: approved
+Status: running
 Base: main
 Land: pr
 
