@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- `friday commits` no longer reports as `untracked` a commit that was already on the goal branch when the directive started, or that came in through a merge trailed with another directive (#30).
+
 ### Added
 
 - `friday start` records the starting HEAD in `runs/<id>/start`; `friday commits` lists plan-only commits made
