@@ -8,7 +8,7 @@ if [ -f "$rec" ]; then
 fi
 if command -v uv >/dev/null 2>&1; then
   pdir="${XDG_DATA_HOME:-$HOME/.local/share}/friday/python"
-  py=$(UV_PYTHON_INSTALL_DIR="$pdir" uv python find --managed-python 3.12 2>/dev/null)
+  py=$(unset VIRTUAL_ENV; UV_PYTHON_INSTALL_DIR="$pdir" uv python find --managed-python 3.12 2>/dev/null)  # an active venv would win
   if [ -n "$py" ] && [ -x "$py" ]; then exec "$py" "$@"; fi
 fi
 echo "friday: no uv-managed Python found; falling back to python3 (run \`friday install\` to fix)" >&2

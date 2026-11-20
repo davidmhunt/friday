@@ -192,3 +192,39 @@ def test_launcher_uv_fallback_uses_private_dir_and_managed_python(tmp_path):
     assert r.stdout.strip() == "uvpy a", r.stderr
     pdir = home / ".local" / "share" / "friday" / "python"
     assert log.read_text().strip() == f"python find --managed-python 3.12 | dir={pdir}"
+
+
+def test_launcher_uv_fallback_ignores_active_virtualenv(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "head").symlink_to(subprocess.run(["which", "head"], capture_output=True, text=True).stdout.strip())
+    py = fake / "mypy"
+    py.write_text('#!/bin/sh\necho "uvpy $*"\n')
+    py.chmod(0o755)
+    log = tmp_path / "uv.log"
+    uv = fake / "uv"
+    uv.write_text(f'#!/bin/sh\necho "venv=[$VIRTUAL_ENV]" >> {log}\necho {py}\n')
+    uv.chmod(0o755)
+    r = subprocess.run(["/bin/sh", str(ROOT / "bin" / "friday-python"), "a"],
+                       env={"HOME": str(home), "PATH": str(fake), "VIRTUAL_ENV": "/some/venv"},
+                       capture_output=True, text=True)
+    assert r.stdout.strip() == "uvpy a", r.stderr
+    assert log.read_text().strip() == "venv=[]"
+
+
+def test_uv_python_does_not_pass_virtualenv_to_uv(tmp_path, monkeypatch):
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    pdir = tmp_path / "data" / "friday" / "python"
+    py = pdir / "py312"
+    log = tmp_path / "uv.log"
+    uv = fake / "uv"
+    uv.write_text(f'#!/bin/sh\necho "venv=[$VIRTUAL_ENV]" >> {log}\nmkdir -p {pdir}; : > {py}\necho {py}\n')
+    uv.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake}:{os.environ['PATH']}")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+    assert _load_cli()._uv_python() == str(py)
+    assert set(log.read_text().split()) == {"venv=[]"}
