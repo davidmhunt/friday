@@ -217,3 +217,13 @@ def test_localhost_report_lands_as_master_with_no_self(tmp_path):
     assert code == 200 and body["node"] == "laptop"
     assert d.state()["nodes"]["laptop"]["status"] == "ok"
     assert called == []
+
+
+def test_guarded_tools_resolve_to_the_suite_stubs():
+    """tests/conftest.py puts stubs first on PATH: an unfaked docker, gh, ssh or claude never runs the real one."""
+    import shutil
+    import conftest
+    for t in conftest.GUARDED:
+        assert Path(shutil.which(t)).parent == conftest.STUB_DIR, t
+        r = subprocess.run([t, "--version"], capture_output=True, text=True)
+        assert r.returncode == 97 and "not available to tests" in r.stderr

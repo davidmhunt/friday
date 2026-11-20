@@ -128,7 +128,7 @@ def _setup(tmp_path, *extra, stdin=subprocess.DEVNULL):
     ctl.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "FRIDAY_NODES": str(tmp_path / "n.toml"),
            "FRIDAY_SSH": str(ssh), "FRIDAY_SYSTEMCTL": str(ctl),
-           "PATH": f"{fake_uv(tmp_path, real=True)}:{os.environ['PATH']}"}
+           "PATH": f"{fake_uv(tmp_path, real=True)}:{tool_bin(tmp_path / 'safebin')}"}  # no real gh or claude
     return subprocess.run([sys.executable, str(FRIDAY), "nodes", "--setup", "laptop", *extra],
                           capture_output=True, text=True, env=env, stdin=stdin), home
 
