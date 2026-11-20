@@ -170,7 +170,11 @@ The goal name matches `^[a-z0-9][a-z0-9-]*$` and must not look like a directive 
 |---|---|---|
 | `Status` | yes | `proposed`, `approved`, `running`, `done`, `blocked: <reason>` (a goal is never `running@<host>` or `awaiting review`) |
 | `Base` | yes | the branch the PR targets; not empty |
-| `Land` | yes | `pr`, `none` |
+| `Land` | yes | `pr`, `push`, `none` |
+
+`Land: push` is the forge-neutral landing: `friday land --goal` pushes `friday/<goal>` and opens nothing
+(no `gh`, no `glab`); it prints `PUSHED: friday/<goal>` and, when the forge has a web URL, `COMPARE: <url>`.
+A directive's own `Land` is unchanged (`goal`, `pr`, `none`).
 
 Unknown goal headers are ignored. Sections `## Goal`, `## Directives`, `## Log` are required once
 each, in that order, `## Log` last; others are not restricted. An optional `## Rules` (`- ` bullets, at
@@ -333,7 +337,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 
 | Command | What it does | Exit codes |
 |---|---|---|
-| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo (a running goal whose directives have Allowed commands shows `plan: published | not published | stale`; `--json` carries it as the goal's `plan`), the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
+| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo (a running goal whose directives have Allowed commands shows `plan: published | not published | stale`; `--json` carries it as the goal's `plan`), the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR (a GitLab MR on a `gitlab` forge) is merged, each with its delete command (deletes nothing; skipped without `gh`, or `glab` on GitLab). Each goal's `pr open|merged <url>` line comes from `gh`, or from `glab mr list` on GitLab (where a closed unmerged MR shows `pr closed <url>`; a closed GitHub PR shows `pr none`); a `none` forge shows `pr none`, and a missing or signed-out CLI shows no PR info `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
 | `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing. Reports whether the GitHub repo deletes head branches on merge and prints the `gh api -X PATCH` command to turn it on (changes nothing; skipped when `gh` is missing or signed out) | 0; 1 unreadable settings file |
 | `friday new <loop>` | print the next free directive id for a loop (`core` -> `core-04`) | 0 |
 | `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base (finding a directive that exists only on the goal branch or Base first; a Status-only conflict keeps the goal branch's lines), set the goal `running` (a `done` goal with an undone directive reopens), install the guard, write the marker, print `base <sha>`, and for a directive whose `## Allowed commands` plan is not `published` the line `Allowed commands are NOT pre-approved (<state>): ...` (section 5). Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
@@ -343,7 +347,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday approve --goal <g>` | the user publishes the goal's plan: runs `friday check --goal <g>`, then pushes `friday/<g>` and `HEAD` to `friday-plan/<g>` on origin (no force; a non-fast-forward is refused) and lists what is now pre-approved. Must run on `friday/<g>`; when that branch does not exist yet (a goal approved before the plan ref existed) it says how to create it from Base first. Denied to agents | 0; 1 check errors, wrong branch, push refused; 8 tracked files uncommitted |
 | `friday unblock <id>` | a `blocked:` directive back to `approved` with a Log line, and a blocked goal to `running`; one commit; on the directive's branch | 0; 1 not blocked, wrong branch |
 | `friday commits <id> [--json]` | the directive's own commits, `untracked` commits and `plan` edits made after start (section 6); `--json` gives `base`, `commits`, `untracked`, `plan` | 0 commits found; 3 none; 2 cannot say (no goal, no Base branch, no merge-base) |
-| `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR with a table of directives. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh` missing or signed out; prints `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
+| `friday land <id> [--goal G] [--base BRANCH]` | by `Land`: `pr` pushes `friday/<id>` and opens its PR into the goal's Base (or `--base`); `goal` pushes `friday/<goal>`, no PR; `none` pushes nothing. `friday land --goal <g>` reverifies every directive, marks the goal `done` (one commit), pushes `friday/<g>`, opens or updates the goal's PR (a GitLab MR when the forge is `gitlab`) with a table of directives; for a goal with `Land: push` it stops after the push and Base check, prints `PUSHED: friday/<g>` and `COMPARE: <url>` (when the forge has a web URL), logs `Landed: ... pushed friday/<g> (no PR)` and exits 0, never calling `gh` or `glab`; `friday status` shows such a goal as `pushed` once it is `done`. Runs on the branch being landed, with a clean tree | 0 done (a PR line `PR: <url>`); 3 push failed; 4 pushed, Base not on origin; 5 pushed, no PR (`gh`, or `glab` on GitLab, missing or signed out for the host, or the create failed; prints `PR not opened: ...`, or `MR not opened: ...` on GitLab, and `COMPARE: <url>`); 6 (`--goal`) a Verify failed, nothing pushed; 7 (`--goal`) a directive is not done, ids printed, nothing run or pushed; 1 other refusal |
 | `friday release <resource>` / `friday release --all` | free a hardware lease | 0; 1 no resource named |
 | `friday result write <id> [--metric K=V]... [--file PATH]... [--cmd TEXT] [--note TEXT]` | record an expensive run once in `results/<id>.json` | 0; 1 error (no HEAD, file missing) |
 | `friday result check <id> [--require 'K OP V']... [--files]` | the cheap Verify: the record exists, its commit is an ancestor of HEAD, each requirement holds (`OP` is one of `>= > <= < == !=`), with `--files` each recorded file still has its hash | 0 holds; 1 one line per unmet condition |
@@ -359,7 +363,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday install [--bin-dir DIR]` | needs `uv`: run `uv python install 3.12 --no-bin --install-dir <private dir>` (`${XDG_DATA_HOME:-~/.local/share}/friday/python`), record the path from `UV_PYTHON_INSTALL_DIR=<private dir> uv python find --managed-python 3.12` in `~/.local/state/friday/python` (refusing a path outside the private dir), and write `DIR/friday` (default `~/.local/bin`) as an sh shim that execs that interpreter on this checkout's `bin/friday`; an old friday symlink is replaced | 0; 1 would overwrite something else, or `uv` failed |
 | `friday uninstall [--bin-dir DIR]` | remove that shim (or old link) when it is friday's, the recorded Python path, the private Python directory (`${XDG_DATA_HOME:-~/.local/share}/friday/python`), and this repo's `commit-msg` guard | 0; 1 not a friday link |
 | `friday dash [--bind ADDR]... [--no-self]` | serve the status API on 127.0.0.1 and the tailnet address (section 12) | 0; 1 |
-| `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing |
+| `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing. `up` passes `GH_TOKEN` (from `gh auth token`) and `GITLAB_TOKEN` (from `glab auth token`) to the container through the environment, never argv; a CLI that is not signed in leaves its token unset and prints why |
 
 `friday result write` exists so an expensive or hardware run is done once and Verify stays cheap:
 `Verify: friday result check <id> --require 'accuracy >= 0.9' --files`.
@@ -425,7 +429,8 @@ allow rules match it.
      workflow stops at `awaiting review` and skips `land --goal`. Otherwise, if it was the last
      directive of the goal, the workflow runs `friday land --goal <goal>`, which opens the goal's
      PR, or exits 7 if an earlier directive is not yet done (for example still `awaiting review`).
-     If it was not the last, the workflow names the next directive.
+     If it was not the last, the workflow names the next directive. For a goal with `Land: push` the
+     `land --goal` step only pushes and prints `PUSHED`/`COMPARE`; the workflow relays the `COMPARE` line.
    - `pr`: `friday land <id> --base <Base>` pushes `friday/<id>` and opens that directive's own PR.
    - `none`: nothing is pushed.
 
@@ -553,6 +558,7 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
 | `run_only` | tool names (`python`, `uv`, `cmake`, ...) that must be run through the wrapper | none |
 | `bash_file_io` | `deny`: the hook denies Bash file reads and writes the file tools cover (see the hook table); `allow` or absent changes nothing. `friday check` errors on another value; `load_config` reads it as `allow`. `friday init` prints it as an option | `allow` |
 | `rules` | list of strings: rules for every directive in the repo. `friday check` errors on a non-list or a non-string entry; `load_config` drops such values | none |
+| `forge` | `github`, `gitlab` or `none`: overrides the forge friday infers from `origin` (see below). `friday check` errors on another value | inferred |
 | `hardware` | object: resource name -> list of regular expressions, each matched against every simple command of a Bash command (a line that cannot be split is matched whole). Simple commands that cannot run a device are skipped: `git` with subcommand `add`, `diff`, `log`, `status`, `show`, `blame`, `grep`, `rm`, `mv`, `restore`, `checkout` or `commit`. `friday check` warns on a pattern that also matches `git add <x>` or `echo <x>` for a literal sample `<x>` from the pattern (best effort). Write a script-path resource so only an execution matches, and exclude a dry run with a lookahead: `^(\\./\|bash\\s+\|sh\\s+)?tools/console_switch\\.sh\\b(?!.*--dry-run)` | none |
 | `hardware_approval` | object: resource name (a key of `hardware`) -> `command` or `session`. `session`: one approved command approves the resource for the rest of the session while it holds the lease. `friday check` errors on another value or an unknown resource; `load_config` ignores such entries | `command` for every resource |
 
@@ -567,6 +573,25 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
   }
 }
 ```
+
+**Forge.** `forge(root)` in `lib/friday_core.py` decides where a repo lives: `{"kind", "host", "slug",
+"web"}`. The `forge` key wins; otherwise origin's URL (ssh `git@host:path.git`, `ssh://git@host:port/path.git`
+or https): `github.com` is `github`; a host whose name contains `gitlab`, or for which `glab auth status
+--hostname <host>` succeeds, is `gitlab`; anything else, or no origin, is `none`. `slug` is the project
+path (nested groups kept) and `web` the https base URL. The compare URL is `<web>/<slug>/compare/...`
+on GitHub and `<web>/<slug>/-/compare/<base>...<head>` on GitLab. `friday check` warns once per goal with
+`Land: pr` (goal or directive) when the forge is `none`, or `gitlab` without `glab` installed; the fix is
+the `forge` key, installing glab, or `Land: push`.
+
+**Landing on GitHub or GitLab.** `friday land` (a goal or directive with `Land: pr`) opens a PR on
+`github` and an MR on `gitlab`, through the same steps and the same exit codes. It checks sign-in
+(`gh auth status`, or `glab auth status --hostname <host>`), finds an open PR or MR from the branch
+(`gh pr view`, or `glab mr list --source-branch <head> --output json`) and prints `PR: <url>` for it
+(for a goal, replacing its description with the current table), else creates one
+(`gh pr create`, or `glab mr create --source-branch ... --target-branch <Base> --title ... --description ... --yes`).
+On GitLab every glab call carries `-R <host>/<slug>`, so it never depends on the cwd's glab config.
+The output line is `PR: <url>` for both, so the workflow and dash parse it unchanged. `FRIDAY_GH` and
+`FRIDAY_GLAB` override the binaries. The same forge dispatch applies to the other PR queries: merged-goal detection (`gh pr list --state merged --head friday/<goal>`, or `glab mr list --merged --source-branch friday/<goal> --output json`), `friday status`, and the dash's open `friday/*` list (`glab mr list` for repos whose snapshot `forge` is `gitlab`; `none` repos are skipped). Each degrades to no PR info when the CLI is missing or signed out. friday never approves or merges either, and does not read CI status.
 
 Friday also reads the repo's tracked `.claude/settings.json` (the allow rules, merged by
 `friday init`) and, on the master, the fleet registry `nodes.toml` ([fleet.md](fleet.md)).
@@ -593,8 +618,9 @@ the user. How machines and projects appear, the API and the Docker deployment:
   stays a step the user does, even if a directive lists it.
 - **A hardware prompt in a dispatched session has nobody to answer it.** The session waits, and a
   resume (`--resume`) is needed unless the commands are pre-approved in `## Allowed commands`.
-- **Landing is GitHub pull requests only** (`gh`; the compare URL covers a missing `gh`). No GitLab
-  or other forge, and no merge: the user merges.
+- **Landing opens GitHub pull requests and GitLab merge requests only** (`gh`, `glab`; the compare URL
+  covers a missing CLI). On another forge use a goal `Land: push`, which pushes the branch and prints the
+  compare URL; no merge: the user merges.
 - **The lease is taken when the prompt is shown** and expires after 4 hours; a command the user
   then declines still leaves the lease until it expires, the session ends or `friday release`.
 - **Verify runs up to 30 minutes** in the Stop hook (and the hook entry allows 1900 s). A longer

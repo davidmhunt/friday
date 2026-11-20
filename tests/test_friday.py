@@ -62,6 +62,7 @@ def repo(tmp_path, monkeypatch):
     (r / ".claude").mkdir()
     (r / ".claude" / "friday.json").write_text(json.dumps({
         "run_wrapper": "./run",
+        "forge": "github",      # the fixture uses Land: pr and has no origin
         "run_only": ["python", "python3", "pytest", "uv", "cmake", "ctest"],
         "hardware": {"radar": [r"/dev/ttyACM\d", r"\bflash_radar\b"]},
     }))
@@ -344,14 +345,18 @@ def test_land_refuses_dirty_tree(remote_repo):
     assert r.returncode != 0 and "uncommitted" in r.stderr
 
 
-def test_compare_url():
+def test_compare_url(tmp_path):
     import importlib.machinery, importlib.util
     loader = importlib.machinery.SourceFileLoader("friday_cli", str(CLI))
     mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("friday_cli", loader))
     loader.exec_module(mod)
-    assert mod._compare_url("git@github.com:davidmhunt/CPSL_TI_Radar.git", "main", "friday/x") == \
+    def url(remote, tmp):
+        subprocess.run(["git", "init", "-q", str(tmp)], check=True)
+        subprocess.run(["git", "-C", str(tmp), "remote", "add", "origin", remote], check=True)
+        return mod._compare_url(tmp, "main", "friday/x")
+    assert url("git@github.com:davidmhunt/CPSL_TI_Radar.git", tmp_path / "a") == \
         "https://github.com/davidmhunt/CPSL_TI_Radar/compare/main...friday/x?expand=1"
-    assert mod._compare_url("/tmp/origin.git", "main", "friday/x") is None
+    assert url("/tmp/origin.git", tmp_path / "b") is None
 
 
 # ---------------------------------------------------------------- posttool hook
@@ -630,6 +635,10 @@ def _mk(root, directives, goal=None, extra=None):
         (root / "docs/directives" / f"{did}.md").write_text(t)
     if goal is not None:
         (root / "docs/goals/core.md").write_text(goal)
+    cfg = root / ".claude" / "friday.json"
+    if not cfg.exists() and ".claude/friday.json" not in (extra or {}):
+        cfg.parent.mkdir(exist_ok=True)
+        cfg.write_text('{"forge": "github"}')   # the fixtures use Land: pr and have no origin
     for rel, t in (extra or {}).items():
         (root / rel).write_text(t)
     return root

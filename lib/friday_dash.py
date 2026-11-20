@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import friday_core as fc
 import friday_fleet as ff
 import friday_status as fs
 
@@ -179,6 +180,14 @@ def repo_slug(origin) -> str | None:
     return f"{m.group(1)}/{m.group(2)}" if m else None
 
 
+def _mr_as_pr(mr: dict) -> dict:
+    """A `glab mr list --output json` item in the shape of a `gh pr list --json` one."""
+    author = mr.get("author") if isinstance(mr.get("author"), dict) else {}
+    return {"number": mr.get("iid"), "title": mr.get("title"), "url": mr.get("web_url"),
+            "headRefName": mr.get("source_branch"), "isDraft": bool(mr.get("draft") or mr.get("work_in_progress")),
+            "author": {"login": author.get("username")}, "updatedAt": mr.get("updated_at")}
+
+
 def load_registry(path=None):
     """(registry or None, port). No registry file: None and the default port."""
     reg_file = Path(path) if path else ff.find_nodes_file()
@@ -281,42 +290,61 @@ class Dash:
         return True
 
     def refresh_prs(self) -> None:
-        """Open `friday/*` PRs of every repo any node reported, via `gh pr list --json`. When gh is
-        missing or fails everywhere, keep the old list and say why in prs_note."""
+        """Open `friday/*` PRs of every repo any node reported: `gh pr list --json` for GitHub repos,
+        `glab mr list --output json` for repos whose reported forge is gitlab (repos reporting
+        `none` are skipped; a snapshot without a forge field counts as GitHub when its origin is).
+        When a CLI is missing or fails everywhere, keep the old list and say why in prs_note."""
         with self.lock:
-            slugs = sorted({s for r in self.reports.values() for repo in r.get("repos", [])
-                            if (s := repo_slug(repo.get("origin")))})
+            repos = [repo for r in self.reports.values() for repo in r.get("repos", [])]
+        targets = set()  # (tool, -R argument, label)
+        for repo in repos:
+            origin, kind = repo.get("origin"), repo.get("forge")
+            if kind == "gitlab":
+                parsed = fc.parse_remote(origin) if isinstance(origin, str) else None
+                if parsed:
+                    targets.add(("glab", f"{parsed[0]}/{parsed[1]}", parsed[1]))
+            elif kind in (None, "github") and (s := repo_slug(origin)):
+                targets.add(("gh", s, s))
+        targets = sorted(targets)
         prs: list = []
         notes: list = []
-        for slug in slugs:
+        missing: set = set()
+        for tool, target, label in targets:
+            if tool in missing:
+                notes.append(f"{label}: {tool} is not installed")
+                continue
+            if tool == "gh":
+                cmd = ["gh", "pr", "list", "-R", target, "--state", "open", "--limit", "100",
+                       "--json", "number,title,url,headRefName,isDraft,author,updatedAt"]
+            else:
+                cmd = ["glab", "mr", "list", "-R", target, "--per-page", "100", "--output", "json"]
             try:
-                r = self.run(["gh", "pr", "list", "-R", slug, "--state", "open", "--limit", "100",
-                              "--json", "number,title,url,headRefName,isDraft,author,updatedAt"],
-                             capture_output=True, text=True, timeout=60)
+                r = self.run(cmd, capture_output=True, text=True, timeout=60)
             except FileNotFoundError:
-                with self.lock:
-                    self.prs_note = "gh is not installed; open PRs skipped"
-                return
+                missing.add(tool)
+                notes.append(f"{tool} is not installed; open PRs skipped")
+                continue
             except (OSError, subprocess.SubprocessError) as e:
-                notes.append(f"{slug}: {type(e).__name__}")
+                notes.append(f"{label}: {type(e).__name__}")
                 continue
             if r.returncode != 0:
-                notes.append(f"{slug}: gh failed ({(r.stderr or '').strip()[:100] or r.returncode})")
+                notes.append(f"{label}: {tool} failed ({(r.stderr or '').strip()[:100] or r.returncode})")
                 continue
             try:
-                items = json.loads(r.stdout)
-                for p in items:
+                for p in json.loads(r.stdout) or []:
+                    if tool == "glab":
+                        p = _mr_as_pr(p)
                     if str(p.get("headRefName", "")).startswith("friday/"):
-                        prs.append({"repo": slug, **p})
+                        prs.append({"repo": label, **p})
             except (ValueError, AttributeError, TypeError):
-                notes.append(f"{slug}: unreadable gh output")
+                notes.append(f"{label}: unreadable {tool} output")
         with self.lock:
-            if slugs and notes and len(notes) == len(slugs):
-                self.prs_note = "gh unavailable: " + "; ".join(notes)
+            if targets and notes and len(notes) >= len(targets):
+                self.prs_note = "gh/glab unavailable: " + "; ".join(notes)
                 return
             self.prs = prs
             self.prs_time = self.clock()
-            self.prs_note = ("; ".join(notes) or None) if slugs else "no known repos yet"
+            self.prs_note = ("; ".join(notes) or None) if targets else "no known repos yet"
 
     def start(self) -> None:
         """Background refresh: master snapshot every 30 s, PRs every 2 min."""

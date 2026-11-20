@@ -7,7 +7,7 @@ export const meta = {
     { title: 'Implement', detail: 'one implementer per step, in order, labelled step n/total' },
     { title: 'Verify', detail: 'run Verify; fix and rerun until it passes or stops making progress (skipped for external)' },
     { title: 'Review', detail: 'independent Opus verifier grades the steps and ## Acceptance over this directive\'s commits' },
-    { title: 'Land', detail: 'finish, then by Land: goal push (PR after the last directive), pr, or none' },
+    { title: 'Land', detail: 'finish, then by Land: goal push (PR, or just the push for a goal Land: push, after the last directive), pr, or none' },
   ],
 }
 
@@ -278,7 +278,7 @@ const finish = await agent(
 if (!finish || finish.exit_code !== 0) return await block(`could not finish: ${finish ? lastLinesOf(finish.output) : 'the agent returned nothing'}`)
 
 const runLand = (cmd, label) => agent(
-  `Run exactly \`${cmd}\` on branch ${branch} (the session's current directory is the repo root; it pushes and may open a PR; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it. Return its exit code and its output verbatim. ${ALONE}`,
+  `Run exactly \`${cmd}\` on branch ${branch} (the session's current directory is the repo root; it pushes and may open a PR, or for a goal Land: push only pushes and prints PUSHED and COMPARE lines; do not push or call gh yourself). If it needs a permission, ask for it; do not work around it. Return its exit code and its output verbatim. ${ALONE}`,
   { agentType: 'friday:implementer', schema: LAND, label, phase: 'Land' },
 )
 const lastLines = o => String(o || '').trim().split('\n').slice(-3).join(' | ')
@@ -326,5 +326,9 @@ if (!isLast) {
 const goalCmd = `friday land --goal ${d.goal}`
 const gl = await runLand(goalCmd, 'land goal')
 if (!gl) return `${head} Pushed ${branch}, but the goal landing step returned nothing. Run \`${goalCmd}\` yourself.`
+// A goal with Land: push prints PUSHED (and COMPARE when the forge has a web URL) and opens nothing.
+const pushedOnly = gl.exit_code === 0 && /^PUSHED: /m.test(String(gl.output || ''))
+const compare = (String(gl.output || '').match(/^COMPARE: (\S+)/m) || [])[1]
+if (pushedOnly) return `${head} Last directive of goal ${d.goal}: pushed ${branch}, no PR (Land: push). ${compare ? `Open the merge/pull request from: ${compare}` : 'No compare URL for this forge.'}`
 const gm = LAND_MEANING[gl.exit_code] || `friday land --goal exited ${gl.exit_code}`
 return `${head} Last directive of goal ${d.goal}: pushed ${branch}. ${gm}. ${lastLines(gl.output)}${gl.exit_code ? ` To retry: ${goalCmd}` : ''}`
