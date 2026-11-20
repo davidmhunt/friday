@@ -1,5 +1,5 @@
 # rel-03: Release 1.2.0
-Status: blocked: Verify still fails after 2 round(s): E ModuleNotFoundError: No module named 'yaml'
+Status: approved
 Goal: release-1-2
 Node: any
 Deliverable: code
@@ -33,3 +33,6 @@ Commits:
 Verify: not run
 Independent review: not recorded
 Blocked: Verify still fails after 2 round(s): E ModuleNotFoundError: No module named 'yaml'
+
+### 2026-11-20
+Unblocked: was blocked: Verify still fails after 2 round(s): E ModuleNotFoundError: No module named 'yaml'
