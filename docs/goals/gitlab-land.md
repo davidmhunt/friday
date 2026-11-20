@@ -1,5 +1,5 @@
 # gitlab-land: Goals land on GitLab as merge requests, and on any other remote as a pushed branch
-Status: blocked: fg-02
+Status: running
 Base: main
 Land: pr
 
