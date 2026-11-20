@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FRIDAY = ROOT / "bin" / "friday"
 sys.path.insert(0, str(ROOT / "lib"))
 import friday_core as fc  # noqa: E402
+from helpers import private_bin  # noqa: E402
 
 USER_ONLY = ("accept *", "approve *")  # typed by the user; no allow rule, no agent runs it (the hook denies it)
 PROMPTED = ("dispatch --goal *", "nodes --clean *", "release *")
@@ -178,7 +179,7 @@ def test_dash_up_without_registry_fails_clearly(tmp_path):
     d.write_text("#!/bin/sh\nexit 0\n")
     d.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k != "FRIDAY_NODES"}
-    env.update(HOME=str(tmp_path), PATH=f"{bin_}{os.pathsep}{os.path.dirname(sys.executable)}")
+    env.update(HOME=str(tmp_path), PATH=f"{bin_}{os.pathsep}{private_bin(tmp_path / "pybin")}")
     if (ROOT / "nodes.toml").exists():
         return  # a plugin-root registry would be found; nothing to assert
     r = subprocess.run([sys.executable, str(FRIDAY), "dash", "up"], env=env, capture_output=True, text=True)

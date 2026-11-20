@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 import friday_dash as fd  # noqa: E402
 import friday_fleet as ff  # noqa: E402
 import friday_status as fs  # noqa: E402
+from helpers import private_bin  # noqa: E402
 
 COMPOSE = ROOT / "deploy" / "compose.yaml"
 FRIDAY = ROOT / "bin" / "friday"
@@ -102,7 +103,7 @@ def friday(fakes, *args, path=None, registry=True):
     if registry:
         (fakes / "reg.toml").write_text("")
         env["FRIDAY_NODES"] = str(fakes / "reg.toml")
-    env["PATH"] = path if path is not None else f"{fakes / 'bin'}{os.pathsep}{os.path.dirname(sys.executable)}"
+    env["PATH"] = path if path is not None else f"{fakes / 'bin'}{os.pathsep}{private_bin(fakes / 'pybin')}"
     env["HOME"] = str(fakes)
     return subprocess.run([sys.executable, str(FRIDAY), "dash", *args], env=env, capture_output=True, text=True)
 
