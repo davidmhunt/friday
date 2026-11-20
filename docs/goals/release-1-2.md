@@ -12,6 +12,8 @@ had made uv's managed 3.12 the default for every `uv run` on the machine. cm-01'
 pyyaml (commit fe3e96e, from the fix round): the suite imports it, so it is a real test dependency.
 td-01 added on 2026-11-20 with the user's approval: a dash test reached the real docker and
 recreated the laptop's live dash container with a pytest temp path as its nodes file.
+On 2026-11-20 the user approved rel-03's Verify edit made during its run (commit 2773f6f: adds
+`--with pyyaml`, which the suite imports; the planned Verify predated py-01's change).
 
 ## Directives
 1. cm-01: A commit already on the goal branch when a directive starts is not reported as its untracked work (fixes #30)
