@@ -144,3 +144,54 @@ def test_init_prints_the_bash_file_io_hint(tmp_path):
                        text=True, env={**os.environ, "HOME": str(tmp_path)})
     assert r.returncode == 0, r.stderr
     assert '"bash_file_io": "deny"' in r.stdout
+
+
+# ---- the active directive's own Verify line is exempt from bash_file_io (vf-01, #33)
+
+VERIFY_LINE = "test -s docs/x.md && grep -q '^## Verdict' docs/x.md && ./run pytest -q"
+
+
+def _verify_repo(tmp_path, verify=VERIFY_LINE, marker_id="vf-x"):
+    import subprocess
+    import friday_core as fc
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "docs" / "directives").mkdir(parents=True)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "friday.json").write_text('{"bash_file_io": "deny"}')
+    (tmp_path / "docs" / "directives" / "vf-x.md").write_text(
+        f"# vf-x: t\nStatus: approved\nGoal: g\nNode: any\nDeliverable: code\nLand: goal\n"
+        f"Verify: {verify}\nHardware: none\n\n## Goal\nx\n\n## Steps\n1. a\n\n## Log\n")
+    if marker_id:
+        fc.write_marker(tmp_path, {"id": marker_id})
+    return tmp_path
+
+
+def test_active_verify_line_is_exempt(tmp_path):
+    repo = _verify_repo(tmp_path)
+    assert hook.check_bash_file_io(VERIFY_LINE, DENY) is not None   # no cwd: still denied
+    assert hook.check_bash_file_io(VERIFY_LINE, DENY, repo) is None
+    assert hook.check_bash_file_io("  " + VERIFY_LINE + "\n", DENY, repo) is None
+
+
+def test_verify_exemption_needs_this_directives_marker_and_exact_bytes(tmp_path):
+    (tmp_path / "r1").mkdir()
+    repo = _verify_repo(tmp_path / "r1", marker_id="other-01")      # another directive's marker
+    assert hook.check_bash_file_io(VERIFY_LINE, DENY, repo)
+    (tmp_path / "r2").mkdir()
+    repo2 = _verify_repo(tmp_path / "r2")
+    assert hook.check_bash_file_io(VERIFY_LINE.replace("x.md", "y.md", 1), DENY, repo2)
+    assert hook.check_bash_file_io(VERIFY_LINE + "x", DENY, repo2)
+    assert hook.check_bash_file_io("cat notes.md", DENY, repo2)
+    (tmp_path / "r3").mkdir()
+    repo3 = _verify_repo(tmp_path / "r3", marker_id=None)           # no marker
+    assert hook.check_bash_file_io(VERIFY_LINE, DENY, repo3)
+
+
+def test_verify_line_matching_the_deny_list_is_still_denied(tmp_path, capsys):
+    import json
+    line = "test -s docs/x.md && git push --force origin main"
+    repo = _verify_repo(tmp_path, verify=line)
+    assert hook.check_bash_file_io(line, DENY, repo) is None
+    hook.pretool({"tool_name": "Bash", "tool_input": {"command": line}, "cwd": str(repo), "session_id": "s"})
+    out = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"

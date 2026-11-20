@@ -18,11 +18,17 @@ Physical devices are single-user, and a wrong command can cost hours at the benc
   command only. Write `git -C DIR ...` rather than `cd DIR && ...`, and
   `ssh host cmd > local.txt` then process the file locally rather than piping or chaining on the
   remote side, so `## Allowed commands` and session approval apply.
+- **Patterns name the command that runs the device.** The hook matches each simple command on its
+  own and skips `git add|diff|log|status|show|blame|grep|rm|mv|restore|checkout|commit`, so a
+  commit message or `git add` of a script path is not a hardware command. Anchor a script-path
+  resource on the execution, and leave out a dry run with a lookahead:
+  `"^(\\./|bash\\s+|sh\\s+)?tools/console_switch\\.sh\\b(?!.*--dry-run)"`. A bare
+  `tools/console_switch\\.sh` also matches `echo` of the path; `friday check` warns on that.
 - **The prompt is per command.** The lease lasts the session, but an approval covers only that
   command, unless the project marks the resource `session` under `hardware_approval`.
 - **One session per device.** If the hook says a resource is held by another session, stop and
   report it. Do not wait in a loop. The user frees a stale lease with `friday release <resource>`.
-  Leases also end when the session ends.
+  Leases also end when the session ends. `friday status` shows when each lease expires.
 - **Power cycles, cable changes, flashing switches and anything physical** are the user's. Write
   the exact action you need in your report and stop.
 - **Robots and remote targets** are plain SSH hosts. Run commands as `ssh <host> './run <cmd>'`

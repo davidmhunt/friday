@@ -1251,6 +1251,17 @@ def test_execute_prepare_dispatched_note_instruction(tmp_path):
 
 
 @needs_node
+def test_execute_relays_not_preapproved_line(tmp_path):
+    line = 'Allowed commands are NOT pre-approved (not published): the user runs "! friday approve --goal g"'
+    out = _run_execute(tmp_path, responses={
+        "start g-02": {"started": True, "output": "", "sha": "abcdef0123456789", "preapproval": line}})
+    assert f"g-02: {line}" in out["logs"]
+    assert out["labels"].index("start g-02") < out["labels"].index("step 1/1")
+    quiet = _run_execute(tmp_path)
+    assert not any("NOT pre-approved" in l for l in quiet["logs"])
+
+
+@needs_node
 def test_execute_start_refusal_stops(tmp_path):
     out = _run_execute(tmp_path, responses={
         "start g-02": {"started": False, "output": "g-01 is not done"}})

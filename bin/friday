@@ -140,7 +140,11 @@ def cmd_status(a) -> int:
         done = sum(1 for x in items if x["id"] in ds and ds[x["id"]]["status"] == "done")
         pr = fs.goal_pr(root, gp.stem, gh)
         prtxt = f"  pr {pr[0]}{' ' + pr[1] if pr[1] else ''}" if pr else ""
-        print(f"goal {gp.stem}  {g['status']}  base {g['base']}  {done}/{len(items)}{prtxt}  {g['title']}")
+        plantxt = ""
+        if g["status"].lower() == "running":
+            ps = fs.goal_plan_state(root, [x["id"] for x in items])
+            plantxt = f"  plan: {ps}" if ps else ""
+        print(f"goal {gp.stem}  {g['status']}  base {g['base']}  {done}/{len(items)}{prtxt}{plantxt}  {g['title']}")
         for x in items:
             listed.add(x["id"])
             row(x["id"], ds.get(x["id"]), x["text"])
@@ -168,7 +172,8 @@ def cmd_status(a) -> int:
     print(f"\nactive here: {m['id'] + ' (base ' + str(m.get('base', '?'))[:12] + ')' if m else 'none'}")
     for lease in fc.list_leases():
         age = int((time.time() - lease["time"]) / 60)
-        print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min)")
+        left = max(0, int((lease["time"] + fc.LEASE_TTL_S - time.time()) / 60))
+        print(f"lease: {lease['resource']} held by {lease['session'][:8]} on {lease['host']} ({age} min, expires in {left} min)")
     return 0
 
 
@@ -467,6 +472,9 @@ def cmd_start(a) -> int:
         print("friday: warning: runs/ is not gitignored; add the line `runs/` to .gitignore "
               "so notes stay untracked", file=sys.stderr)
     print(f"{a.id} active. Verify: {d['verify']}")
+    state = fc.plan_publish_state(root, a.id)
+    if state is not None and state != "published":
+        print(f'Allowed commands are NOT pre-approved ({state}): the user runs "! friday approve --goal {gid}"')
     return 0
 
 
@@ -616,6 +624,11 @@ def cmd_approve(a) -> int:
         return 1
     br = fc.current_branch(root)
     if br != f"friday/{g}":
+        if _run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/friday/{g}"], root).returncode != 0:
+            sys.exit(f"friday: approve runs on branch friday/{g}, which does not exist yet (a goal approved "
+                     f"before the plan ref existed). From the goal's Base, create it with the plan committed, then rerun:\n"
+                     f"  git switch -c friday/{g}\n  git commit -am \"plan: {g}\"   # if the plan is uncommitted\n"
+                     f"  friday approve --goal {g}")
         sys.exit(f"friday: approve runs on branch friday/{g}, not {br}")
     dirty = [l[3:] for l in _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines() if l.strip()]
     if dirty:

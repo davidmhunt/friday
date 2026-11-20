@@ -244,6 +244,52 @@ def forge(root: Path | None) -> dict:
     return out
 
 
+def _pattern_sample(pat: str) -> str | None:
+    """A literal string the regex `pat` matches, when it is only literals and escaped punctuation
+    (`tools/x\\.sh` -> `tools/x.sh`); None for anything with classes, groups, quantifiers or `\\s`."""
+    out, i = [], 0
+    while i < len(pat):
+        c = pat[i]
+        if c == "\\":
+            if i + 1 >= len(pat) or pat[i + 1].isalnum():
+                return None
+            out.append(pat[i + 1])
+            i += 2
+        elif c in ".^$*+?{}[]()|":
+            return None
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out) or None
+
+
+def _verbless_hardware_warnings(cfg: dict, rel: str) -> list[Issue]:
+    """Warn on a `hardware` pattern that also matches `git add <x>` or `echo <x>` for a literal
+    sample <x> of the pattern: it names a path, not the command that runs it."""
+    hw = cfg.get("hardware")
+    if not isinstance(hw, dict):
+        return []
+    out = []
+    for res, pats in hw.items():
+        for pat in pats if isinstance(pats, list) else []:
+            if not isinstance(pat, str):
+                continue
+            x = _pattern_sample(pat)
+            if not x or not ("/" in x or "." in x):     # only path-like samples: a bare word is a verb
+                continue
+            try:
+                hit = next((f"{v} {x}" for v in ("git add", "echo") if re.search(pat, f"{v} {x}")), None)
+            except re.error:
+                continue
+            if hit:
+                out.append(Issue("warning", rel, 1,
+                                 f"hardware `{res}` pattern `{pat}` matches `{hit}`, so it also matches commands that only "
+                                 "name the device; anchor it on the command that runs it, e.g. "
+                                 "`(^|[;&|]\\s*)(bash\\s+|sh\\s+|\\./)?" + pat + "`"))
+                break
+    return out
+
+
 def config_issues(root: Path | None) -> list[Issue]:
     """Errors for a bad `hardware_approval` in .claude/friday.json: a value other than `command`
     or `session`, or a resource that is not a key of `hardware`."""
@@ -265,6 +311,7 @@ def config_issues(root: Path | None) -> list[Issue]:
         r = cfg["rules"]
         if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
             out.append(Issue("error", rel, 1, "rules must be a list of non-empty strings"))
+    out += _verbless_hardware_warnings(cfg, rel)
     if "hardware_approval" not in cfg:
         return out
     ha = cfg["hardware_approval"]
@@ -530,6 +577,31 @@ def _allowed_items(sec: dict | None) -> list[tuple[int, str, str | None]]:
             ok = len(spans) == 1 and line[2:].count("`") == 2 and spans[0].strip()
             out.append((i, line[2:].strip(), spans[0].strip() if ok else None))
     return out
+
+
+def plan_publish_state(root: Path, did: str) -> str | None:
+    """Publish state of a directive's `## Allowed commands`: "published" (origin/friday-plan/<goal>
+    holds the directive with the same goal and the same Allowed commands as the working tree),
+    "not published" (no such ref or no directive on it) or "stale" (the lists differ). None when the
+    directive has no `## Allowed commands` (or no readable directive or goal): nothing to publish."""
+    try:
+        local = parse_directive_full((root / DIRECTIVE_DIR / f"{did}.md").read_text())
+    except OSError:
+        return None
+    goal = (local.get("goal") or "").strip()
+    if not local.get("allowed") or not goal or not GOAL_RE.match(goal):
+        return None
+    try:
+        r = subprocess.run(["git", "show", f"origin/friday-plan/{goal}:{DIRECTIVE_DIR}/{did}.md"], cwd=root,
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return "not published"
+    if r.returncode != 0:
+        return "not published"
+    ref = parse_directive_full(r.stdout)
+    if (ref.get("goal") or "").strip() != goal or (ref.get("allowed") or []) != local["allowed"]:
+        return "stale"
+    return "published"
 
 
 def parse_directive_full(text: str) -> dict:
