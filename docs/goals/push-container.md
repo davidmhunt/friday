@@ -1,5 +1,5 @@
 # push-container: A node can push its status from a container instead of a host systemd timer
-Status: proposed
+Status: approved
 Base: main
 Land: pr
 
@@ -14,6 +14,8 @@ timer's: friday-* tmux sessions, repos, leases, health, GPUs where the NVIDIA ru
 It must work on x86_64 workers (Alfred) and arm64 Jetson robots. The user chose this design on
 2026-11-20 (opt-in per node, reuse the dash image, mounts for repos/node.toml/leases/tmux socket,
 your uid, GPUs when available).
+
+The user approved the goal and its directives on 2026-11-20.
 
 ## Directives
 1. pc-01: `friday status --push --every N` loops, and the snapshot can read the host through mounted paths
