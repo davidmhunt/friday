@@ -167,6 +167,9 @@ def test_invalid_push_value_is_an_error(tmp_path):
         r = _nodes(tmp_path, env, *args)
         assert r.returncode != 0
         assert "unknown 'push' 'cron'" in r.stdout + r.stderr
+    r = subprocess.run([str(ROOT / "bin" / "friday"), "check"], cwd=ROOT, env={**os.environ, **env},
+                       capture_output=True, text=True)
+    assert r.returncode == 1 and "unknown 'push' 'cron'" in r.stdout
     from friday_fleet import load_nodes, RegistryError
     with pytest.raises(RegistryError, match="unknown 'push'"):
         load_nodes(tmp_path / "n.toml")
