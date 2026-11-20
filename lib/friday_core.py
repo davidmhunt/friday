@@ -394,7 +394,7 @@ ACCEPTS = ("auto", "user")
 GOAL_KEYS = ("Status", "Base", "Land")
 DELIVERABLES = ("code", "doc", "slides", "external")
 DIRECTIVE_LANDS = ("goal", "pr", "none")
-GOAL_LANDS = ("pr", "none")
+GOAL_LANDS = ("pr", "push", "none")
 DIRECTIVE_SECTIONS = ("Goal", "Steps", "Out of scope", "Log")
 GOAL_SECTIONS = ("Goal", "Directives", "Log")
 

@@ -138,8 +138,11 @@ def cmd_status(a) -> int:
         g = fc.parse_goal(gp.read_text())
         items = g["directives"]
         done = sum(1 for x in items if x["id"] in ds and ds[x["id"]]["status"] == "done")
-        pr = fs.goal_pr(root, gp.stem, gh)
-        prtxt = f"  pr {pr[0]}{' ' + pr[1] if pr[1] else ''}" if pr else ""
+        if g["land"] == "push":
+            prtxt = "  pushed"
+        else:
+            pr = fs.goal_pr(root, gp.stem, gh)
+            prtxt = f"  pr {pr[0]}{' ' + pr[1] if pr[1] else ''}" if pr else ""
         plantxt = ""
         if g["status"].lower() == "running":
             ps = fs.goal_plan_state(root, [x["id"] for x in items])
@@ -925,6 +928,9 @@ def land_goal(gid: str) -> int:
     if goal["status"] != "done":
         if goal["land"] == "none":
             _set_goal_status(gp, "done")
+        elif goal["land"] == "push":
+            _set_goal_status(gp, "done", f"- {time.strftime('%Y-%m-%d')}: Landed: {len(rows)} directive(s) "
+                                         f"reverified on {head}; pushed {head} (no PR).")
         else:
             _set_goal_status(gp, "done", f"- {time.strftime('%Y-%m-%d')}: Landed: {len(rows)} directive(s) "
                                          f"reverified on {head}; PR into {goal['base']}.")
@@ -946,11 +952,17 @@ def land_goal(gid: str) -> int:
     print(f"pushed {head}")
     base = goal["base"]
     if _run(["git", "ls-remote", "--exit-code", "--heads", "origin", base], root).returncode != 0:
-        print(f"PR not opened: base branch '{base}' is not on origin. Publish it "
+        what = "Compare not usable" if goal["land"] == "push" else "PR not opened"
+        print(f"{what}: base branch '{base}' is not on origin. Publish it "
               f"(`git push -u origin {base}`), then rerun `friday land --goal {gid}`.")
         return 4
-    gh = os.environ.get("FRIDAY_GH", "gh")
     compare = _compare_url(root, base, head)
+    if goal["land"] == "push":
+        print(f"PUSHED: {head}")
+        if compare:
+            print(f"COMPARE: {compare}")
+        return 0
+    gh = os.environ.get("FRIDAY_GH", "gh")
     if _run([gh, "auth", "status"], root).returncode != 0:
         print(f"PR not opened: `{gh}` is not installed or not signed in.")
         if compare:
