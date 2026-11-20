@@ -143,11 +143,11 @@ async function verifyLoop(d, label) {
   let last = '', same = 0
   for (let round = 1; ; round++) {
     const v = await agent(
-      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, as one plain foreground Bash call with timeout 600000 ms. Do not use setsid, nohup, &, run_in_background or any detached job. If the call is denied, is not made, or hits the timeout before finishing, return ran=false with not_run_reason (for a timeout, say it needs a higher timeout or a narrower Verify); do not guess a result.\n\n${d.verify}\n\nOtherwise return ran=true, whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
+      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, as one plain foreground Bash call with timeout 600000 ms. Do not use setsid, nohup, &, run_in_background or any detached job. If the call is denied, is not made, or hits the timeout before finishing, return ran=false with not_run_reason set to the denial or error text verbatim (for a timeout, say it needs a higher timeout or a narrower Verify); do not guess a result.\n\n${d.verify}\n\nOtherwise return ran=true, whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
       { agentType: 'friday:runner', schema: VERIFY, label: `${label} verify ${round}`, phase: 'Verify' },
     )
     if (v && v.ran === false) {
-      const r = v.not_run_reason || 'no reason given'
+      const r = v.not_run_reason || 'the Verify call returned no reason (check the hook output)'
       const hint = /time/i.test(r) ? ' (raise the timeout or narrow Verify)' : ''
       return { ok: false, why: `Verify not run: ${r}${hint}` }
     }
