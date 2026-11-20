@@ -780,14 +780,15 @@ def _compare_url(root: Path, base: str, head: str) -> str | None:
 def _open_change_request(forge: dict, root: Path, head: str, base: str, title: str, body_file: str,
                          compare: str | None, update_body: bool = False, show_body: str = "") -> int:
     """Open or find the PR (github) or MR (gitlab) from `head` into `base`. Prints `PR: <url>` and returns 0,
-    or prints `PR not opened: ...` plus the COMPARE line and returns 5. With update_body, an existing
+    or prints `PR not opened: ...` (`MR not opened: ...` on GitLab) plus the COMPARE line and returns 5. With update_body, an existing
     one gets its description replaced by body_file. The body is read from a file, never built into a shell line."""
     import json
     gitlab = forge["kind"] == "gitlab"
+    noun = "MR" if gitlab else "PR"
     tool = os.environ.get("FRIDAY_GLAB", "glab") if gitlab else os.environ.get("FRIDAY_GH", "gh")
     auth = [tool, "auth", "status"] + (["--hostname", forge["host"]] if gitlab else [])
     if _run(auth, root).returncode != 0:
-        print(f"PR not opened: `{tool}` is not installed or not signed in.")
+        print(f"{noun} not opened: `{tool}` is not installed or not signed in.")
         if compare:
             print(f"COMPARE: {compare}")
         return 5
@@ -830,7 +831,7 @@ def _open_change_request(forge: dict, root: Path, head: str, base: str, title: s
         return 0
     pr = create()
     if pr.returncode != 0:
-        print(f"PR not opened: {pr.stderr.strip()}")
+        print(f"{noun} not opened: {pr.stderr.strip()}")
         if compare:
             print(f"COMPARE: {compare}")
         return 5

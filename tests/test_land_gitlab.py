@@ -87,7 +87,7 @@ def test_not_signed_in_gives_exit_5_with_compare(done_goal, tmp_path, monkeypatc
     log, ghlog = _setup(repo, origin, tmp_path, monkeypatch, auth=1)
     r = cli(repo, "land", "--goal", "core")
     assert r.returncode == 5, r.stdout + r.stderr
-    assert "not opened" in r.stdout
+    assert "MR not opened: " in r.stdout
     assert r.stdout.strip().splitlines()[-1] == "COMPARE: https://gitlab.example.com/o/r/-/compare/main...friday/core"
     calls = _calls(log)
     assert calls and calls[0] == ["auth", "status", "--hostname", "gitlab.example.com"]
