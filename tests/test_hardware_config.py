@@ -39,3 +39,11 @@ def test_bad_value_and_unknown_resource_rejected(tmp_path):
 def test_non_object_rejected(tmp_path):
     r = _repo(tmp_path, {"hardware": HW, "hardware_approval": ["radar"]})
     assert fc.config_issues(r)
+
+
+def test_check_warns_on_verbless_hardware_pattern(tmp_path):
+    r = _repo(tmp_path, {"hardware": {"sw": [r"tools/console_switch\.sh"], "robot": [r"ssh\s+robot"],
+                      "ok": [r"(^|[;&|]\s*)bash\s+tools/x\.sh"], **HW}})
+    msgs = [(i.level, i.message) for i in fc.config_issues(r)]
+    assert len(msgs) == 1 and msgs[0][0] == "warning"
+    assert "sw" in msgs[0][1] and "git add tools/console_switch.sh" in msgs[0][1] and "anchor" in msgs[0][1]

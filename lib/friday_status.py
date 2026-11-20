@@ -11,7 +11,8 @@ holds any snapshot to it. Top-level keys:
 - gpus[]: name, util (percent), mem {used, total} in MiB, processes [{pid, name, mem}].
   Empty without `nvidia-smi`.
 - repos[]: path, origin, branch, goals[] {id, title, status, pr (none|open|merged) and pr_url (both
-  left out without gh), directives[] {id, status,
+  left out without gh), plan (published | not published | stale; only on a running goal whose
+  directives have Allowed commands), directives[] {id, status,
   deliverable, title}}. Directives not in any goal sit under a goal with id null.
 - leases[]: resource, session, host, time, note (live hardware leases, as friday_core keeps them).
 - runs[]: repo, id (directive), name (the `.exit` file stem), exit (int or null), mtime;
@@ -74,6 +75,7 @@ SCHEMA = {
             "status": str,
             "pr": str,
             "pr_url": STR_OR_NULL,
+            "plan": STR_OR_NULL,
             "directives": [{"id": str, "status": str, "deliverable": str, "title": str}],
         }],
     }],
@@ -97,7 +99,7 @@ SCHEMA = {
 
 
 # Keys a snapshot may leave out: a goal's pr / pr_url are absent when gh is unavailable.
-OPTIONAL_KEYS = {"pr", "pr_url", "push_mode"}
+OPTIONAL_KEYS = {"pr", "pr_url", "push_mode", "plan"}
 
 
 def _check(val, spec, path: str, out: list[str]) -> None:
@@ -501,6 +503,16 @@ def goal_pr(path: Path, goal: str, gh: str | None) -> tuple[str, str | None] | N
     return "none", None
 
 
+def goal_plan_state(path: Path, dids: list[str]) -> str | None:
+    """Worst publish state (stale, not published, published) over the directives with Allowed
+    commands, or None when none has any."""
+    states = [s for s in (fc.plan_publish_state(path, d) for d in dids) if s]
+    for bad in ("stale", "not published"):
+        if bad in states:
+            return bad
+    return "published" if states else None
+
+
 def collect_repo(path: Path, errors: list) -> dict:
     """One repos[] entry: origin, branch, and every goal with its directives' statuses."""
     origin = _run(["git", "config", "--get", "remote.origin.url"], cwd=path)
@@ -533,6 +545,10 @@ def collect_repo(path: Path, errors: list) -> dict:
             pr = goal_pr(path, p.stem, gh)
             if pr:
                 entry["pr"], entry["pr_url"] = pr
+            if g["status"].lower() == "running":
+                ps = goal_plan_state(path, [x["id"] for x in g["directives"]])
+                if ps:
+                    entry["plan"] = ps
             goals.append(entry)
         except Exception as e:
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})

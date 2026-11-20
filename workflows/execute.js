@@ -32,6 +32,7 @@ const START = {
   type: 'object',
   required: ['started', 'output', 'sha'],
   properties: {
+    preapproval: { type: 'string', description: 'the start output line beginning "Allowed commands are NOT pre-approved", verbatim; empty when there is none' },
     started: { type: 'boolean', description: 'false if friday start refused' },
     output: { type: 'string', description: 'friday start output verbatim when it refused, else empty' },
     sha: { type: 'string', description: 'git rev-parse HEAD after start (the merge); empty when it refused' },
@@ -142,11 +143,11 @@ async function verifyLoop(d, label) {
   let last = '', same = 0
   for (let round = 1; ; round++) {
     const v = await agent(
-      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, as one plain foreground Bash call with timeout 600000 ms. Do not use setsid, nohup, &, run_in_background or any detached job. If the call is denied, is not made, or hits the timeout before finishing, return ran=false with not_run_reason (for a timeout, say it needs a higher timeout or a narrower Verify); do not guess a result.\n\n${d.verify}\n\nOtherwise return ran=true, whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
+      `Run the Verify command of friday directive ${id} from the repo root, exactly as written, as one plain foreground Bash call with timeout 600000 ms. Do not use setsid, nohup, &, run_in_background or any detached job. If the call is denied, is not made, or hits the timeout before finishing, return ran=false with not_run_reason set to the denial or error text verbatim (for a timeout, say it needs a higher timeout or a narrower Verify); do not guess a result.\n\n${d.verify}\n\nOtherwise return ran=true, whether it passed, its exit code, the first failing test or error line verbatim, and the last 60 lines of output.${rulesBlock(d.rules)}`,
       { agentType: 'friday:runner', schema: VERIFY, label: `${label} verify ${round}`, phase: 'Verify' },
     )
     if (v && v.ran === false) {
-      const r = v.not_run_reason || 'no reason given'
+      const r = v.not_run_reason || 'the Verify call returned no reason (check the hook output)'
       const hint = /time/i.test(r) ? ' (raise the timeout or narrow Verify)' : ''
       return { ok: false, why: `Verify not run: ${r}${hint}` }
     }
@@ -168,12 +169,14 @@ async function verifyLoop(d, label) {
 // ---------------------------------------------------------------- prepare
 phase('Prepare')
 const st = await agent(
-  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch, merges Base into the goal branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n3. Run \`git rev-parse HEAD\` (after the merge) and return its output as sha.\n${ALONE}\nCommit nothing.`,
+  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch, merges Base into the goal branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n3. Run \`git rev-parse HEAD\` (after the merge) and return its output as sha.\n4. If the output of \`friday start\` has a line beginning \`Allowed commands are NOT pre-approved\`, return that line verbatim as preapproval (else an empty string).\n${ALONE}\nCommit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
 if (!st.started) return `${id} not started: ${st.output}`
 const sha = String(st.sha || '').trim()
+// Not blocking: the user sees the line before Implement and can publish the plan meanwhile.
+if (String(st.preapproval || '').trim()) log(`${id}: ${String(st.preapproval).trim()}`)
 
 // The sha is in the prompt so a resumed run reuses a cached parse only when HEAD is unchanged.
 const parsed = await agent(

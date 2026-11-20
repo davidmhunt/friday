@@ -81,7 +81,7 @@ user approves the plan.
    `git switch -c friday/<goal>` when it does not exist; main stays protected), adding `.claude/settings.json` when `friday init` changed it (message ends `Directive: <id>`; the plan commit may list several), and push the branch
    (`git push -u origin friday/<goal>`). When any directive has `## Allowed commands`, tell the user to
    run `! friday approve --goal <goal>`: only the user's command publishes the plan to
-   `origin/friday-plan/<goal>`, the copy pre-approval trusts; until then those commands prompt. If this machine does not
+   `origin/friday-plan/<goal>`, the copy pre-approval trusts; until then those commands prompt (`friday start` and `friday status` say so). If this machine does not
    satisfy the directives' `Node:` lines, offer to run the goal elsewhere with
    `friday dispatch --goal <goal>` (see docs/fleet.md) instead of `/friday:execute` here.
    Extending or amending an approved goal later: make the change as a commit on `friday/<goal>` (never on Base),

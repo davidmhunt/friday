@@ -173,6 +173,18 @@ def test_failing_ran_true_still_gets_fix_rounds():
     assert calls == ["friday:runner", "friday:implementer", "friday:runner"]
 
 
+def test_verify_prompt_asks_for_denial_text_verbatim():
+    assert "not_run_reason set to the denial or error text verbatim" in _verify_prompt()
+
+
+def test_ran_false_without_reason_names_the_missing_reason():
+    r, _ = _run_verify_loop([
+        {"ran": False, "not_run_reason": "", "passed": False, "exit_code": -1, "signature": "", "tail": ""}])
+    assert r["ok"] is False
+    assert "Verify not run: the Verify call returned no reason (check the hook output)" in r["why"]
+    assert "no reason given" not in r["why"]
+
+
 def test_both_review_prompts_explain_plan_lines():
     reviews = [p for p in _agent_prompts() if "friday commits ${id}" in p]
     assert len(reviews) == 2
