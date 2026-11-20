@@ -1092,15 +1092,15 @@ def python_fixes(node, got) -> list:
     if py is None:
         return []
     if py == "none":
-        return [f"fix: no friday Python is recorded on {node.name}; run `uv python install 3.12` then `friday install` there "
+        return [f"fix: no friday Python is recorded on {node.name}; run `friday install` there (it installs friday's private Python 3.12) "
                 f"(or `friday nodes --setup {node.name}`); hooks fall back to the system python3"]
     import re
     m = re.match(r"\((\d+), (\d+)\)", got.get("pyver", ""))
     if not m:
-        return [f"fix: the recorded Python {py} does not run on {node.name}; run `uv python install 3.12` then `friday install` there"]
+        return [f"fix: the recorded Python {py} does not run on {node.name}; run `friday install` there (it installs friday's private Python 3.12)"]
     if (int(m.group(1)), int(m.group(2))) < (3, 11):
         return [f"fix: the recorded Python {py} on {node.name} is {m.group(1)}.{m.group(2)}, friday needs 3.11+; "
-                f"run `uv python install 3.12` then `friday install` there"]
+                f"run `friday install` there (it installs friday's private Python 3.12)"]
     return []
 
 
@@ -1186,7 +1186,7 @@ def check_node(node, prereqs=False) -> tuple:
     trust = got.get("trust")
     if trust == "unknown":
         fixes.append(f"fix: trust in ~/.claude.json cannot be read on {node.name} (no friday Python); "
-                     f"run `uv python install 3.12` then `friday install` there")
+                     f"run `friday install` there (it installs friday's private Python 3.12)")
     elif trust != "ok":
         fixes.append(f"fix: run `claude` once in {node.repos} on {node.name} and accept the trust prompt")
     fixes += prereq_fixes(node, got)
@@ -1373,7 +1373,7 @@ def setup_timer(n) -> int:
 
 def setup_install(n) -> int:
     """Run `<plugin_dir>/bin/friday install` on the node so `friday` is on its PATH."""
-    # install runs `uv python install 3.12` itself; ~/.local/bin (where uv lives) is not on a non-interactive PATH
+    # install runs the private `uv python install 3.12` itself; ~/.local/bin (where uv lives) is not on a non-interactive PATH
     script = (f'PATH="$HOME/.local/bin:$PATH"\n'
               f"{_node_py(n)} {ff.remote_path(n.plugin_dir.rstrip('/') + '/bin/friday')} install\n")
     argv, stdin = ff.ssh_cmd(n, script)
@@ -1449,7 +1449,7 @@ def cmd_nodes_setup(a, reg) -> int:
           "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
           "every 30 s.")
     print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which runs "
-          "`uv python install 3.12` if needed and writes ~/.local/bin/friday as a shim onto that checkout.")
+          "the private `uv python install 3.12 --no-bin` if needed and writes ~/.local/bin/friday as a shim onto that checkout.")
     print(f"and it writes ~/.config/friday/node.toml on {n.name} (name, repos, dash URL), which "
           "`friday status --push` reads when the node has no nodes.toml.")
     if not a.yes:

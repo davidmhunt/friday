@@ -52,7 +52,7 @@ def test_check_reports_310_only_node(tmp_path):
     assert r.returncode == 1
     assert "python (3, 10)" in r.stdout
     assert "friday needs 3.11+" in r.stdout
-    assert "`uv python install 3.12`" in r.stdout and "`friday install`" in r.stdout
+    assert "`friday install`" in r.stdout and "uv python install" not in r.stdout
 
 
 def test_imports_under_tomli_fallback(tmp_path):
