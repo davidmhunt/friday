@@ -112,3 +112,45 @@ def test_other_session_lease_on_second_resource_denies(repo):
     _approve_radar(repo)
     d = run("pretool", repo, "flash && train y", "s1")
     assert d["permissionDecision"] == "deny"
+
+
+# ---- #32: patterns match per simple command, git read/stage subcommands never run a device
+@pytest.fixture
+def script_repo(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    r = tmp_path / "srepo"
+    (r / ".claude").mkdir(parents=True)
+    (r / ".claude" / "friday.json").write_text(json.dumps({"hardware": {"sw": [r"tools/x\.sh"]}}))
+    subprocess.run(["git", "init", "-q", "-b", "main", str(r)], check=True)
+    return r
+
+
+@pytest.mark.parametrize("cmd", [
+    "git add tools/x.sh",
+    "git diff tools/x.sh",
+    "git -C . log -- tools/x.sh",
+    'git commit -m "fix tools/x.sh handling"',
+    "git add tools/x.sh && git commit -m 'tools/x.sh'",
+])
+def test_git_naming_the_script_does_not_touch_resource(script_repo, cmd):
+    d = run("pretool", script_repo, cmd, "s1")
+    assert d is None or "sw" not in d["permissionDecisionReason"].split()   # (a commit on main asks for its own reason)
+    assert d is None or "Hardware" not in d["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("cmd", [
+    "bash tools/x.sh",
+    "./tools/x.sh",
+    "ssh robot tools/x.sh",
+    "true && tools/x.sh",
+    'echo "unbalanced && tools/x.sh',
+])
+def test_executions_and_unsplittable_lines_still_touch_resource(script_repo, cmd):
+    assert run("pretool", script_repo, cmd, "s1")["permissionDecision"] == "ask"
+
+
+def test_status_shows_lease_expiry(script_repo):
+    run("pretool", script_repo, "bash tools/x.sh", "s1")
+    out = subprocess.run([sys.executable, str(ROOT / "bin" / "friday"), "status"], cwd=script_repo,
+                         capture_output=True, text=True, env=os.environ).stdout
+    assert "lease: sw" in out and "expires in " in out and " min)" in out
