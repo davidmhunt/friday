@@ -1,5 +1,5 @@
 # rel-03: Release 1.2.0
-Status: blocked: Do you approve the Verify change in commit 2773f6f? It went from 'uv run --with pytest pytest -q ...' to 'uv run --with pytest --with pyyaml pytest -q ...'. I recommend approving it as is. The edit only adds '--with pyyaml', which the suite imports (the block reason was 'ModuleNotFoundError: No module named 'yaml''), and it matches the repo's default Verify in CLAUDE.md. It doesn't weaken the check. The gap is real. The plan edit was made during execution by an agent, and nothing records your approval. I can't supply that approval myself, and a new commit can't remove the edit from history. Reverting would only bring back a Verify that can't pass. Once you approve, record it in the review, or tell me to add a note or take another route.
+Status: approved
 Goal: release-1-2
 Node: any
 Deliverable: code
@@ -43,3 +43,6 @@ Commits:
 Verify: Verify passed: uv run --with pytest --with pyyaml pytest -q tests/test_release.py && uv run --with pytest --with pyyaml pytest -q && claude plugin validate .
 Independent review: not recorded
 Blocked: Do you approve the Verify change in commit 2773f6f? It went from 'uv run --with pytest pytest -q ...' to 'uv run --with pytest --with pyyaml pytest -q ...'. I recommend approving it as is. The edit only adds '--with pyyaml', which the suite imports (the block reason was 'ModuleNotFoundError: No module named 'yaml''), and it matches the repo's default Verify in CLAUDE.md. It doesn't weaken the check. The gap is real. The plan edit was made during execution by an agent, and nothing records your approval. I can't supply that approval myself, and a new commit can't remove the edit from history. Reverting would only bring back a Verify that can't pass. Once you approve, record it in the review, or tell me to add a note or take another route.
+
+### 2026-11-20
+Unblocked: was blocked: Do you approve the Verify change in commit 2773f6f? It went from 'uv run --with pytest pytest -q ...' to 'uv run --with pytest --with pyyaml pytest -q ...'. I recommend approving it as is. The edit only adds '--with pyyaml', which the suite imports (the block reason was 'ModuleNotFoundError: No module named 'yaml''), and it matches the repo's default Verify in CLAUDE.md. It doesn't weaken the check. The gap is real. The plan edit was made during execution by an agent, and nothing records your approval. I can't supply that approval myself, and a new commit can't remove the edit from history. Reverting would only bring back a Verify that can't pass. Once you approve, record it in the review, or tell me to add a note or take another route.
