@@ -32,6 +32,7 @@ const START = {
   type: 'object',
   required: ['started', 'output', 'sha'],
   properties: {
+    preapproval: { type: 'string', description: 'the start output line beginning "Allowed commands are NOT pre-approved", verbatim; empty when there is none' },
     started: { type: 'boolean', description: 'false if friday start refused' },
     output: { type: 'string', description: 'friday start output verbatim when it refused, else empty' },
     sha: { type: 'string', description: 'git rev-parse HEAD after start (the merge); empty when it refused' },
@@ -168,12 +169,14 @@ async function verifyLoop(d, label) {
 // ---------------------------------------------------------------- prepare
 phase('Prepare')
 const st = await agent(
-  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch, merges Base into the goal branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n3. Run \`git rev-parse HEAD\` (after the merge) and return its output as sha.\n${ALONE}\nCommit nothing.`,
+  `Start friday directive ${id}. The session's current directory is the repo root.\n1. Run \`friday start ${id} --no-gate\` (it switches to the right branch, merges Base into the goal branch and enforces goal order). If it refuses (non-zero exit), return started=false with its output verbatim and change nothing else.\n2. If the environment variable FRIDAY_DISPATCHED_FROM is set (check with \`printenv FRIDAY_DISPATCHED_FROM\`), append exactly one line \`$(date +%F): Dispatched from <that value> to $(hostname)\` to \`runs/${id}/notes.md\` (create the file and directory if missing; it is untracked). If it is not set, write nothing.\n3. Run \`git rev-parse HEAD\` (after the merge) and return its output as sha.\n4. If the output of \`friday start\` has a line beginning \`Allowed commands are NOT pre-approved\`, return that line verbatim as preapproval (else an empty string).\n${ALONE}\nCommit nothing.`,
   { agentType: 'friday:implementer', schema: START, label: `start ${id}`, phase: 'Prepare' },
 )
 if (!st) return `${id} not started: the start step returned nothing`
 if (!st.started) return `${id} not started: ${st.output}`
 const sha = String(st.sha || '').trim()
+// Not blocking: the user sees the line before Implement and can publish the plan meanwhile.
+if (String(st.preapproval || '').trim()) log(`${id}: ${String(st.preapproval).trim()}`)
 
 // The sha is in the prompt so a resumed run reuses a cached parse only when HEAD is unchanged.
 const parsed = await agent(

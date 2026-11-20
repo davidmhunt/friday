@@ -628,6 +628,11 @@ def cmd_approve(a) -> int:
         return 1
     br = fc.current_branch(root)
     if br != f"friday/{g}":
+        if _run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/friday/{g}"], root).returncode != 0:
+            sys.exit(f"friday: approve runs on branch friday/{g}, which does not exist yet (a goal approved "
+                     f"before the plan ref existed). From the goal's Base, create it with the plan committed, then rerun:\n"
+                     f"  git switch -c friday/{g}\n  git commit -am \"plan: {g}\"   # if the plan is uncommitted\n"
+                     f"  friday approve --goal {g}")
         sys.exit(f"friday: approve runs on branch friday/{g}, not {br}")
     dirty = [l[3:] for l in _run(["git", "status", "--porcelain", "--untracked-files=no"], root).stdout.splitlines() if l.strip()]
     if dirty:
