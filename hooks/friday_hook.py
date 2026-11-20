@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -277,11 +278,40 @@ def record_session_approval(payload: dict) -> None:
             fc.take_lease(resource, session, holder.get("note", ""), approved=True)
 
 
+_GIT_NO_RUN = {"add", "diff", "log", "status", "show", "blame", "grep", "rm", "mv", "restore", "checkout", "commit"}
+
+
+def _git_cannot_run(simple: str) -> bool:
+    """True for a `git <subcommand>` that only reads or stages files (never runs a script)."""
+    argv = fc.argv_of(simple)
+    if not argv or argv[0] != "git":
+        return False
+    rest = argv[1:]
+    while rest and rest[0] in ("-C", "-c") and len(rest) > 1:
+        rest = rest[2:]
+    return bool(rest) and rest[0] in _GIT_NO_RUN
+
+
+def _hardware_segments(cmd: str) -> list[str]:
+    """The texts hardware patterns are matched against: each simple command of `cmd` except a git
+    subcommand that cannot run the device. Fail closed: a line that cannot be split (unbalanced
+    quotes) is matched whole."""
+    try:
+        shlex.split(cmd, comments=False, posix=True)
+        simples = fc.split_commands(cmd)
+    except Exception:
+        return [cmd]
+    if not simples:
+        return [cmd]
+    return [s for s in simples if not _git_cannot_run(s)]
+
+
 def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     hw = cfg.get("hardware") or {}
     first = {}
+    segments = _hardware_segments(cmd)
     for r, pats in hw.items():
-        pos = [m.start() for p in pats if (m := re.search(p, cmd))]
+        pos = [(i, m.start()) for i, seg in enumerate(segments) for p in pats if (m := re.search(p, seg))]
         if pos:
             first[r] = min(pos)
     matched = sorted(first, key=first.get)         # resources in the order they appear in the command
