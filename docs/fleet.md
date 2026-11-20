@@ -353,7 +353,7 @@ carries on.
 The clean looks at each worktree `<repos>/<repo>.friday/<goal>` on the node. The master decides:
 
 - **Finished**: a merged PR exists for `friday/<goal>` (`gh pr list --state merged --head
-  friday/<goal>`; squash merges are found this way, not by ancestry), or `friday/<goal>` is gone from
+  friday/<goal>`, or `glab mr list --merged --source-branch friday/<goal>` for a GitLab repo; squash merges are found this way, not by ancestry), or `friday/<goal>` is gone from
   origin and the goal file in the worktree says `Status: done`. Without `gh` on the master only the
   branch-gone rule is used, and the clean says so.
 - **Kept, with a one-line reason**: unfinished goals, dirty worktrees (tracked or untracked changes,
@@ -450,3 +450,12 @@ Attach to the worker's session on the node: `ssh <node> -t tmux attach -t friday
 `tmux attach -t friday-<g>` if you are on it). Or open the session in the Claude app: the worker runs
 with Remote Control and is named `<g>.<node>`. If the session is gone, check the goal's branch
 `friday/<g>` on origin and the worktree on the node.
+
+## Dash and forge tokens
+
+The dash lists open `friday/*` PRs with `gh` and, for repos whose snapshot reports `forge: gitlab`, open
+MRs with `glab` (the image carries both). `friday dash up` reads `gh auth token` and `glab auth token`
+on the master and passes them to the container as `GH_TOKEN` and `GITLAB_TOKEN` in the environment,
+never on a command line. A CLI that is not signed in leaves its token unset, `up` says so, and the dash
+shows no PRs for that forge. Sign in with `gh auth login` or `glab auth login`, then run `friday dash
+up` again. Repos with forge `none` are skipped.

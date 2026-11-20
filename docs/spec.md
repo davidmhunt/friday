@@ -337,7 +337,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 
 | Command | What it does | Exit codes |
 |---|---|---|
-| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo (a running goal whose directives have Allowed commands shows `plan: published | not published | stale`; `--json` carries it as the goal's `plan`), the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
+| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo (a running goal whose directives have Allowed commands shows `plan: published | not published | stale`; `--json` carries it as the goal's `plan`), the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR (a GitLab MR on a `gitlab` forge) is merged, each with its delete command (deletes nothing; skipped without `gh`, or `glab` on GitLab). Each goal's `pr open|merged|closed <url>` line comes from `gh`, or from `glab mr list` on GitLab; a `none` forge shows `pr none`, and a missing or signed-out CLI shows no PR info `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
 | `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing. Reports whether the GitHub repo deletes head branches on merge and prints the `gh api -X PATCH` command to turn it on (changes nothing; skipped when `gh` is missing or signed out) | 0; 1 unreadable settings file |
 | `friday new <loop>` | print the next free directive id for a loop (`core` -> `core-04`) | 0 |
 | `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base (finding a directive that exists only on the goal branch or Base first; a Status-only conflict keeps the goal branch's lines), set the goal `running` (a `done` goal with an undone directive reopens), install the guard, write the marker, print `base <sha>`, and for a directive whose `## Allowed commands` plan is not `published` the line `Allowed commands are NOT pre-approved (<state>): ...` (section 5). Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
@@ -363,7 +363,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 | `friday install [--bin-dir DIR]` | needs `uv`: run `uv python install 3.12 --no-bin --install-dir <private dir>` (`${XDG_DATA_HOME:-~/.local/share}/friday/python`), record the path from `UV_PYTHON_INSTALL_DIR=<private dir> uv python find --managed-python 3.12` in `~/.local/state/friday/python` (refusing a path outside the private dir), and write `DIR/friday` (default `~/.local/bin`) as an sh shim that execs that interpreter on this checkout's `bin/friday`; an old friday symlink is replaced | 0; 1 would overwrite something else, or `uv` failed |
 | `friday uninstall [--bin-dir DIR]` | remove that shim (or old link) when it is friday's, the recorded Python path, the private Python directory (`${XDG_DATA_HOME:-~/.local/share}/friday/python`), and this repo's `commit-msg` guard | 0; 1 not a friday link |
 | `friday dash [--bind ADDR]... [--no-self]` | serve the status API on 127.0.0.1 and the tailnet address (section 12) | 0; 1 |
-| `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing |
+| `friday dash up` / `friday dash down` | start or stop the dash as a Docker Compose service | docker's exit code; 1 docker or registry missing. `up` passes `GH_TOKEN` (from `gh auth token`) and `GITLAB_TOKEN` (from `glab auth token`) to the container through the environment, never argv; a CLI that is not signed in leaves its token unset and prints why |
 
 `friday result write` exists so an expensive or hardware run is done once and Verify stays cheap:
 `Verify: friday result check <id> --require 'accuracy >= 0.9' --files`.
@@ -591,7 +591,7 @@ the `forge` key, installing glab, or `Land: push`.
 (`gh pr create`, or `glab mr create --source-branch ... --target-branch <Base> --title ... --description ... --yes`).
 On GitLab every glab call carries `-R <host>/<slug>`, so it never depends on the cwd's glab config.
 The output line is `PR: <url>` for both, so the workflow and dash parse it unchanged. `FRIDAY_GH` and
-`FRIDAY_GLAB` override the binaries. friday never approves or merges either, and does not read CI status.
+`FRIDAY_GLAB` override the binaries. The same forge dispatch applies to the other PR queries: merged-goal detection (`gh pr list --state merged --head friday/<goal>`, or `glab mr list --merged --source-branch friday/<goal> --output json`), `friday status`, and the dash's open `friday/*` list (`glab mr list` for repos whose snapshot `forge` is `gitlab`; `none` repos are skipped). Each degrades to no PR info when the CLI is missing or signed out. friday never approves or merges either, and does not read CI status.
 
 Friday also reads the repo's tracked `.claude/settings.json` (the allow rules, merged by
 `friday init`) and, on the master, the fleet registry `nodes.toml` ([fleet.md](fleet.md)).
@@ -618,8 +618,9 @@ the user. How machines and projects appear, the API and the Docker deployment:
   stays a step the user does, even if a directive lists it.
 - **A hardware prompt in a dispatched session has nobody to answer it.** The session waits, and a
   resume (`--resume`) is needed unless the commands are pre-approved in `## Allowed commands`.
-- **Landing opens GitHub pull requests only** (`gh`; the compare URL covers a missing `gh`). On another
-  forge use a goal `Land: push`, which pushes the branch and prints the compare URL; no merge: the user merges.
+- **Landing opens GitHub pull requests and GitLab merge requests only** (`gh`, `glab`; the compare URL
+  covers a missing CLI). On another forge use a goal `Land: push`, which pushes the branch and prints the
+  compare URL; no merge: the user merges.
 - **The lease is taken when the prompt is shown** and expires after 4 hours; a command the user
   then declines still leaves the lease until it expires, the session ends or `friday release`.
 - **Verify runs up to 30 minutes** in the Stop hook (and the hook entry allows 1900 s). A longer

@@ -4,6 +4,8 @@
 
 ### Added
 
+- On GitLab, merged-goal detection, `friday status`'s `pr` line, the merged-branch report and the dash's open-PR list use `glab`; each repo's snapshot carries its forge, the dash image installs a pinned glab, and `friday dash up` passes `GITLAB_TOKEN` from `glab auth token` in the environment (fg-04).
+
 - On GitLab, `friday land` opens or finds a merge request with `glab` (`FRIDAY_GLAB` overrides the binary) and prints `PR: <url>`; exit codes match the GitHub path, and a missing or signed-out glab gives exit 5 with the COMPARE line (fg-03).
 
 - A goal can say `Land: push`: `friday land --goal` reverifies, pushes `friday/<goal>`, prints `PUSHED` and `COMPARE: <url>` and opens nothing, for forges without `gh`; `friday status` shows `pushed` and the execute workflow relays the compare URL (fg-02).
