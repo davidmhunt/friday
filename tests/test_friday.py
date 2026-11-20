@@ -344,14 +344,18 @@ def test_land_refuses_dirty_tree(remote_repo):
     assert r.returncode != 0 and "uncommitted" in r.stderr
 
 
-def test_compare_url():
+def test_compare_url(tmp_path):
     import importlib.machinery, importlib.util
     loader = importlib.machinery.SourceFileLoader("friday_cli", str(CLI))
     mod = importlib.util.module_from_spec(importlib.util.spec_from_loader("friday_cli", loader))
     loader.exec_module(mod)
-    assert mod._compare_url("git@github.com:davidmhunt/CPSL_TI_Radar.git", "main", "friday/x") == \
+    def url(remote, tmp):
+        subprocess.run(["git", "init", "-q", str(tmp)], check=True)
+        subprocess.run(["git", "-C", str(tmp), "remote", "add", "origin", remote], check=True)
+        return mod._compare_url(tmp, "main", "friday/x")
+    assert url("git@github.com:davidmhunt/CPSL_TI_Radar.git", tmp_path / "a") == \
         "https://github.com/davidmhunt/CPSL_TI_Radar/compare/main...friday/x?expand=1"
-    assert mod._compare_url("/tmp/origin.git", "main", "friday/x") is None
+    assert url("/tmp/origin.git", tmp_path / "b") is None
 
 
 # ---------------------------------------------------------------- posttool hook

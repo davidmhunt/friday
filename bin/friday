@@ -183,16 +183,11 @@ def _install_hook(root: Path) -> None:
 
 def _gh_slug(root: Path) -> tuple[str, str] | None:
     """(gh command, owner/repo) when origin is a GitHub repo and gh is installed and signed in; else None."""
-    import re
     gh = os.environ.get("FRIDAY_GH", "gh")
-    url = _run(["git", "remote", "get-url", "origin"], root)
-    if url.returncode != 0:
+    f = fc.forge(root)
+    if f["kind"] != "github" or not f["slug"] or _run([gh, "auth", "status"], root).returncode != 0:
         return None
-    m = re.match(r"^(?:git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+?)(?:\.git)?/?$",
-                 url.stdout.strip())
-    if not m or _run([gh, "auth", "status"], root).returncode != 0:
-        return None
-    return gh, m.group(1)
+    return gh, f["slug"]
 
 
 def _report_delete_branch_on_merge(root: Path) -> None:
@@ -757,10 +752,13 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(args, 127, "", str(e))
 
 
-def _compare_url(remote: str, base: str, head: str) -> str | None:
-    import re
-    m = re.match(r"^(?:git@github\.com:|https://github\.com/|ssh://git@github\.com/)([^/]+/[^/]+?)(?:\.git)?/?$", remote)
-    return f"https://github.com/{m.group(1)}/compare/{base}...{head}?expand=1" if m else None
+def _compare_url(root: Path, base: str, head: str) -> str | None:
+    f = fc.forge(root)
+    if f["kind"] == "github" and f["slug"]:
+        return f"{f['web']}/{f['slug']}/compare/{base}...{head}?expand=1"
+    if f["kind"] == "gitlab" and f["slug"]:
+        return f"{f['web']}/{f['slug']}/-/compare/{base}...{head}"
+    return None
 
 
 def cmd_land(a) -> int:
@@ -811,7 +809,7 @@ def cmd_land(a) -> int:
               f"(`git push -u origin {a.base}`), then rerun `friday land {a.id} --base {a.base}`.")
         return 4
     gh = os.environ.get("FRIDAY_GH", "gh")
-    compare = _compare_url(remote.stdout.strip(), a.base, head)
+    compare = _compare_url(root, a.base, head)
     if _run([gh, "auth", "status"], root).returncode != 0:
         print(f"PR not opened: `{gh}` is not installed or not signed in.")
         if compare:
@@ -939,7 +937,7 @@ def land_goal(gid: str) -> int:
               f"(`git push -u origin {base}`), then rerun `friday land --goal {gid}`.")
         return 4
     gh = os.environ.get("FRIDAY_GH", "gh")
-    compare = _compare_url(remote.stdout.strip(), base, head)
+    compare = _compare_url(root, base, head)
     if _run([gh, "auth", "status"], root).returncode != 0:
         print(f"PR not opened: `{gh}` is not installed or not signed in.")
         if compare:

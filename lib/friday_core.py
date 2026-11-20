@@ -195,6 +195,52 @@ def load_config(root: Path | None) -> dict:
 
 
 APPROVAL_MODES = ("command", "session")
+FORGE_KINDS = ("github", "gitlab", "none")
+
+
+def parse_remote(url: str) -> tuple[str, str] | None:
+    """(host, project path) from an ssh (`git@host:path.git`, `ssh://git@host:port/path.git`) or
+    https remote URL; None when it is neither."""
+    url = url.strip()
+    m = (re.match(r"^(?:[\w.-]+@)?([\w.-]+):(?!//)/?(.+?)(?:\.git)?/?$", url)
+         or re.match(r"^(?:ssh|https?|git)://(?:[^@/]+@)?([\w.-]+)(?::\d+)?/(.+?)(?:\.git)?/?$", url))
+    if not m or not m.group(2):
+        return None
+    return m.group(1).lower(), m.group(2)
+
+
+def forge(root: Path | None) -> dict:
+    """The repo's forge: {"kind": github|gitlab|none, "host", "slug", "web"}. The `forge` key in
+    .claude/friday.json wins; else origin's host (github.com is github; a host named *gitlab*, or one
+    `glab auth status --hostname` accepts, is gitlab); else none."""
+    out = {"kind": "none", "host": "", "slug": "", "web": ""}
+    if root is None:
+        return out
+    r = _git(["remote", "get-url", "origin"], root)
+    parsed = parse_remote(r) if r else None
+    if parsed:
+        out.update(host=parsed[0], slug=parsed[1], web=f"https://{parsed[0]}")
+    cfg = load_config(root).get("forge")
+    if cfg in FORGE_KINDS:
+        out["kind"] = cfg
+        return out
+    if not parsed:
+        return out
+    host = parsed[0]
+    if host == "github.com":
+        out["kind"] = "github"
+    elif "gitlab" in host:
+        out["kind"] = "gitlab"
+    else:
+        glab = os.environ.get("FRIDAY_GLAB") or "glab"
+        try:
+            ok = subprocess.run([glab, "auth", "status", "--hostname", host], cwd=root,
+                                capture_output=True, text=True, timeout=20).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if ok:
+            out["kind"] = "gitlab"
+    return out
 
 
 def config_issues(root: Path | None) -> list[Issue]:
@@ -212,6 +258,8 @@ def config_issues(root: Path | None) -> list[Issue]:
     out = []
     if "bash_file_io" in cfg and cfg["bash_file_io"] not in ("deny", "allow"):
         out.append(Issue("error", rel, 1, f"bash_file_io is {cfg['bash_file_io']!r}; use deny or allow"))
+    if "forge" in cfg and cfg["forge"] not in FORGE_KINDS:
+        out.append(Issue("error", rel, 1, f"forge is {cfg['forge']!r}; use github, gitlab or none"))
     if "rules" in cfg:
         r = cfg["rules"]
         if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
