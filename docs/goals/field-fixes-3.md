@@ -1,5 +1,5 @@
 # field-fixes-3: Pre-approval, hardware matching and Verify behave as the user expects in real projects
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -18,3 +18,4 @@ them now (2026-11-20: "go ahead and address them now"); the user approved all th
 3. vf-01: The active directive's own Verify line is exempt from bash_file_io, and a Verify not run says why (fixes #33)
 
 ## Log
+- 2026-11-20: Landed: 3 directive(s) reverified on friday/field-fixes-3; PR into main.
