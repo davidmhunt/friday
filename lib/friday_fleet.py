@@ -738,20 +738,23 @@ def _slug(origin_url: str) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else ""
 
 
-def url_forge_tool(origin_url: str) -> str:
-    """`glab` when the origin URL's host is a GitLab (named *gitlab*), else `gh`."""
+def url_forge_tool(origin_url: str, kind: str | None = None) -> str:
+    """`glab` for a GitLab repo, else `gh`. `kind` is the repo's `fc.forge(root)["kind"]` (honours
+    `forge` in .claude/friday.json and `glab auth status`); without it, a host named *gitlab* is GitLab."""
+    if kind:
+        return "glab" if kind == "gitlab" else "gh"
     parsed = fc.parse_remote(origin_url or "")
     return "glab" if parsed and "gitlab" in parsed[0] else "gh"
 
 
-def pr_merged(origin_url: str, goal: str, run=None):
+def pr_merged(origin_url: str, goal: str, run=None, kind: str | None = None):
     """True/False: does `gh pr list --state merged --head friday/<goal>` (GitLab: `glab mr list --merged
     --source-branch friday/<goal>`) find a PR (squash merges break ancestry, so never
     `git branch --merged`). None when the forge CLI is missing or fails."""
     import subprocess
     run = run or subprocess.run
     slug = _slug(origin_url)
-    if url_forge_tool(origin_url) == "glab":
+    if url_forge_tool(origin_url, kind) == "glab":
         glab = os.environ.get("FRIDAY_GLAB") or "glab"
         cmd = [glab, "mr", "list", "--merged", "--source-branch", f"friday/{goal}", "--output", "json"]
         parsed = fc.parse_remote(origin_url)
@@ -787,10 +790,11 @@ def branch_on_origin(origin_url: str, goal: str, run=None):
     return bool(r.stdout.strip())
 
 
-def decide_clean(inv: dict, origin_urls: dict, run=None, have_gh=None) -> dict:
+def decide_clean(inv: dict, origin_urls: dict, run=None, have_gh=None, forge_kinds: dict | None = None) -> dict:
     """Decide on the master which inventoried worktrees to remove.
 
-    `origin_urls` maps repo name -> origin URL (the master's). Finished = a merged PR for
+    `origin_urls` maps repo name -> origin URL (the master's); `forge_kinds` optionally maps repo name
+    -> forge kind (`fc.forge`), so a self-hosted GitLab on any hostname uses glab. Finished = a merged PR for
     `friday/<goal>`, or (no gh, or no merged PR found) the branch is gone from origin and the goal
     file says `done`. Anything unfinished, dirty, or with a session that is not idle is kept with a
     one-line reason. Returns {"remove": [wt], "keep": [(wt, reason)], "notes": [str]}; each wt gets
@@ -806,14 +810,15 @@ def decide_clean(inv: dict, origin_urls: dict, run=None, have_gh=None) -> dict:
         if not url:
             out["keep"].append((wt, f"no origin known for repo {wt['repo']}"))
             continue
-        tool = url_forge_tool(url)
+        kind = (forge_kinds or {}).get(wt["repo"])
+        tool = url_forge_tool(url, kind)
         have_gh = shutil.which(os.environ.get("FRIDAY_GLAB") or "glab" if tool == "glab" else "gh") is not None \
             if auto else have_gh
         if not have_gh and tool not in noted:
             noted.add(tool)
             out["notes"].append(f"{tool} not available: using the branch-gone rule only "
                                 "(branch gone from origin and goal file says done)")
-        merged = pr_merged(url, goal, run) if have_gh else None
+        merged = (pr_merged(url, goal, run, kind) if kind else pr_merged(url, goal, run)) if have_gh else None
         if have_gh and merged is None:
             out["notes"].append(f"{tool} failed for {wt['repo']}/{goal}: using the branch-gone rule")
         why = None
@@ -917,7 +922,7 @@ FRIDAY_ROWS
 """
 
 
-def run_clean(node, origin_urls: dict, dry_run: bool = False, run=None) -> dict:
+def run_clean(node, origin_urls: dict, dry_run: bool = False, run=None, forge_kinds: dict | None = None) -> dict:
     """Inventory `node`, decide on the master, run the clean script there. Never raises.
 
     Returns {"cleaned": [id], "kept": [str], "would": [str], "strays": [dict], "notes": [str],
@@ -939,7 +944,7 @@ def run_clean(node, origin_urls: dict, dry_run: bool = False, run=None) -> dict:
     try:
         inv = parse_inventory(ssh(inventory_script(node)))
         res["strays"] = inv["stray"]
-        plan = decide_clean(inv, origin_urls)
+        plan = decide_clean(inv, origin_urls, forge_kinds=forge_kinds)
         res["notes"] = plan["notes"]
         res["kept"] = [f"{w['repo']}/{w['goal']}: {why}" for w, why in plan["keep"]]
         if plan["remove"]:

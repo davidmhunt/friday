@@ -1557,7 +1557,8 @@ def cmd_nodes_clean(a, reg) -> int:
     root = _root()
     origin_url = _git_out(["remote", "get-url", "origin"], root)[1].strip()
     repo_name = origin_url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git") or root.name
-    clean = ff.run_clean(n, {repo_name: origin_url}, dry_run=a.dry_run)
+    clean = ff.run_clean(n, {repo_name: origin_url}, dry_run=a.dry_run,
+                         forge_kinds={repo_name: fc.forge(root)["kind"]})
     for line in print_clean_lines(n, clean):
         print(line)
     return 1 if clean["error"] else 0
@@ -1922,7 +1923,7 @@ def cmd_dispatch(a) -> int:
         print(f"clean: would remove finished goal worktrees on {n.name} first (`friday nodes --clean {n.name} --dry-run` plans it)")
         print("dry run: nothing changed on any node")
         return 0
-    clean = ff.run_clean(n, {repo_name: origin_url.strip()})
+    clean = ff.run_clean(n, {repo_name: origin_url.strip()}, forge_kinds={repo_name: fc.forge(root)["kind"]})
     for line in print_clean_lines(n, clean):
         print(line)
     argv, stdin = ff.ssh_cmd(n, script)

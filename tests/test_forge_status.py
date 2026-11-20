@@ -66,6 +66,20 @@ def test_pr_merged_glab_missing_or_failing_is_none():
     assert ff.pr_merged(GL_URL, "core", runner("", rc=1)) is None
 
 
+def test_pr_merged_and_decide_clean_use_forge_kind_for_self_hosted_host():
+    url = "git@git.corp.example:grp/proj.git"
+    assert ff.url_forge_tool(url) == "gh"
+    assert ff.url_forge_tool(url, "gitlab") == "glab"
+    calls = []
+    assert ff.pr_merged(url, "core", runner('[{"iid": 3}]', calls=calls), kind="gitlab") is True
+    assert calls[0][:3] == ["glab", "mr", "list"]
+    inv = {"worktrees": [{"repo": "proj", "goal": "core", "path": "/w", "goalstatus": "done"}], "stray": []}
+    calls.clear()
+    plan = ff.decide_clean(inv, {"proj": url}, runner('[{"iid": 3}]', calls=calls), have_gh=True,
+                           forge_kinds={"proj": "gitlab"})
+    assert [w["why"] for w in plan["remove"]] == ["PR merged"] and calls[0][0] == "glab"
+
+
 def test_pr_merged_github_unchanged():
     calls = []
     assert ff.pr_merged("git@github.com:me/proj.git", "core", runner('[{"number": 1}]', calls=calls)) is True
@@ -74,7 +88,7 @@ def test_pr_merged_github_unchanged():
 
 
 # ---------------------------------------------------------------- status pr line
-@pytest.mark.parametrize("state,want", [("opened", "open"), ("merged", "merged")])
+@pytest.mark.parametrize("state,want", [("opened", "open"), ("merged", "merged"), ("closed", "closed")])
 def test_goal_pr_on_gitlab(tmp_path, state, want):
     r = repo(tmp_path, GL_URL)
     glab, log = fake_glab(tmp_path, [{"iid": 4, "state": state, "web_url": "https://gitlab.example.com/grp/proj/-/merge_requests/4"}])
@@ -84,9 +98,9 @@ def test_goal_pr_on_gitlab(tmp_path, state, want):
     assert c[:2] == ["mr", "list"] and c[c.index("--source-branch") + 1] == "friday/core"
 
 
-def test_goal_pr_gitlab_closed_is_none_and_missing_glab_is_unknown(tmp_path, monkeypatch):
+def test_goal_pr_gitlab_no_mr_is_none_and_missing_glab_is_unknown(tmp_path, monkeypatch):
     r = repo(tmp_path, GL_URL)
-    glab, _ = fake_glab(tmp_path, [{"iid": 4, "state": "closed", "web_url": "u"}])
+    glab, _ = fake_glab(tmp_path, [])
     assert fs.goal_pr(r, "core", None, glab) == ("none", None)
     monkeypatch.delenv("FRIDAY_GLAB", raising=False)
     monkeypatch.setenv("PATH", str(private_bin(tmp_path / "pybin")))

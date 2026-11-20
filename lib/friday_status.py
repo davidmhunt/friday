@@ -10,7 +10,7 @@ holds any snapshot to it. Top-level keys:
   for the filesystem that holds `repos`. Any value is null when it cannot be read.
 - gpus[]: name, util (percent), mem {used, total} in MiB, processes [{pid, name, mem}].
   Empty without `nvidia-smi`.
-- repos[]: path, origin, branch, goals[] {id, title, status, pr (none|open|merged) and pr_url (both
+- repos[]: path, origin, branch, goals[] {id, title, status, pr (none|open|merged; closed on GitLab) and pr_url (both
   left out without gh), plan (published | not published | stale; only on a running goal whose
   directives have Allowed commands), directives[] {id, status,
   deliverable, title}}. Directives not in any goal sit under a goal with id null.
@@ -483,8 +483,8 @@ def find_repos(cwd, registry_path=None, node_name: str | None = None, errors: li
 
 
 def goal_pr(path: Path, goal: str, gh: str | None, glab: str | None = None) -> tuple[str, str | None] | None:
-    """(state, url) of the PR (GitLab: MR) from `friday/<goal>`: state is none, open or merged (closed
-    unmerged counts as none). A `forge: none` repo (set in .claude/friday.json) is always none. None when the forge's CLI (gh, or glab
+    """(state, url) of the PR (GitLab: MR) from `friday/<goal>`: state is none, open or merged, plus closed on GitLab (a closed
+    unmerged MR; on GitHub a closed unmerged PR still counts as none, as scope-01 settled). A `forge: none` repo (set in .claude/friday.json) is always none. None when the forge's CLI (gh, or glab
     for a GitLab repo) is missing or fails: the caller leaves the keys out."""
     f = fc.forge(path)
     kind = f["kind"]
@@ -496,7 +496,7 @@ def goal_pr(path: Path, goal: str, gh: str | None, glab: str | None = None) -> t
             return None
         out = _run([glab, "mr", "list", "--source-branch", f"friday/{goal}", "--all", "--output", "json"],
                    cwd=path)
-        key, num = "iid", {"opened": "open", "open": "open", "merged": "merged"}
+        key, num = "iid", {"opened": "open", "open": "open", "merged": "merged", "closed": "closed"}
     else:
         if not gh:
             return None
@@ -512,7 +512,7 @@ def goal_pr(path: Path, goal: str, gh: str | None, glab: str | None = None) -> t
     if not isinstance(prs, list):
         return None
     prs = [p for p in prs if isinstance(p, dict)]
-    for want in ("open", "merged"):
+    for want in ("open", "merged") + (("closed",) if kind == "gitlab" else ()):
         for pr in sorted(prs, key=lambda x: -(x.get(key) or x.get("number") or 0)):
             if num.get(str(pr.get("state", "")).lower()) == want:
                 return want, pr.get("web_url") or pr.get("url")
