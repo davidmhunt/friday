@@ -1,5 +1,5 @@
 # gitlab-land: Goals land on GitLab as merge requests, and on any other remote as a pushed branch
-Status: proposed
+Status: approved
 Base: main
 Land: pr
 
@@ -12,6 +12,8 @@ status, dash and merged-branch checks; any other remote gets `Land: push` (rever
 branch, print the compare/MR URL); `friday check` warns when `Land: pr` cannot work. GitHub
 behaviour is unchanged. Tested with fake `glab`; a live run against the user's GitLab project is a
 later step the user will arrange ("we can get there when we get there").
+
+The user approved the goal and its directives on 2026-11-20.
 
 ## Directives
 1. fg-01: friday knows each repo's forge (github, gitlab or none) and `friday check` warns when `Land: pr` cannot work
