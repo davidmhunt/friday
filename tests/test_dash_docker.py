@@ -159,6 +159,29 @@ def test_up_without_docker_fails_clearly(fakes):
     assert not (fakes / "docker.log").exists()
 
 
+def test_child_path_never_reaches_a_real_docker_or_gh(fakes, monkeypatch):
+    """A sentinel docker and gh sit next to a fake sys.executable. With the fake docker deleted, `dash up`
+    must say docker is not installed, and no directory on the child PATH may hold a docker or gh."""
+    fakepy = fakes / "fakepy"
+    fakepy.mkdir()
+    for name in ("docker", "gh"):
+        (fakepy / name).write_text(f"#!/bin/sh\necho sentinel > {fakes / 'sentinel.log'}\n")
+        (fakepy / name).chmod(0o755)
+    (fakepy / "python3").symlink_to(sys.executable)
+    monkeypatch.setattr(sys, "executable", str(fakepy / "python3"))
+    (fakes / "bin" / "docker").unlink()
+    (fakes / "bin" / "gh").unlink()
+    pybin = private_bin(fakes / "pybin")
+    assert sorted(p.name for p in pybin.iterdir()) == ["python", "python3"]
+    path = f"{fakes / 'bin'}{os.pathsep}{pybin}"
+    for d in path.split(os.pathsep):
+        assert not (Path(d) / "docker").exists() and not (Path(d) / "gh").exists(), d
+    r = friday(fakes, "up", path=path)
+    assert r.returncode == 1
+    assert "docker is not installed" in r.stderr
+    assert not (fakes / "sentinel.log").exists() and not (fakes / "docker.log").exists()
+
+
 # ---------------------------------------------------------------- --no-self and the localhost report
 def make(tmp_path, collect, no_self):
     (tmp_path / "nodes.toml").write_text(REG)
