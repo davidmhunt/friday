@@ -292,10 +292,32 @@ def _git_cannot_run(simple: str) -> bool:
     return bool(rest) and rest[0] in _GIT_NO_RUN
 
 
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_GIT_COMMIT_LINE = re.compile(r"(?:^|[;&|(]\s*|\$\(\s*)(?:\w+=\S*\s+)*git\s+(?:-[Cc]\s+\S+\s+)*commit\b")
+
+
+def _drop_commit_heredocs(cmd: str) -> str:
+    """Remove heredoc bodies fed to `git commit` (`-F - <<EOF`, `-m "$(cat <<'EOF'`): they are
+    the commit message, which never runs the device. Other heredocs are kept (fail closed)."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        m = _HEREDOC.search(line)
+        if m and _GIT_COMMIT_LINE.search(line):
+            while i < len(lines) and lines[i].strip() != m.group(2):
+                i += 1                               # skip the body
+            if i < len(lines):
+                out.append(lines[i]); i += 1         # keep the terminator
+    return "\n".join(out)
+
+
 def _hardware_segments(cmd: str) -> list[str]:
     """The texts hardware patterns are matched against: each simple command of `cmd` except a git
     subcommand that cannot run the device. Fail closed: a line that cannot be split (unbalanced
     quotes) is matched whole."""
+    cmd = _drop_commit_heredocs(cmd)
     try:
         shlex.split(cmd, comments=False, posix=True)
         simples = fc.split_commands(cmd)

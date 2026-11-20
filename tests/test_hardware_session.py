@@ -131,6 +131,8 @@ def script_repo(tmp_path, monkeypatch):
     "git -C . log -- tools/x.sh",
     'git commit -m "fix tools/x.sh handling"',
     "git add tools/x.sh && git commit -m 'tools/x.sh'",
+    'git commit -m "$(cat <<\'EOF\'\nfix tools/x.sh handling\nEOF\n)"',
+    "git commit -F - <<EOF\nfix tools/x.sh\nEOF",
 ])
 def test_git_naming_the_script_does_not_touch_resource(script_repo, cmd):
     d = run("pretool", script_repo, cmd, "s1")
@@ -144,6 +146,8 @@ def test_git_naming_the_script_does_not_touch_resource(script_repo, cmd):
     "ssh robot tools/x.sh",
     "true && tools/x.sh",
     'echo "unbalanced && tools/x.sh',
+    "bash <<EOF\ntools/x.sh\nEOF",
+    "git commit -m x && bash <<EOF\ntools/x.sh\nEOF",
 ])
 def test_executions_and_unsplittable_lines_still_touch_resource(script_repo, cmd):
     assert run("pretool", script_repo, cmd, "s1")["permissionDecision"] == "ask"
