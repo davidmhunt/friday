@@ -1,5 +1,5 @@
 # release-1-2: Earlier directives' merges stop blocking later reviews, and friday ships as 1.2.0
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -22,3 +22,4 @@ On 2026-11-20 the user approved rel-03's Verify edit made during its run (commit
 4. rel-03: Release 1.2.0
 
 ## Log
+- 2026-11-20: Landed: 4 directive(s) reverified on friday/release-1-2; PR into main.
