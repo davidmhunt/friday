@@ -1,5 +1,5 @@
 # gitlab-land: Goals land on GitLab as merge requests, and on any other remote as a pushed branch
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -22,3 +22,4 @@ The user approved the goal and its directives on 2026-11-20.
 4. fg-04: On GitLab, merged-goal detection, `friday status` and the dash's open-PR list use glab
 
 ## Log
+- 2026-11-20: Landed: 4 directive(s) reverified on friday/gitlab-land; PR into main.
