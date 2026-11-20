@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Hardware patterns no longer match a command that cannot run the device (#32). The hook matches each simple command on its own and skips `git add`, `diff`, `log`, `status`, `show`, `blame`, `grep`, `rm`, `mv`, `restore`, `checkout` and `commit`, so a script-path resource is not leased by `git add tools/x.sh` or a commit message naming it. `friday check` warns on a pattern that also matches `git add <x>` or `echo <x>`, `friday status` shows when each lease expires, and the hardware skill and spec show an execution-only pattern.
+
 - A goal whose `## Allowed commands` plan is not published no longer runs with nothing pre-approved and no word (#31). `friday start` prints `Allowed commands are NOT pre-approved (not published|stale)` with the command to run, `friday status` (and `--json`) shows `plan:` per running goal, the execute workflow relays the line before Implement, and the hook's ask for a command the working tree lists names the reason and the publish command. Migration: for a goal approved under the old flow whose `friday/<goal>` branch does not exist yet, the publish command now explains how to create the branch from Base first.
 
 ## 1.2.0 - 2026-11-19

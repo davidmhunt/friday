@@ -501,8 +501,8 @@ The deny list, each rule traced to an incident or a hard rule:
 
 `~/.local/state/friday/leases/<resource>.json` records the session, host, time and the command. One
 session holds a resource at a time. The lease is taken when the prompt is shown, not when the user
-answers it; it expires after 4 hours, ends with the session, and is freed by hand with
-`friday release <resource>`.
+answers it; it expires after 4 hours (`friday status` prints `expires in N min`), ends with the session, and is
+freed by hand with `friday release <resource>`.
 
 ### 9.4 The git `commit-msg` guard
 
@@ -552,7 +552,7 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
 | `run_only` | tool names (`python`, `uv`, `cmake`, ...) that must be run through the wrapper | none |
 | `bash_file_io` | `deny`: the hook denies Bash file reads and writes the file tools cover (see the hook table); `allow` or absent changes nothing. `friday check` errors on another value; `load_config` reads it as `allow`. `friday init` prints it as an option | `allow` |
 | `rules` | list of strings: rules for every directive in the repo. `friday check` errors on a non-list or a non-string entry; `load_config` drops such values | none |
-| `hardware` | object: resource name -> list of regular expressions matched against a Bash command | none |
+| `hardware` | object: resource name -> list of regular expressions, each matched against every simple command of a Bash command (a line that cannot be split is matched whole). Simple commands that cannot run a device are skipped: `git` with subcommand `add`, `diff`, `log`, `status`, `show`, `blame`, `grep`, `rm`, `mv`, `restore`, `checkout` or `commit`. `friday check` warns on a pattern that also matches `git add <x>` or `echo <x>` for a literal sample `<x>` from the pattern (best effort). Write a script-path resource so only an execution matches, and exclude a dry run with a lookahead: `^(\\./\|bash\\s+\|sh\\s+)?tools/console_switch\\.sh\\b(?!.*--dry-run)` | none |
 | `hardware_approval` | object: resource name (a key of `hardware`) -> `command` or `session`. `session`: one approved command approves the resource for the rest of the session while it holds the lease. `friday check` errors on another value or an unknown resource; `load_config` ignores such entries | `command` for every resource |
 
 ```json
