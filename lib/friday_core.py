@@ -1198,9 +1198,16 @@ def argv_of(simple: str) -> list[str]:
 
 
 # ---------------------------------------------------------------- leases
-def lease_dir() -> Path:
+def lease_dir_path() -> Path:
+    """The lease directory (FRIDAY_LEASE_DIR, else under XDG_STATE_HOME); nothing is created."""
+    if os.environ.get("FRIDAY_LEASE_DIR"):
+        return Path(os.environ["FRIDAY_LEASE_DIR"])
     base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    d = base / "friday" / "leases"
+    return base / "friday" / "leases"
+
+
+def lease_dir() -> Path:
+    d = lease_dir_path()
     d.mkdir(parents=True, exist_ok=True)
     return d
 

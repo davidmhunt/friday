@@ -78,6 +78,7 @@ Keys of `report_to` and `[dash]` (top level) and of each `[node.<name>]` table:
 | `tags` | list of labels that `Node: tag:<x>` routes on |
 | `repos` | directory holding the node's repos (`~` allowed); required for master and worker |
 | `plugin_dir` | where the friday plugin is cloned on the node; required for master and worker |
+| `push` | `timer` (default) or `container`: how the node pushes its status to the dash (see "Push mode" below); any other value is a registry error that `friday check` and `friday nodes --check` report |
 | `launcher` | how directives start; only `tmux` is supported (the default) |
 | `[dash]` `port` | port `friday dash` listens on (top-level `[dash]` table); default 8787 |
 
@@ -175,6 +176,46 @@ terminal. Without a TTY it refuses unless you pass `--yes`. On confirmation it m
 into the file: other keys stay as they are, the file is written to a temp file and renamed, and the
 previous one is kept once as `settings.json.friday-bak`. It never touches trust, credentials or
 permission rules. Run `friday nodes --check` again afterwards.
+
+### Push mode: timer or container
+
+`--setup` also sets how the node pushes `friday status --push` to the dash, per the node's `push` key.
+
+- `timer` (default): a systemd user timer, `friday-push.timer`, pushes every 30 s. Choose it for a
+  node with systemd and a working `friday` install; it needs no docker.
+- `container`: a `friday-push` container runs `friday status --push --every 30` from the dash image.
+  Choose it when the node already runs docker and you want the push to survive a broken host Python
+  or have no user systemd. The dash shows `push_mode` in the node card.
+
+For `push = "container"`, `--setup` (after the usual y/N) builds `friday-dash:local` from
+`deploy/Dockerfile` if it is missing, runs `docker compose -f <plugin_dir>/deploy/push.compose.yaml up -d`
+on the node, and disables and removes `friday-push.timer` and `.service` if they exist. It adds the
+GPU reservation (`deploy/push.gpu.compose.yaml`) only when `docker info` lists the `nvidia` runtime.
+Going back to `timer` and re-running `--setup` stops and removes the container and installs the
+timer. It never prunes images.
+
+The container runs as the host user with host networking (so it reaches the dash as the timer does)
+and mounts:
+
+- the node's `repos` directory read-only at the same absolute path, to scan repos; it is also
+  `FRIDAY_DISK_PATH`, so disk use is that of the repos filesystem;
+- `~/.config/friday` read-only, for `node.toml`;
+- the lease directory read-write, so leases show up in the snapshot;
+- the host's `/tmp` read-only at `/host/tmp`, to count `friday-*` sessions through the tmux socket
+  (`FRIDAY_TMUX_SOCKET=/host/tmp/tmux-<uid>/default`). The parent `/tmp` is mounted, not
+  `/tmp/tmux-<uid>`, because `/tmp` always exists: after a reboot the container starts at once (a
+  missing bind source would make the start fail, and Docker does not retry a failed start), and
+  Docker never creates a root-owned tmux directory on the host. Until a tmux server runs, the
+  snapshot lists no sessions;
+- `/proc` read-only at `/host/proc` (`FRIDAY_PROC_ROOT`), for the host's load and memory rather than
+  the container's.
+
+`friday nodes --check` reports `push timer` or `push container running|stopped`; a stopped or missing
+container gets the fix line `friday nodes --setup <node>`, and a node without docker says to install it.
+
+arm64 (Jetson, Raspberry Pi): the Dockerfile is multi-arch, with packages from apt and no
+amd64-only download, so the image builds on the node itself. Build there, not on the master. On a
+Jetson the nvidia runtime is usually listed, so the GPU overlay is applied.
 
 ### The node identity file (`node.toml`)
 

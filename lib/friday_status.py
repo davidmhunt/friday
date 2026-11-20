@@ -52,6 +52,7 @@ SCHEMA = {
     "node": str,
     "host": str,
     "time": NUM,
+    "push_mode": str,
     "health": {
         "uptime_s": NUM_OR_NULL,
         "load": ([NUM], _N),
@@ -98,7 +99,7 @@ SCHEMA = {
 
 
 # Keys a snapshot may leave out: a goal's pr / pr_url are absent when gh is unavailable.
-OPTIONAL_KEYS = {"pr", "pr_url", "plan"}
+OPTIONAL_KEYS = {"pr", "pr_url", "push_mode", "plan"}
 
 
 def _check(val, spec, path: str, out: list[str]) -> None:
@@ -148,6 +149,7 @@ def empty_snapshot(node: str, host: str, now: float) -> dict:
     """A snapshot with every key present and nothing collected; collectors fill it in."""
     return {
         "schema": SCHEMA_VERSION, "node": node, "host": host, "time": now,
+        "push_mode": os.environ.get("FRIDAY_PUSH_MODE") or "timer",
         "health": {"uptime_s": None, "load": None,
                    "mem": {"total": None, "used": None}, "disk": {"total": None, "used": None}},
         "gpus": [], "repos": [], "leases": [], "runs": [], "sessions": [], "errors": [],
@@ -573,10 +575,16 @@ def collect_runs(path: Path, errors: list) -> list[dict]:
     return sorted(found, key=lambda r: -r["mtime"])[:RUNS_PER_REPO]
 
 
+def tmux_argv(*args: str) -> list[str]:
+    """A tmux command line; `-S $FRIDAY_TMUX_SOCKET` goes first when that variable is set."""
+    sock = os.environ.get("FRIDAY_TMUX_SOCKET")
+    return ["tmux", *(["-S", sock] if sock else []), *args]
+
+
 def collect_sessions(errors: list) -> list[dict]:
     """sessions[] for each `friday-*` tmux session; [] when tmux is absent or has no server."""
-    out = _run(["tmux", "list-panes", "-a", "-F",
-                "#{session_name}\t#{session_created}\t#{pane_current_path}\t#{pane_id}"])
+    out = _run(tmux_argv("list-panes", "-a", "-F",
+                "#{session_name}\t#{session_created}\t#{pane_current_path}\t#{pane_id}"))
     if out is None:
         return []
     sessions, seen = [], set()
@@ -586,7 +594,7 @@ def collect_sessions(errors: list) -> list[dict]:
             continue
         seen.add(f[0])
         created = _num(f[1])
-        pane = _run(["tmux", "capture-pane", "-p", "-t", f[3], "-S", f"-{PANE_LINES}"])
+        pane = _run(tmux_argv("capture-pane", "-p", "-t", f[3], "-S", f"-{PANE_LINES}"))
         if pane is None:
             errors.append({"where": f"session {f[0]}", "error": "capture-pane failed"})
             pane = ""
@@ -597,10 +605,11 @@ def collect_sessions(errors: list) -> list[dict]:
     return sessions
 
 
-def collect(cwd=None, proc_root: str | Path = "/proc", registry_path=None, node_name: str | None = None,
+def collect(cwd=None, proc_root: str | Path | None = None, registry_path=None, node_name: str | None = None,
             now: float | None = None) -> dict:
     """The whole snapshot for this node. Never raises for a bad file or a missing tool."""
     cwd = Path(cwd or Path.cwd())
+    proc_root = proc_root or os.environ.get("FRIDAY_PROC_ROOT") or "/proc"
     host = socket.gethostname()
     errors: list = []
     reg_node = registry_node(registry_path, node_name, errors)
@@ -608,7 +617,7 @@ def collect(cwd=None, proc_root: str | Path = "/proc", registry_path=None, node_
                           time.time() if now is None else now)
     snap["errors"] = errors
     paths = find_repos(cwd, registry_path, node_name, errors, node=reg_node)
-    snap["health"] = collect_health(proc_root, paths[0] if paths else cwd, errors)
+    snap["health"] = collect_health(proc_root, os.environ.get("FRIDAY_DISK_PATH") or (paths[0] if paths else cwd), errors)
     snap["gpus"] = collect_gpus(errors)
     for p in paths:
         try:
@@ -617,9 +626,8 @@ def collect(cwd=None, proc_root: str | Path = "/proc", registry_path=None, node_
         except Exception as e:
             errors.append({"where": str(p), "error": f"{type(e).__name__}: {e}"})
     try:
-        base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
         # list_leases() would mkdir the lease dir; status writes nothing.
-        snap["leases"] = fc.list_leases() if (base / "friday" / "leases").is_dir() else []
+        snap["leases"] = fc.list_leases() if fc.lease_dir_path().is_dir() else []
     except Exception as e:
         errors.append({"where": "leases", "error": f"{type(e).__name__}: {e}"})
     snap["sessions"] = collect_sessions(errors)
