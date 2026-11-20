@@ -73,7 +73,9 @@ def directive_commits(root: Path | str, did: str) -> dict:
     origin/<Base>) and the tip (HEAD; friday/<id> for `Land: pr` when that branch exists).
     `commits` are non-merge commits in base..tip with a `Directive: <id>` line, minus friday's own
     record commits and plan-only commits (files only under docs/goals/, docs/directives/, .claude/settings.json). `untracked` are non-merge commits with no `Directive:` line that touch
-    anything outside docs/goals/ and docs/directives/. `plan` are plan-only commits (trailer or not)
+    anything outside docs/goals/ and docs/directives/, except those already on the branch when the
+    directive started (ancestors of the HEAD in runs/<id>/start). The second-parent history of a merge
+    trailed with a different directive's id is excluded like a Base merge. `plan` are plan-only commits (trailer or not)
     that are not ancestors of the HEAD recorded in runs/<id>/start (none when that file is absent).
     Raises ValueError when it cannot say."""
     root = Path(root)
@@ -111,6 +113,12 @@ def directive_commits(root: Path | str, did: str) -> dict:
         parts = line.split()
         if len(parts) >= 3 and any(
                 _git(["merge-base", "--is-ancestor", parts[2], r], root) is not None for r in base_refs):
+            excl.append(parts[2])
+            continue
+        # a merge trailed with another directive: that directive's review covered what it brought in
+        mmsg = _git(["log", "-1", "--format=%B", parts[0]], root) or ""
+        if any(m != did for m in re.findall(r"(?m)^Directive:\s*(\S+)\s*$", mmsg)) \
+                and not re.search(rf"(?m)^Directive:\s*{re.escape(did)}\s*$", mmsg):
             excl.append(parts[2])
     log = _git(["log", "--no-merges", "--reverse", "--format=%H%x00%B%x01", tip, "--not", *excl], root)
     if log is None:
@@ -153,6 +161,8 @@ def directive_commits(root: Path | str, did: str) -> dict:
             continue
         if has:
             commits.append((sha, subject))
+        elif start and _git(["merge-base", "--is-ancestor", sha, start], root) is not None:
+            continue    # already on the branch when the directive started
         else:
             untracked.append((sha, subject, fl))
     return {"base": base, "commits": commits, "untracked": untracked, "plan": plan}
