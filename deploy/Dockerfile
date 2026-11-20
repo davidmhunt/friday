@@ -8,13 +8,14 @@
 #     127.0.0.1 and that address, never 0.0.0.0 (resolve_binds refuses anything else);
 #   - with the host network stack the dash sees real peer addresses, so `tailscale whois` still
 #     maps each report's sender to the registry node it claims to be.
-# The image carries no registry, token or state: nodes.toml is mounted read-only, GH_TOKEN comes
+# The image carries no registry, token or state: nodes.toml is mounted read-only, GH_TOKEN and GITLAB_TOKEN come
 # from the environment, and the state dir is a volume.
 FROM python:3.12-slim
 
 # Pinned releases of the CLIs the dash shells out to (bump deliberately).
 ARG TAILSCALE_VERSION=1.104.7
 ARG GH_VERSION=2.105.0
+ARG GLAB_VERSION=1.60.0
 
 RUN set -eux; \
     apt-get update; \
@@ -32,6 +33,11 @@ RUN set -eux; \
         > /etc/apt/sources.list.d/github-cli.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends "tailscale=${TAILSCALE_VERSION}" "gh=${GH_VERSION}"; \
+    arch="$(dpkg --print-architecture)"; \
+    curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${arch}.deb" \
+        -o /tmp/glab.deb; \
+    apt-get install -y --no-install-recommends /tmp/glab.deb; \
+    rm -f /tmp/glab.deb; \
     apt-get purge -y --auto-remove curl; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists

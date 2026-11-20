@@ -67,6 +67,7 @@ SCHEMA = {
     "repos": [{
         "path": str,
         "origin": STR_OR_NULL,
+        "forge": str,
         "branch": STR_OR_NULL,
         "goals": [{
             "id": STR_OR_NULL,
@@ -98,7 +99,7 @@ SCHEMA = {
 
 
 # Keys a snapshot may leave out: a goal's pr / pr_url are absent when gh is unavailable.
-OPTIONAL_KEYS = {"pr", "pr_url", "plan"}
+OPTIONAL_KEYS = {"pr", "pr_url", "plan", "forge"}
 
 
 def _check(val, spec, path: str, out: list[str]) -> None:
@@ -570,7 +571,11 @@ def collect_repo(path: Path, errors: list) -> dict:
     rest = [d for i, d in directives.items() if i not in listed]
     if rest:
         goals.append({"id": None, "title": "", "status": "", "directives": rest})
-    return {"path": str(path), "origin": origin.strip() if origin else None,
+    try:
+        kind = fc.forge(path)["kind"]
+    except Exception:
+        kind = "none"
+    return {"path": str(path), "origin": origin.strip() if origin else None, "forge": kind,
             "branch": branch.strip() if branch else None, "goals": goals}
 
 

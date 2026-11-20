@@ -2243,18 +2243,26 @@ def dash_compose(action: str) -> int:
     argv = ["docker", "compose", "-f", str(compose)] + (["up", "-d", "--build"] if action == "up" else ["down"])
     env = dict(os.environ)
     env["FRIDAY_NODES_FILE"] = str(Path(reg).resolve()) if reg else "/dev/null"  # mounted by compose.yaml
+    set_tokens = []
     if action == "up":
-        token = ""
-        if shutil.which("gh"):
-            r = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-            token = r.stdout.strip() if r.returncode == 0 else ""
-        if token:
-            env["GH_TOKEN"] = token
-        else:
-            env.pop("GH_TOKEN", None)
-            print("friday dash: gh is not signed in; GH_TOKEN left unset, so the dash will show no open PRs "
-                  "(run `gh auth login`, then `friday dash up` again)")
-    print("friday dash: running " + shlex.join(argv) + (" (GH_TOKEN set from gh auth token)" if env.get("GH_TOKEN") and action == "up" else ""), flush=True)
+        for tool, var, login in (("gh", "GH_TOKEN", "gh auth login"), ("glab", "GITLAB_TOKEN", "glab auth login")):
+            token = ""
+            if shutil.which(tool):
+                r = subprocess.run([tool, "auth", "token"], capture_output=True, text=True)
+                token = r.stdout.strip() if r.returncode == 0 else ""
+            if token:
+                env[var] = token
+                set_tokens.append(var)
+            else:
+                env.pop(var, None)
+                if tool == "gh":
+                    print("friday dash: gh is not signed in; GH_TOKEN left unset, so the dash will show no open PRs "
+                          "(run `gh auth login`, then `friday dash up` again)")
+                else:
+                    print(f"friday dash: glab is not signed in; GITLAB_TOKEN left unset, so the dash will show no open "
+                          f"GitLab MRs (only matters for GitLab repos; `{login}`, then `friday dash up` again)")
+    print("friday dash: running " + shlex.join(argv) + "".join(
+        f" ({v} set from {'gh' if v == 'GH_TOKEN' else 'glab'} auth token)" for v in set_tokens), flush=True)
     rc = subprocess.run(argv, env=env).returncode
     if rc != 0:
         print(f"friday dash: docker compose {action} failed (exit {rc})", file=sys.stderr)
