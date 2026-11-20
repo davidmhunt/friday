@@ -1,5 +1,5 @@
 # release-1-2: Earlier directives' merges stop blocking later reviews, and friday ships as 1.2.0
-Status: running
+Status: blocked: td-01
 Base: main
 Land: pr
 
