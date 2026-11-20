@@ -33,6 +33,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 ROLES = ("master", "worker", "target")
 RUNTIMES = ("container", "native")
 LAUNCHERS = ("tmux",)
+PUSH_MODES = ("timer", "container")
 DASH_PORT = 8787
 
 
@@ -51,6 +52,7 @@ class Node:
     plugin_dir: str = ""
     launcher: str = "tmux"
     tailnet: str = ""  # optional tailnet device name when it differs from the host in `ssh`
+    push: str = "timer"  # how the node pushes its status: the systemd timer or the friday-push container
 
 
 @dataclass
@@ -164,6 +166,10 @@ def load_nodes(path) -> Registry:
         if launcher not in LAUNCHERS:
             raise RegistryError(
                 f"node '{name}': unknown 'launcher' {launcher!r} (expected one of {', '.join(LAUNCHERS)})")
+        push = raw.get("push", "timer")
+        if push not in PUSH_MODES:
+            raise RegistryError(
+                f"node '{name}': unknown 'push' {push!r} (expected one of {', '.join(PUSH_MODES)})")
         tags = raw.get("tags", [])
         if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
             raise RegistryError(f"node '{name}': 'tags' must be a list of strings")
@@ -177,7 +183,7 @@ def load_nodes(path) -> Registry:
         tailnet = raw.get("tailnet", "")
         if tailnet != "":
             _str(name, "tailnet", tailnet)
-        nodes[name] = Node(name, role, ssh, runtime, list(tags), repos, plugin_dir, launcher, tailnet)
+        nodes[name] = Node(name, role, ssh, runtime, list(tags), repos, plugin_dir, launcher, tailnet, push)
     return Registry(path, report_to, nodes, dash_port)
 
 

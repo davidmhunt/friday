@@ -1151,6 +1151,15 @@ def prereq_fixes(node, got) -> list:
     return fixes
 
 
+_PUSH_PROBE_SH = "\n".join([
+    'dk="${FRIDAY_DOCKER:-docker}"',
+    'if ! command -v "$dk" >/dev/null 2>&1; then echo "FRIDAY_PROBE push_container=nodocker"',
+    'elif [ -n "$("$dk" ps -q --filter label=com.docker.compose.service=friday-push --filter status=running 2>/dev/null)" ]; then',
+    '  echo "FRIDAY_PROBE push_container=running"',
+    'else echo "FRIDAY_PROBE push_container=stopped"; fi',
+])
+
+
 def probe_script(node, prereqs=False) -> str:
     if node.role == "target":
         return "echo FRIDAY_PROBE reach=ok\n" + (_PREREQ_SH + "\n" if prereqs else "")
@@ -1179,7 +1188,7 @@ def probe_script(node, prereqs=False) -> str:
         _PYVER_SH,
         _PREREQ_SH,
         ff.plugin_install_lines(node),
-    ]) + "\n"
+    ] + ([_PUSH_PROBE_SH] if node.push == "container" else [])) + "\n"
 
 
 def check_node(node, prereqs=False) -> tuple:
@@ -1234,10 +1243,18 @@ def check_node(node, prereqs=False) -> tuple:
                      f"{node.plugin_dir}, on {node.name}: two copies exist; dispatch keeps --plugin-dir")
     elif inst == "disabled":
         fixes.append(f"warning: friday is installed but disabled on {node.name}; dispatch keeps --plugin-dir")
+    if node.push == "container":
+        pc = got.get("push_container", "unknown")
+        if pc == "nodocker":
+            fixes.append(f"fix: install docker on {node.name} (push = \"container\"), then `friday nodes --setup {node.name}`")
+        elif pc != "running":
+            fixes.append(f"fix: the friday-push container is not running on {node.name}; "
+                         f"run `friday nodes --setup {node.name}`")
+    push_txt = "push container " + got.get("push_container", "?") if node.push == "container" else "push timer"
     summary = (f"reachable, claude {cl}, tmux {got.get('tmux', '?')}, git {got.get('git', '?')}, "
                f"{got.get('sessions', '?')} friday-* sessions, plugin_dir {got.get('plugin', '?')}, friday on PATH: {fr if fr in ('ok', 'missing') else 'points at ' + fr}, trust {trust or '?'}, "
                f"outside-reads {'prompts' if reads.startswith('blocked') else reads}, plugin install {inst}, "
-               f"python {got.get('pyver', got.get('python', '?'))}, uv {got.get('uv', '?')}, gh {got.get('gh', '?')}, claude auth {got.get('claude_auth', '?')}")
+               f"python {got.get('pyver', got.get('python', '?'))}, {push_txt}, uv {got.get('uv', '?')}, gh {got.get('gh', '?')}, claude auth {got.get('claude_auth', '?')}")
     return summary, fixes
 
 
@@ -1399,6 +1416,94 @@ def setup_timer(n) -> int:
     return 1
 
 
+PUSH_COMPOSE = "deploy/push.compose.yaml"
+PUSH_GPU_COMPOSE = "deploy/push.gpu.compose.yaml"  # overlay with the GPU reservation, added only with an nvidia runtime
+
+
+def container_script(n) -> str:
+    """Remote shell: build friday-dash:local if missing, `docker compose up -d` the push container, then
+    remove the timer units. Prints one `FRIDAY_PUSH <result>` line. Never prunes images."""
+    plug = n.plugin_dir.rstrip("/")
+    pq, rq = ff.remote_path(plug), ff.remote_path(n.repos)
+    return "\n".join([
+        'dk="${FRIDAY_DOCKER:-docker}"; ctl="${FRIDAY_SYSTEMCTL:-systemctl}"',
+        'command -v "$dk" >/dev/null 2>&1 || { echo "FRIDAY_PUSH nodocker"; exit 1; }',
+        f'P={pq}; R=$(cd {rq} 2>/dev/null && pwd) || {{ echo "FRIDAY_PUSH norepos"; exit 1; }}',
+        '[ -f "$P/' + PUSH_COMPOSE + '" ] || { echo "FRIDAY_PUSH nocompose"; exit 1; }',
+        'if ! "$dk" image inspect friday-dash:local >/dev/null 2>&1; then',
+        '  "$dk" build -t friday-dash:local -f "$P/deploy/Dockerfile" "$P" >&2 || { echo "FRIDAY_PUSH build"; exit 1; }',
+        'fi',
+        'files="-f $P/' + PUSH_COMPOSE + '"',
+        '"$dk" info 2>/dev/null | grep -qi nvidia && files="$files -f $P/' + PUSH_GPU_COMPOSE + '"',
+        'export FRIDAY_REPOS="$R"',
+        'export FRIDAY_LEASE_DIR="$HOME/.local/state/friday/leases" FRIDAY_TMUX_DIR="/tmp/tmux-$(id -u)"',
+        'mkdir -p "$FRIDAY_LEASE_DIR"',
+        'env UID="$(id -u)" GID="$(id -g)" "$dk" compose $files up -d >&2 || { echo "FRIDAY_PUSH compose"; exit 1; }',
+        'u="$HOME/.config/systemd/user"',
+        'if [ -e "$u/friday-push.timer" ] || [ -e "$u/friday-push.service" ]; then',
+        '  "$ctl" --user disable --now friday-push.timer >/dev/null 2>&1',
+        '  "$ctl" --user stop friday-push.service >/dev/null 2>&1',
+        '  rm -f "$u/friday-push.timer" "$u/friday-push.service"',
+        '  "$ctl" --user daemon-reload >/dev/null 2>&1',
+        'fi',
+        'echo "FRIDAY_PUSH ok"',
+    ]) + "\n"
+
+
+def container_stop_script(n) -> str:
+    """Remote shell for a node that went back to `timer`: stop and remove the friday-push container, if any."""
+    return "\n".join([
+        'dk="${FRIDAY_DOCKER:-docker}"',
+        'if command -v "$dk" >/dev/null 2>&1; then',
+        '  ids=$("$dk" ps -aq --filter label=com.docker.compose.service=friday-push 2>/dev/null)',
+        '  if [ -n "$ids" ]; then "$dk" stop $ids >/dev/null 2>&1; "$dk" rm $ids >/dev/null 2>&1; echo "FRIDAY_PUSH removed"; fi',
+        'fi',
+        'echo "FRIDAY_PUSH ok"',
+    ]) + "\n"
+
+
+def _run_push(n, script: str, what: str):
+    argv, stdin = ff.ssh_cmd(n, script)
+    try:
+        r = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=900)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"friday: {n.name}: {what} failed: {e}")
+        return None, ""
+    res = [l.split(None, 1)[1] for l in r.stdout.splitlines() if l.startswith("FRIDAY_PUSH ")]
+    return r, (res[-1] if res else "")
+
+
+def setup_container(n) -> int:
+    r, res = _run_push(n, container_script(n), "friday-push container setup")
+    if r is None:
+        return 1
+    if r.returncode == 0 and res == "ok":
+        print(f"{n.name}: friday-push container running (pushes every 30 s); friday-push.timer removed if it existed")
+        return 0
+    why = {"nodocker": "docker is not installed on the node", "norepos": f"repos {n.repos} does not exist on the node",
+           "nocompose": f"{PUSH_COMPOSE} is missing from the plugin checkout on the node",
+           "build": "building friday-dash:local failed (see the docker output above)",
+           "compose": "docker compose up failed"}.get(res, f"ssh failed (exit {r.returncode})")
+    print(f"friday: {n.name}: friday-push container not started: {why}")
+    return 1
+
+
+def setup_push(n) -> int:
+    """Put the node's status push in the mode its registry entry asks for."""
+    if n.push == "container":
+        return setup_container(n)
+    r, res = _run_push(n, container_stop_script(n), "stopping the friday-push container")
+    rc = 0
+    if r is None or r.returncode != 0 or res != "ok":
+        print(f"friday: {n.name}: could not stop the friday-push container; run `docker rm -f` on it")
+        rc = 1
+    else:
+        for l in r.stdout.splitlines():
+            if l == "FRIDAY_PUSH removed":
+                print(f"{n.name}: friday-push container stopped and removed")
+    return setup_timer(n) or rc
+
+
 def setup_install(n) -> int:
     """Run `<plugin_dir>/bin/friday install` on the node so `friday` is on its PATH."""
     # install runs the private `uv python install 3.12` itself; ~/.local/bin (where uv lives) is not on a non-interactive PATH
@@ -1473,9 +1578,15 @@ def cmd_nodes_setup(a, reg) -> int:
         print(f"  {k} = {json.dumps(v)}")
     print("other keys are kept; the old file is saved once as settings.json.friday-bak.")
     print("trust, credentials and permission rules are not touched.")
-    print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
-          "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
-          "every 30 s.")
+    if n.push == "container":
+        print(f"push = \"container\": it builds friday-dash:local on {n.name} if missing, runs "
+              f"`docker compose -f {n.plugin_dir.rstrip('/')}/{PUSH_COMPOSE} up -d` there (service friday-push, "
+              "`friday status --push --every 30`), and disables and removes friday-push.timer/.service if present. "
+              "It never prunes images.")
+    else:
+        print(f"it also installs and enables the systemd user timer friday-push.timer on {n.name} "
+              "(~/.config/systemd/user/friday-push.{service,timer}), which runs `friday status --push` "
+              "every 30 s; if a friday-push container exists there it is stopped and removed.")
     print(f"and it runs `{n.plugin_dir.rstrip('/')}/bin/friday install` on {n.name}, which runs "
           "the private `uv python install 3.12 --no-bin` if needed and writes ~/.local/bin/friday as a shim onto that checkout.")
     print(f"and it writes ~/.config/friday/node.toml on {n.name} (name, repos, dash URL), which "
@@ -1499,7 +1610,7 @@ def cmd_nodes_setup(a, reg) -> int:
         print(f"{n.name}: settings updated; run `friday nodes --check` to confirm")
         rc = setup_node_file(n, reg)
         rc = setup_install(n) or rc
-        return setup_timer(n) or rc
+        return setup_push(n) or rc
     why = {"bad": "~/.claude/settings.json is not a JSON object; fix or move it, then re-run",
            "nopython": "the plugin checkout (bin/friday-python) is missing on the node",
            "error": "could not write ~/.claude/settings.json"}.get(res, f"ssh failed (exit {r.returncode})")
