@@ -374,25 +374,34 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
         if not goal or not fc.GOAL_RE.match(goal):
             return None
         text = _git_show(root, f"origin/friday-plan/{goal}:docs/directives/{did}.md")
-        if text is None:
-            return None
-        parsed = fc.parse_directive_full(text)
-        if (parsed.get("goal") or "").strip() != goal:
-            return None
+        parsed = fc.parse_directive_full(text) if text is not None else {}
+        if text is not None and (parsed.get("goal") or "").strip() != goal:
+            text = None
         base = f"friday-plan/{goal}"
         simples = fc.split_commands(cmd)
-        rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
-               for pat in parsed.get("allowed") or []]
-        used: list[str] = []
-        for simple in simples:
-            hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
-            if hit is None:
-                return None
-            if hit not in used:
-                used.append(hit)
-        if simples:
+
+        def matches(patterns: list[str]) -> list[str] | None:
+            rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*"))) for pat in patterns]
+            used: list[str] = []
+            for simple in simples:
+                hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
+                if hit is None:
+                    return None
+                if hit not in used:
+                    used.append(hit)
+            return used if simples else None
+
+        if text is not None and (used := matches(parsed.get("allowed") or [])):
             pats = ", ".join(f"`{p}`" for p in used)
             return "allow", f"pre-approved in {did} (on origin/{base}): every command matches {pats}"
+        # Not covered by the published list. When the working tree's list would cover it, the user is
+        # asked, and told why and what to run. Only ever an ask, never an allow.
+        state = fc.plan_publish_state(root, did)
+        if state in ("not published", "stale") and (used := matches(local.get("allowed") or [])):
+            pats = ", ".join(f"`{p}`" for p in used)
+            return "ask", (f"{did}: this command matches {pats} in `## Allowed commands`, but it is NOT "
+                           f"pre-approved (plan {state}): the user runs \"! friday approve --goal {goal}\" "
+                           f"to publish the plan.")
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None
@@ -517,7 +526,7 @@ def pretool(payload: dict) -> None:
         results.append(r)
     pre = None if any(d == "deny" for d, _ in results) else check_preapproved(cmd, cwd)
     if not any(d == "deny" for d, _ in results) and (r := check_hardware(cmd, cfg, payload.get("session_id", ""))):
-        results.append(("allow", f"{pre[1]}. {r[1]}") if pre and r[0] == "ask" else r)
+        results.append(("allow", f"{pre[1]}. {r[1]}") if pre and pre[0] == "allow" and r[0] == "ask" else r)
     if pre:
         results.append(pre)
     if results:
