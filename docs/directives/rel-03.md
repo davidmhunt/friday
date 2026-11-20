@@ -4,7 +4,7 @@ Goal: release-1-2
 Node: any
 Deliverable: code
 Land: goal
-Verify: uv run --with pytest pytest -q tests/test_release.py && uv run --with pytest pytest -q && claude plugin validate .
+Verify: uv run --with pytest --with pyyaml pytest -q tests/test_release.py && uv run --with pytest --with pyyaml pytest -q && claude plugin validate .
 Hardware: none
 
 ## Goal
