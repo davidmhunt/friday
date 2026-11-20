@@ -527,7 +527,9 @@ def pretool(payload: dict) -> None:
     pre = None if any(d == "deny" for d, _ in results) else check_preapproved(cmd, cwd)
     if not any(d == "deny" for d, _ in results) and (r := check_hardware(cmd, cfg, payload.get("session_id", ""))):
         results.append(("allow", f"{pre[1]}. {r[1]}") if pre and pre[0] == "allow" and r[0] == "ask" else r)
-    if pre:
+    # The not-pre-approved ask is only a fall-through: it never turns an allow (a session-approved
+    # hardware resource) into an ask.
+    if pre and not (pre[0] == "ask" and any(d == "allow" for d, _ in results)):
         results.append(pre)
     if results:
         decision = max(results, key=lambda r: DECISION_RANK[r[0]])[0]

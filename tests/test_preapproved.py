@@ -386,3 +386,16 @@ def test_ssh_pattern_does_not_preapprove_quoted_inner_substitution(tmp_path, mon
     for cmd in ("ssh rover '$(friday accept x)'", 'ssh rover "\\$(friday approve --goal g)"',
                 'ssh rover "\\`friday accept x\\`"'):
         assert pre(r, cmd)[0] != "allow", cmd
+
+
+def test_session_approved_hardware_is_not_turned_into_an_ask_by_an_unpublished_list(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["./flash_radar *"])
+    (r / ".claude" / "friday.json").write_text(json.dumps(
+        {"hardware": {"radar": [r"\bflash_radar\b"]}, "hardware_approval": {"radar": "session"}}))
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    assert pre(r, "./flash_radar a")[0] == "ask"        # not yet approved for the session
+    payload = {"tool_name": "Bash", "tool_input": {"command": "./flash_radar a"}, "cwd": str(r), "session_id": "s1"}
+    subprocess.run([sys.executable, str(HOOK), "posttool"], input=json.dumps(payload), text=True,
+                   capture_output=True, env=os.environ, check=True)
+    d, why = pre(r, "./flash_radar b")
+    assert d == "allow" and why == "radar approved for this session", (d, why)
