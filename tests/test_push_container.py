@@ -170,6 +170,13 @@ def test_invalid_push_value_is_an_error(tmp_path):
     r = subprocess.run([str(ROOT / "bin" / "friday"), "check"], cwd=ROOT, env={**os.environ, **env},
                        capture_output=True, text=True)
     assert r.returncode == 1 and "unknown 'push' 'cron'" in r.stdout
+    # the summary counts the registry error as an error and leaves the warning count alone
+    clean = subprocess.run([str(ROOT / "bin" / "friday"), "check"], cwd=ROOT, capture_output=True, text=True,
+                           env={k: v for k, v in {**os.environ, **env}.items() if k != "FRIDAY_NODES"})
+    import re as _re
+    e0, w0 = map(int, _re.search(r"(\d+) error\(s\), (\d+) warning\(s\)", clean.stdout).groups())
+    e1, w1 = map(int, _re.search(r"(-?\d+) error\(s\), (-?\d+) warning\(s\)", r.stdout).groups())
+    assert (e1, w1) == (e0 + 1, w0)
     from friday_fleet import load_nodes, RegistryError
     with pytest.raises(RegistryError, match="unknown 'push'"):
         load_nodes(tmp_path / "n.toml")

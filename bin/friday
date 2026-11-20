@@ -2028,6 +2028,7 @@ def cmd_check(a) -> int:
     for i in issues:
         print(i)
     errs = sum(1 for i in issues if i.level == "error")
+    warns = len(issues) - errs
     path = ff.find_nodes_file()
     if path:  # a bad node registry (e.g. an unknown `push` value) is an error here too
         try:
@@ -2035,7 +2036,7 @@ def cmd_check(a) -> int:
         except ff.RegistryError as e:
             print(f"{path}: error: {e}")
             errs += 1
-    print(f"{errs} error(s), {len(issues) - errs} warning(s)")
+    print(f"{errs} error(s), {warns} warning(s)")
     return 1 if errs else 0
 
 
