@@ -327,7 +327,7 @@ also works). Exit codes: 0 success; a refusal with a message (for example "uncom
 
 | Command | What it does | Exit codes |
 |---|---|---|
-| `friday status [--json] [--push] [--to URL] [--node NAME]` | directives and goals in this repo, the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
+| `friday status [--json] [--push [--every N]] [--to URL] [--node NAME]` | directives and goals in this repo, the active one, awaiting-review ones, leases, and `origin/friday/*` branches whose PR is merged, each with its `git push origin --delete <branch>` (deletes nothing; skipped without `gh`). `--json`: one node snapshot. `--push`: post the snapshot to the dash (`--to URL` overrides the master's `[dash]` port). `--every N` (seconds, at least 5; only with `--push`) repeats the push every N s until SIGTERM or SIGINT, then exits 0; a failed push prints its error and the loop goes on. `--node NAME` names the snapshot's node. `--to` without `--push` is refused | 0; `--push` 1 when the push fails |
 | `friday init` | install the `commit-msg` guard and merge the friday allow rules into the repo's tracked `.claude/settings.json` (never `settings.local.json`); commits nothing. Reports whether the GitHub repo deletes head branches on merge and prints the `gh api -X PATCH` command to turn it on (changes nothing; skipped when `gh` is missing or signed out) | 0; 1 unreadable settings file |
 | `friday new <loop>` | print the next free directive id for a loop (`core` -> `core-04`) | 0 |
 | `friday start <id> [--no-gate]` | check the directive and its goal, enforce goal order, switch to `friday/<goal>` (`friday/<id>` for `Land: pr`), merge Base (finding a directive that exists only on the goal branch or Base first; a Status-only conflict keeps the goal branch's lines), set the goal `running` (a `done` goal with an undone directive reopens), install the guard, write the marker, print `base <sha>`. Commits nothing. `--no-gate` turns the Stop-hook Verify gate off for this directive | 0; 1 refused (not approved, format errors, earlier directive not done, dirty tree, merge conflict) |
@@ -578,6 +578,15 @@ master's tailnet address (never `0.0.0.0`), collecting each node's `friday statu
 every 30 s by a systemd user timer. Awaiting-review directives and blocked goals appear as needing
 the user. How machines and projects appear, the API and the Docker deployment:
 [dashboard.md](dashboard.md).
+
+**Snapshot collection overrides.** `friday status --json` and `--push` read the host through
+environment variables, each defaulting to the local path, so a container that mounts the host can
+report it: `FRIDAY_PROC_ROOT` (health; default `/proc`), `FRIDAY_DISK_PATH` (disk usage; default the
+first repo, else the working directory), `FRIDAY_TMUX_SOCKET` (passed as `tmux -S <path>` to every
+tmux call; default none) and `FRIDAY_LEASE_DIR` (the lease directory; default
+`$XDG_STATE_HOME/friday/leases`). Session cwds are host paths, used as-is. `FRIDAY_PUSH_MODE`
+(`timer` by default, or `container`) is recorded in the snapshot's `push_mode` and shown in the dash's
+node card.
 
 ## 13 Known limits
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `friday status --push --every N` pushes every N seconds (at least 5) until SIGTERM or SIGINT and keeps going
+  when a push fails. The snapshot reads the host through `FRIDAY_PROC_ROOT`, `FRIDAY_DISK_PATH`,
+  `FRIDAY_TMUX_SOCKET` and `FRIDAY_LEASE_DIR`, and records `push_mode` (`FRIDAY_PUSH_MODE`, `timer` or
+  `container`), shown in the dash's node card (#13, pc-01).
+
 ## 1.2.0 - 2026-11-19
 
 A uv-managed Python private to friday, rules, thin targets, plan on the goal branch and #30. On upgrade: uv is now required, run `friday install` again on each machine, and goals with Allowed commands need the user's one-time plan publish.
