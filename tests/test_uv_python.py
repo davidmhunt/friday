@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from helpers import tool_bin  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 FRIDAY = ROOT / "bin" / "friday"
 
@@ -46,7 +48,7 @@ def test_check_reports_310_only_node(tmp_path):
     ssh.write_text("#!/bin/bash\nexec bash -s\n")
     ssh.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "FRIDAY_NODES": str(tmp_path / "n.toml"),
-           "FRIDAY_SSH": str(ssh), "PATH": "/usr/bin:/bin"}
+           "FRIDAY_SSH": str(ssh), "PATH": tool_bin(tmp_path / "safebin")}
     r = subprocess.run([sys.executable, str(FRIDAY), "nodes", "--check"],
                        capture_output=True, text=True, env=env)
     assert r.returncode == 1

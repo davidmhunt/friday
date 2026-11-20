@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from helpers import tool_bin  # noqa: E402
+
 FRIDAY = Path(__file__).resolve().parent.parent / "bin" / "friday"
 
 
@@ -151,7 +153,7 @@ def _check(tmp_path):
 
 def _run_check(tmp_path, home):
     env = {**os.environ, "HOME": str(home), "FRIDAY_NODES": str(tmp_path / "n.toml"),
-           "FRIDAY_SSH": str(tmp_path / "fakessh"), "PATH": "/usr/bin:/bin"}  # no real friday on PATH
+           "FRIDAY_SSH": str(tmp_path / "fakessh"), "PATH": tool_bin(tmp_path / "safebin")}  # no real friday, gh or claude
     return subprocess.run([sys.executable, str(FRIDAY), "nodes", "--check"],
                           capture_output=True, text=True, env=env)
 

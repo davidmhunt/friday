@@ -15,3 +15,21 @@ def private_bin(directory):
             link.symlink_to(sys.executable)
     return d
 
+
+SYSTEM_TOOLS = ("git", "python3", "bash", "sh", "cat", "grep", "sed", "mkdir", "mv", "cp", "rm", "ls", "dirname",
+                "basename", "date", "env", "tr", "head", "cut", "readlink", "mktemp", "chmod", "id", "uname", "wc",
+                "sort", "tail", "awk", "test", "true", "false", "ln", "touch", "sleep", "tee", "find", "xargs")
+
+
+def tool_bin(directory):
+    """A private bin directory of symlinks to the basic system tools (never docker, gh, ssh, claude or uv),
+    for a child that runs a probe script locally. Returns it as a str for a PATH."""
+    import shutil
+    d = Path(directory)
+    d.mkdir(parents=True, exist_ok=True)
+    for t in SYSTEM_TOOLS:
+        w = shutil.which(t)
+        if w and not (d / t).is_symlink():
+            (d / t).symlink_to(w)
+    return str(d)
+
