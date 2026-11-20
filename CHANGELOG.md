@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- friday knows each repo's forge (github, gitlab or none) through `forge()` and the `forge` config key, and `friday check` warns once per goal when `Land: pr` cannot work (forge `none`, or gitlab without glab) (#20, fg-01).
+
 ## 1.2.0 - 2026-11-19
 
 A uv-managed Python private to friday, rules, thin targets, plan on the goal branch and #30. On upgrade: uv is now required, run `friday install` again on each machine, and goals with Allowed commands need the user's one-time plan publish.

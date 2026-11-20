@@ -546,6 +546,7 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
 | `run_only` | tool names (`python`, `uv`, `cmake`, ...) that must be run through the wrapper | none |
 | `bash_file_io` | `deny`: the hook denies Bash file reads and writes the file tools cover (see the hook table); `allow` or absent changes nothing. `friday check` errors on another value; `load_config` reads it as `allow`. `friday init` prints it as an option | `allow` |
 | `rules` | list of strings: rules for every directive in the repo. `friday check` errors on a non-list or a non-string entry; `load_config` drops such values | none |
+| `forge` | `github`, `gitlab` or `none`: overrides the forge friday infers from `origin` (see below). `friday check` errors on another value | inferred |
 | `hardware` | object: resource name -> list of regular expressions matched against a Bash command | none |
 | `hardware_approval` | object: resource name (a key of `hardware`) -> `command` or `session`. `session`: one approved command approves the resource for the rest of the session while it holds the lease. `friday check` errors on another value or an unknown resource; `load_config` ignores such entries | `command` for every resource |
 
@@ -560,6 +561,15 @@ guards and pre-approval apply. A missing or unparsable file is read as empty.
   }
 }
 ```
+
+**Forge.** `forge(root)` in `lib/friday_core.py` decides where a repo lives: `{"kind", "host", "slug",
+"web"}`. The `forge` key wins; otherwise origin's URL (ssh `git@host:path.git`, `ssh://git@host:port/path.git`
+or https): `github.com` is `github`; a host whose name contains `gitlab`, or for which `glab auth status
+--hostname <host>` succeeds, is `gitlab`; anything else, or no origin, is `none`. `slug` is the project
+path (nested groups kept) and `web` the https base URL. The compare URL is `<web>/<slug>/compare/...`
+on GitHub and `<web>/<slug>/-/compare/<base>...<head>` on GitLab. `friday check` warns once per goal with
+`Land: pr` (goal or directive) when the forge is `none`, or `gitlab` without `glab` installed; the fix is
+the `forge` key, installing glab, or `Land: push`.
 
 Friday also reads the repo's tracked `.claude/settings.json` (the allow rules, merged by
 `friday init`) and, on the master, the fleet registry `nodes.toml` ([fleet.md](fleet.md)).
