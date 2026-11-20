@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- A goal whose `## Allowed commands` plan is not published no longer runs with nothing pre-approved and no word (#31). `friday start` prints `Allowed commands are NOT pre-approved (not published|stale)` with the command to run, `friday status` (and `--json`) shows `plan:` per running goal, the execute workflow relays the line before Implement, and the hook's ask for a command the working tree lists names the reason and the publish command. Migration: for a goal approved under the old flow whose `friday/<goal>` branch does not exist yet, the publish command now explains how to create the branch from Base first.
+
 ## 1.2.0 - 2026-11-19
 
 A uv-managed Python private to friday, rules, thin targets, plan on the goal branch and #30. On upgrade: uv is now required, run `friday install` again on each machine, and goals with Allowed commands need the user's one-time plan publish.
