@@ -1,0 +1,33 @@
+# friday push container: an alternative to the systemd timer for nodes with `push = "container"` in
+# nodes.toml. `friday nodes --setup <node>` runs this on the node (it exports FRIDAY_REPOS,
+# FRIDAY_LEASE_DIR, FRIDAY_TMUX_DIR, UID and GID, and builds friday-dash:local if missing):
+#
+#   docker compose -f deploy/push.compose.yaml up -d
+#
+# Everything is read-only except the lease directory. network_mode: host so the push reaches the
+# dash over the tailnet exactly as the timer does. See docs/fleet.md for why each mount is there.
+services:
+  friday-push:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: friday-dash:local
+    user: "${UID}:${GID}"
+    network_mode: host
+    restart: unless-stopped
+    command: ["friday", "status", "--push", "--every", "30"]
+    environment:
+      - HOME=/home/friday
+      - FRIDAY_PROC_ROOT=/host/proc
+      - FRIDAY_DISK_PATH=${FRIDAY_REPOS:?run through `friday nodes --setup`}
+      - FRIDAY_PUSH_MODE=container
+      - FRIDAY_LEASE_DIR=/home/friday/.local/state/friday/leases
+      - GIT_CONFIG_COUNT=1
+      - GIT_CONFIG_KEY_0=safe.directory
+      - GIT_CONFIG_VALUE_0=*
+    volumes:
+      - ${FRIDAY_REPOS:?run through `friday nodes --setup`}:${FRIDAY_REPOS}:ro
+      - ${HOME}/.config/friday:/home/friday/.config/friday:ro
+      - ${FRIDAY_LEASE_DIR:?run through `friday nodes --setup`}:/home/friday/.local/state/friday/leases
+      - ${FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}}:${FRIDAY_TMUX_DIR:-/tmp/tmux-${UID}}
+      - /proc:/host/proc:ro

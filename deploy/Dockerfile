@@ -12,6 +12,9 @@
 # from the environment, and the state dir is a volume.
 FROM python:3.12-slim
 
+# tmux and git come from apt, and tailscale/gh from apt repos keyed on `dpkg --print-architecture`,
+# so the image builds unchanged for amd64 and arm64 (Jetson). The push container (deploy/push.compose.yaml)
+# reuses this image: it needs tmux (session list) and git (repo state).
 # Pinned releases of the CLIs the dash shells out to (bump deliberately).
 ARG TAILSCALE_VERSION=1.104.7
 ARG GH_VERSION=2.105.0
@@ -31,7 +34,7 @@ RUN set -eux; \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
         > /etc/apt/sources.list.d/github-cli.list; \
     apt-get update; \
-    apt-get install -y --no-install-recommends "tailscale=${TAILSCALE_VERSION}" "gh=${GH_VERSION}"; \
+    apt-get install -y --no-install-recommends "tailscale=${TAILSCALE_VERSION}" "gh=${GH_VERSION}" tmux git; \
     apt-get purge -y --auto-remove curl; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists
