@@ -1,5 +1,5 @@
 """status-03 step 4: the dashboard UI files, served with a fixture /api/state.
-Run: uv run --with pytest pytest -q tests/test_dash_ui.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_dash_ui.py"""
 import functools
 import http.server
 import json

@@ -1,5 +1,5 @@
 """Hook parsing of heredocs, and friday's GitHub branch hygiene reports (hook-01).
-Run: uv run --with pytest pytest -q tests/test_hook_parsing.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_hook_parsing.py"""
 import json
 import os
 import subprocess

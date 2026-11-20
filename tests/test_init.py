@@ -1,4 +1,4 @@
-"""Tests for `friday init` (cli-03). Run: uv run --with pytest pytest -q tests/test_init.py"""
+"""Tests for `friday init` (cli-03). Run: uv run --with pytest --with pyyaml pytest -q tests/test_init.py"""
 import json
 import subprocess
 import sys

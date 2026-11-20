@@ -1,5 +1,5 @@
 """`friday dispatch --goal <g> --resume` checks. Fake ssh runs the remote script locally under a temp HOME
-with a fake tmux. Run: uv run --with pytest pytest -q tests/test_dispatch_resume.py"""
+with a fake tmux. Run: uv run --with pytest --with pyyaml pytest -q tests/test_dispatch_resume.py"""
 import json
 import os
 import subprocess

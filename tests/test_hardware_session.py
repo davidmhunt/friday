@@ -1,4 +1,4 @@
-"""Session approval of a hardware resource. Run: uv run --with pytest pytest -q tests/test_hardware_session.py"""
+"""Session approval of a hardware resource. Run: uv run --with pytest --with pyyaml pytest -q tests/test_hardware_session.py"""
 import json
 import os
 import subprocess

@@ -1,4 +1,4 @@
-"""Tests for friday's node registry. Run: uv run --with pytest pytest -q tests/test_fleet.py"""
+"""Tests for friday's node registry. Run: uv run --with pytest --with pyyaml pytest -q tests/test_fleet.py"""
 import sys
 from pathlib import Path
 

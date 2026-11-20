@@ -1,5 +1,5 @@
 """spec-02: the tutorial's commands and every example goal/directive in the tutorial and recipes work.
-Run: uv run --with pytest pytest -q tests/test_tutorial.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_tutorial.py"""
 import re
 import subprocess
 import sys

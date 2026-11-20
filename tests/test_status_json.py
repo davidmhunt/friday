@@ -1,5 +1,5 @@
 """Tests for `friday status --json` (lib/friday_status.py) on a fixture tree, with fake
-tmux, nvidia-smi and /proc. Run: uv run --with pytest pytest -q tests/test_status_json.py"""
+tmux, nvidia-smi and /proc. Run: uv run --with pytest --with pyyaml pytest -q tests/test_status_json.py"""
 import json
 import os
 import shutil
