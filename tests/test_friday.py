@@ -62,6 +62,7 @@ def repo(tmp_path, monkeypatch):
     (r / ".claude").mkdir()
     (r / ".claude" / "friday.json").write_text(json.dumps({
         "run_wrapper": "./run",
+        "forge": "github",      # the fixture uses Land: pr and has no origin
         "run_only": ["python", "python3", "pytest", "uv", "cmake", "ctest"],
         "hardware": {"radar": [r"/dev/ttyACM\d", r"\bflash_radar\b"]},
     }))
@@ -634,6 +635,10 @@ def _mk(root, directives, goal=None, extra=None):
         (root / "docs/directives" / f"{did}.md").write_text(t)
     if goal is not None:
         (root / "docs/goals/core.md").write_text(goal)
+    cfg = root / ".claude" / "friday.json"
+    if not cfg.exists() and ".claude/friday.json" not in (extra or {}):
+        cfg.parent.mkdir(exist_ok=True)
+        cfg.write_text('{"forge": "github"}')   # the fixtures use Land: pr and have no origin
     for rel, t in (extra or {}).items():
         (root / rel).write_text(t)
     return root

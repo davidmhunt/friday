@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import time
@@ -990,6 +991,39 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
         t = read(directive_path(root, did))
         return parse_directive_full(t)["status"] if t is not None else None
 
+    forge_info: list[dict] = []
+    land_warned: set = set()
+
+    def land_pr_warning(gid: str, g: dict | None, did: str | None, d: dict | None) -> None:
+        """One warning per goal with `Land: pr` (goal or directive) when the forge cannot open PRs."""
+        if gid in land_warned:
+            return
+        uses = (g is not None and g["land"] == "pr") or (d is not None and d["land"] == "pr")
+        if not uses and g is not None and did is None:
+            for x in g["directives"]:
+                t = read(directive_path(root, x["id"])) if ID_RE.match(x["id"]) else None
+                if t is not None and parse_directive_full(t)["land"] == "pr":
+                    uses = True
+                    break
+        if not uses:
+            return
+        if not forge_info:
+            forge_info.append(forge(root))
+        kind = forge_info[0]["kind"]
+        glab = os.environ.get("FRIDAY_GLAB") or "glab"
+        if kind == "none":
+            msg = ("origin is not a known forge, so `Land: pr` cannot open a PR; set the `forge` key in "
+                   ".claude/friday.json (github or gitlab) or use `Land: push`")
+        elif kind == "gitlab" and shutil.which(glab) is None:
+            msg = ("`Land: pr` on gitlab needs glab, which is not installed; install glab or use `Land: push`")
+        else:
+            return
+        land_warned.add(gid)
+        if g is not None:
+            add([Issue("warning", str(GOAL_DIR / f"{gid}.md"), 1, f"goal `{gid}`: {msg}")])
+        elif did:
+            add([Issue("warning", str(DIRECTIVE_DIR / f"{did}.md"), 1, f"goal `{gid}`: {msg}")])
+
     def cross_directive(did: str, d: dict) -> None:
         rel = str(DIRECTIVE_DIR / f"{did}.md")
         hl = {k: ln for k, _, ln in reversed(d["headers"])}
@@ -1006,6 +1040,7 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
         if did not in ids:
             add([Issue("error", rel, gline, f"goal `{gid}` ({grel}) does not list {did}")])
             return
+        land_pr_warning(gid, g, did, d)
         if d["status"] == "done":
             for e in ids[:ids.index(did)]:
                 if dstatus(e) != "done":
@@ -1018,6 +1053,7 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
 
     def cross_goal(gid: str, g: dict) -> None:
         grel = str(GOAL_DIR / f"{gid}.md")
+        land_pr_warning(gid, g, None, None)
         for x in g["directives"]:
             if not ID_RE.match(x["id"]):
                 continue
