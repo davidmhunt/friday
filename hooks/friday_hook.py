@@ -176,10 +176,26 @@ def _positionals(argv: list[str], tool: str) -> tuple[list[str], bool]:
     return [x for x in pos if x != ""], scripted
 
 
-def check_bash_file_io(cmd: str, cfg: dict) -> str | None:
+def _is_active_verify(cmd: str, cwd: Path | None) -> bool:
+    """True when cmd equals the active directive's Verify line (Verify is a gate, not agent file I/O)."""
+    if cwd is None:
+        return False
+    marker = fc.read_marker(cwd)
+    root = fc.repo_root(cwd)
+    if not marker or not marker.get("id") or not root:
+        return False
+    d = fc.read_directive(root, marker["id"])
+    verify = ((d or {}).get("verify") or "").strip()
+    return bool(verify) and verify.lower() != "none" and cmd.strip() == verify
+
+
+def check_bash_file_io(cmd: str, cfg: dict, cwd: Path | None = None) -> str | None:
     """With bash_file_io: deny, deny Bash commands that do file I/O the file tools cover. A tool that
-    only reads a pipe (no file operand) is fine."""
+    only reads a pipe (no file operand) is fine. The active directive's own Verify line is exempt
+    from this rule only (every other check still applies)."""
     if cfg.get("bash_file_io") != "deny":
+        return None
+    if _is_active_verify(cmd, cwd):
         return None
     for simple in fc.split_commands(cmd, literal_quotes=True):
         targets, heredoc = _redirect_targets(simple)
@@ -587,7 +603,7 @@ def pretool(payload: dict) -> None:
         results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
         results.append(("deny", r))
-    if (r := check_bash_file_io(cmd, cfg)):
+    if (r := check_bash_file_io(cmd, cfg, cwd)):
         results.append(("deny", r))
     if (r := check_push(cmd, cwd)):
         results.append(("deny", r))
