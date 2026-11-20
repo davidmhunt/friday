@@ -1,5 +1,5 @@
 # push-container: A node can push its status from a container instead of a host systemd timer
-Status: running
+Status: done
 Base: main
 Land: pr
 
@@ -22,3 +22,4 @@ The user approved the goal and its directives on 2026-11-20.
 2. pc-02: `push = "container"` nodes get a push container from the dash image instead of the systemd timer
 
 ## Log
+- 2026-11-20: Landed: 2 directive(s) reverified on friday/push-container; PR into main.
