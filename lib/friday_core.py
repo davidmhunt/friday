@@ -483,6 +483,31 @@ def _allowed_items(sec: dict | None) -> list[tuple[int, str, str | None]]:
     return out
 
 
+def plan_publish_state(root: Path, did: str) -> str | None:
+    """Publish state of a directive's `## Allowed commands`: "published" (origin/friday-plan/<goal>
+    holds the directive with the same goal and the same Allowed commands as the working tree),
+    "not published" (no such ref or no directive on it) or "stale" (the lists differ). None when the
+    directive has no `## Allowed commands` (or no readable directive or goal): nothing to publish."""
+    try:
+        local = parse_directive_full((root / DIRECTIVE_DIR / f"{did}.md").read_text())
+    except OSError:
+        return None
+    goal = (local.get("goal") or "").strip()
+    if not local.get("allowed") or not goal or not GOAL_RE.match(goal):
+        return None
+    try:
+        r = subprocess.run(["git", "show", f"origin/friday-plan/{goal}:{DIRECTIVE_DIR}/{did}.md"], cwd=root,
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return "not published"
+    if r.returncode != 0:
+        return "not published"
+    ref = parse_directive_full(r.stdout)
+    if (ref.get("goal") or "").strip() != goal or (ref.get("allowed") or []) != local["allowed"]:
+        return "stale"
+    return "published"
+
+
 def parse_directive_full(text: str) -> dict:
     """The parsed shape of a directive file. Keys: id, title, status, goal, node, deliverable,
     land (default `goal`), accept (default `auto`), verify, hardware, steps [{n, text, heavy, line}], acceptance [str]
