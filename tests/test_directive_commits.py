@@ -267,3 +267,52 @@ def test_code_commit_with_trailer_after_start_is_own_work_not_plan(repo):
     _commit(repo, "a.txt", "mine a\n\nDirective: core-01")
     r = cli(repo, "commits", "core-01")
     assert _subjects(r) == ["mine a"] and not _plan_lines(r)
+
+
+# ---------------------------------------------------------------- cm-01 (#30)
+def _a_merges_side(repo, trailer="other-01"):
+    """Directive `other-01` merges an untrailered side branch and hand-commits; core-01 starts after."""
+    _g(repo, "checkout", "-q", "-b", "side", "main")
+    _commit(repo, "s1.txt", "side one")
+    _commit(repo, "s2.txt", "side two")
+    _g(repo, "checkout", "-q", "friday/core-01")
+    _g(repo, "merge", "--no-verify", "-q", "--no-ff", "-m", f"merge side\n\nDirective: {trailer}", "side")
+    _commit(repo, "hand.txt", "hand fix")
+
+
+def test_side_merge_by_earlier_directive_is_not_untracked_for_later_one(repo):
+    _a_merges_side(repo)
+    assert cli(repo, "start", "core-01").returncode == 0
+    _commit(repo, "b.txt", "mine b\n\nDirective: core-01")
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert _subjects(r) == ["mine b"] and not _untracked(r), r.stdout
+
+
+def test_side_merge_by_earlier_directive_excluded_without_start_file(repo):
+    _a_merges_side(repo)
+    cli(repo, "start", "core-01")
+    _commit(repo, "b.txt", "mine b\n\nDirective: core-01")
+    (repo / "runs/core-01/start").unlink()
+    r = cli(repo, "commits", "core-01")
+    assert r.returncode == 0, r.stderr
+    assert "side one" not in r.stdout and "side two" not in r.stdout
+    assert "mine b" in r.stdout
+
+
+def test_untrailered_commit_after_start_is_still_untracked(repo):
+    _a_merges_side(repo)
+    cli(repo, "start", "core-01")
+    _commit(repo, "b.txt", "mine b\n\nDirective: core-01")
+    _commit(repo, "late.txt", "late untrailered")
+    r = cli(repo, "commits", "core-01")
+    assert _subjects(r) == ["mine b"]
+    assert len(_untracked(r)) == 1 and "late untrailered" in _untracked(r)[0]
+
+
+def test_side_merge_trailed_with_own_id_lists_side_commits(repo):
+    cli(repo, "start", "core-01")
+    _a_merges_side(repo, trailer="core-01")
+    r = cli(repo, "commits", "core-01")
+    assert any("side one" in ln for ln in _untracked(r)), r.stdout
+    assert any("side two" in ln for ln in _untracked(r)), r.stdout
