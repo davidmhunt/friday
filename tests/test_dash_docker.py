@@ -1,5 +1,5 @@
 """dash-01 step 4: the compose file, `friday dash up|down` against a fake docker and gh, --no-self.
-Run: uv run --with pytest pytest -q tests/test_dash_docker.py"""
+Run: uv run --with pytest --with pyyaml pytest -q tests/test_dash_docker.py"""
 import io
 import json
 import os
