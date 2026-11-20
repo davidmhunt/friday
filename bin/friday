@@ -2068,7 +2068,8 @@ def _uv_python() -> str | None:
               "and run `friday install` again", file=sys.stderr)
         return None
     pdir = _private_python_dir()
-    env = {**os.environ, "UV_PYTHON_INSTALL_DIR": str(pdir)}
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}  # an active venv would win `uv python find`
+    env["UV_PYTHON_INSTALL_DIR"] = str(pdir)
     pdir.mkdir(parents=True, exist_ok=True)
     for args in (["python", "install", "3.12", "--no-bin", "--install-dir", str(pdir)],
                  ["python", "find", "--managed-python", "3.12"]):
