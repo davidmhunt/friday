@@ -134,6 +134,7 @@ def cmd_status(a) -> int:
 
     listed: set[str] = set()
     gh = os.environ.get("FRIDAY_GH") or shutil.which("gh")
+    glab = os.environ.get("FRIDAY_GLAB") or shutil.which("glab")
     for gp in goals:
         g = fc.parse_goal(gp.read_text())
         items = g["directives"]
@@ -141,7 +142,7 @@ def cmd_status(a) -> int:
         if g["land"] == "push":
             prtxt = "  pushed" if g["status"].lower() == "done" else ""
         else:
-            pr = fs.goal_pr(root, gp.stem, gh)
+            pr = fs.goal_pr(root, gp.stem, gh, glab)
             prtxt = f"  pr {pr[0]}{' ' + pr[1] if pr[1] else ''}" if pr else ""
         plantxt = ""
         if g["status"].lower() == "running":
@@ -215,16 +216,35 @@ def _report_delete_branch_on_merge(root: Path) -> None:
 
 
 def _merged_origin_branches(root: Path) -> list[str]:
-    """origin/friday/* branches (as of the last fetch) whose PR is merged. Empty when gh is unavailable."""
-    found = _gh_slug(root)
-    if not found:
-        return []
-    gh, slug = found
+    """origin/friday/* branches (as of the last fetch) whose PR (GitLab: MR) is merged. Empty when the
+    forge's CLI is unavailable or signed out."""
+    f = fc.forge(root)
+    if f["kind"] == "gitlab" and f["slug"]:
+        tool = os.environ.get("FRIDAY_GLAB", "glab")
+        if _run([tool, "auth", "status", "--hostname", f["host"]], root).returncode != 0:
+            return []
+        repo = ["-R", f"{f['host']}/{f['slug']}"]
+        found = tool
+    else:
+        gh_found = _gh_slug(root)
+        if not gh_found:
+            return []
+        found, slug = gh_found
+        repo = ["-R", slug]
     refs = _run(["git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/friday/"], root)
     out = []
     for ref in refs.stdout.split():
         branch = ref.removeprefix("origin/")
-        r = _run([gh, "pr", "list", "-R", slug, "--state", "merged", "--head", branch,
+        if f["kind"] == "gitlab":
+            r = _run([found, "mr", "list", "--merged", "--source-branch", branch, "--output", "json"] + repo, root)
+            try:
+                n = len(json.loads(r.stdout or "[]")) if r.returncode == 0 else 0
+            except ValueError:
+                n = 0
+            if n:
+                out.append(branch)
+            continue
+        r = _run([found, "pr", "list"] + repo + ["--state", "merged", "--head", branch,
                   "--json", "number", "--jq", "length"], root)
         if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
             out.append(branch)

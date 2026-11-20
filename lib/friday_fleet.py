@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import friday_core as fc
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11: last-resort fallback; `friday install` sets up 3.12
@@ -736,15 +738,29 @@ def _slug(origin_url: str) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else ""
 
 
+def url_forge_tool(origin_url: str) -> str:
+    """`glab` when the origin URL's host is a GitLab (named *gitlab*), else `gh`."""
+    parsed = fc.parse_remote(origin_url or "")
+    return "glab" if parsed and "gitlab" in parsed[0] else "gh"
+
+
 def pr_merged(origin_url: str, goal: str, run=None):
-    """True/False: does `gh pr list --state merged --head friday/<goal>` find a PR (squash merges
-    break ancestry, so never `git branch --merged`). None when gh is missing or fails."""
+    """True/False: does `gh pr list --state merged --head friday/<goal>` (GitLab: `glab mr list --merged
+    --source-branch friday/<goal>`) find a PR (squash merges break ancestry, so never
+    `git branch --merged`). None when the forge CLI is missing or fails."""
     import subprocess
     run = run or subprocess.run
     slug = _slug(origin_url)
-    cmd = ["gh", "pr", "list", "--state", "merged", "--head", f"friday/{goal}", "--json", "number"]
-    if slug:
-        cmd[3:3] = ["-R", slug]
+    if url_forge_tool(origin_url) == "glab":
+        glab = os.environ.get("FRIDAY_GLAB") or "glab"
+        cmd = [glab, "mr", "list", "--merged", "--source-branch", f"friday/{goal}", "--output", "json"]
+        parsed = fc.parse_remote(origin_url)
+        if parsed:
+            cmd += ["-R", f"{parsed[0]}/{parsed[1]}"]
+    else:
+        cmd = ["gh", "pr", "list", "--state", "merged", "--head", f"friday/{goal}", "--json", "number"]
+        if slug:
+            cmd[3:3] = ["-R", slug]
     try:
         r = run(cmd, capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
@@ -781,21 +797,25 @@ def decide_clean(inv: dict, origin_urls: dict, run=None, have_gh=None) -> dict:
     "why" on removal. Without gh only the branch-gone rule applies and a note says so.
     """
     import shutil
-    if have_gh is None:
-        have_gh = shutil.which("gh") is not None
+    auto = have_gh is None
     out = {"remove": [], "keep": [], "notes": []}
-    if not have_gh:
-        out["notes"].append("gh not available: using the branch-gone rule only "
-                            "(branch gone from origin and goal file says done)")
+    noted: set[str] = set()
     for wt in inv.get("worktrees", []):
         goal = wt["goal"]
         url = origin_urls.get(wt["repo"], "")
         if not url:
             out["keep"].append((wt, f"no origin known for repo {wt['repo']}"))
             continue
+        tool = url_forge_tool(url)
+        have_gh = shutil.which(os.environ.get("FRIDAY_GLAB") or "glab" if tool == "glab" else "gh") is not None \
+            if auto else have_gh
+        if not have_gh and tool not in noted:
+            noted.add(tool)
+            out["notes"].append(f"{tool} not available: using the branch-gone rule only "
+                                "(branch gone from origin and goal file says done)")
         merged = pr_merged(url, goal, run) if have_gh else None
         if have_gh and merged is None:
-            out["notes"].append(f"gh failed for {wt['repo']}/{goal}: using the branch-gone rule")
+            out["notes"].append(f"{tool} failed for {wt['repo']}/{goal}: using the branch-gone rule")
         why = None
         if merged:
             why = "PR merged"

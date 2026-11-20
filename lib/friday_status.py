@@ -481,23 +481,40 @@ def find_repos(cwd, registry_path=None, node_name: str | None = None, errors: li
     return uniq
 
 
-def goal_pr(path: Path, goal: str, gh: str | None) -> tuple[str, str | None] | None:
-    """(state, url) of the PR from `friday/<goal>`: state is none, open or merged (closed unmerged
-    counts as none). None when gh is missing or fails: the caller leaves the keys out."""
-    if not gh:
-        return None
-    out = _run([gh, "pr", "list", "--head", f"friday/{goal}", "--state", "all",
-                "--json", "state,url,number"], cwd=path)
+def goal_pr(path: Path, goal: str, gh: str | None, glab: str | None = None) -> tuple[str, str | None] | None:
+    """(state, url) of the PR (GitLab: MR) from `friday/<goal>`: state is none, open or merged (closed
+    unmerged counts as none). A `forge: none` repo (set in .claude/friday.json) is always none. None when the forge's CLI (gh, or glab
+    for a GitLab repo) is missing or fails: the caller leaves the keys out."""
+    f = fc.forge(path)
+    kind = f["kind"]
+    if kind == "none" and fc.load_config(path).get("forge") == "none":
+        return "none", None  # configured as having no forge: nothing to ask (otherwise gh is tried, as before)
+    if kind == "gitlab":
+        glab = glab or os.environ.get("FRIDAY_GLAB") or shutil.which("glab")
+        if not glab:
+            return None
+        out = _run([glab, "mr", "list", "--source-branch", f"friday/{goal}", "--all", "--output", "json"],
+                   cwd=path)
+        key, num = "iid", {"opened": "open", "open": "open", "merged": "merged"}
+    else:
+        if not gh:
+            return None
+        out = _run([gh, "pr", "list", "--head", f"friday/{goal}", "--state", "all",
+                    "--json", "state,url,number"], cwd=path)
+        key, num = "number", {"open": "open", "merged": "merged"}
     if out is None:
         return None
     try:
         prs = json.loads(out)
     except ValueError:
         return None
-    for want in ("OPEN", "MERGED"):
-        for pr in sorted(prs, key=lambda x: -x.get("number", 0)):
-            if str(pr.get("state", "")).upper() == want:
-                return want.lower(), pr.get("url")
+    if not isinstance(prs, list):
+        return None
+    prs = [p for p in prs if isinstance(p, dict)]
+    for want in ("open", "merged"):
+        for pr in sorted(prs, key=lambda x: -(x.get(key) or x.get("number") or 0)):
+            if num.get(str(pr.get("state", "")).lower()) == want:
+                return want, pr.get("web_url") or pr.get("url")
     return "none", None
 
 
