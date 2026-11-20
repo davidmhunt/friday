@@ -8,6 +8,10 @@
   when a push fails. The snapshot reads the host through `FRIDAY_PROC_ROOT`, `FRIDAY_DISK_PATH`,
   `FRIDAY_TMUX_SOCKET` and `FRIDAY_LEASE_DIR`, and records `push_mode` (`FRIDAY_PUSH_MODE`, `timer` or
   `container`), shown in the dash's node card (#13, pc-01).
+- `push = "timer" | "container"` per node in `nodes.toml`. `friday nodes --setup` for a `container` node builds
+  `friday-dash:local` if missing, runs `deploy/push.compose.yaml` (GPU overlay only with an nvidia runtime) and removes
+  the timer; switching back stops the container and installs the timer. `nodes --check` reports the mode and whether
+  the container runs. The Dockerfile gains `tmux` and `git` (#13, pc-02).
 
 ## 1.2.0 - 2026-11-19
 
