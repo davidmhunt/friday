@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -175,10 +176,26 @@ def _positionals(argv: list[str], tool: str) -> tuple[list[str], bool]:
     return [x for x in pos if x != ""], scripted
 
 
-def check_bash_file_io(cmd: str, cfg: dict) -> str | None:
+def _is_active_verify(cmd: str, cwd: Path | None) -> bool:
+    """True when cmd equals the active directive's Verify line (Verify is a gate, not agent file I/O)."""
+    if cwd is None:
+        return False
+    marker = fc.read_marker(cwd)
+    root = fc.repo_root(cwd)
+    if not marker or not marker.get("id") or not root:
+        return False
+    d = fc.read_directive(root, marker["id"])
+    verify = ((d or {}).get("verify") or "").strip()
+    return bool(verify) and verify.lower() != "none" and cmd.strip() == verify
+
+
+def check_bash_file_io(cmd: str, cfg: dict, cwd: Path | None = None) -> str | None:
     """With bash_file_io: deny, deny Bash commands that do file I/O the file tools cover. A tool that
-    only reads a pipe (no file operand) is fine."""
+    only reads a pipe (no file operand) is fine. The active directive's own Verify line is exempt
+    from this rule only (every other check still applies)."""
     if cfg.get("bash_file_io") != "deny":
+        return None
+    if _is_active_verify(cmd, cwd):
         return None
     for simple in fc.split_commands(cmd, literal_quotes=True):
         targets, heredoc = _redirect_targets(simple)
@@ -277,11 +294,79 @@ def record_session_approval(payload: dict) -> None:
             fc.take_lease(resource, session, holder.get("note", ""), approved=True)
 
 
+_GIT_NO_RUN = {"add", "diff", "log", "status", "show", "blame", "grep", "rm", "mv", "restore", "checkout", "commit"}
+
+
+def _git_cannot_run(simple: str) -> bool:
+    """True for a `git <subcommand>` that only reads or stages files (never runs a script)."""
+    argv = fc.argv_of(simple)
+    if not argv or argv[0] != "git":
+        return False
+    rest = argv[1:]
+    while rest and rest[0] in ("-C", "-c") and len(rest) > 1:
+        rest = rest[2:]
+    return bool(rest) and rest[0] in _GIT_NO_RUN
+
+
+_GIT_COMMIT_HEAD = r"^\s*git(?:\s+-[Cc]\s+[^\s;&|`$<>()]+)*\s+commit\b[^;&|`$<>()\n]*?"
+# The only lines whose heredoc body is dropped: the line starts with `git commit`, holds nothing
+# else (no `;`, `&`, `|`, substitution or redirect before the heredoc) and ends at the heredoc
+# marker, so the body can only be the commit message.
+_ANY_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_COMMIT_MSG_HEREDOC = (
+    re.compile(_GIT_COMMIT_HEAD + r"(?:-F|--file)(?:\s+|=)-\s*<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1\s*$"),
+    re.compile(_GIT_COMMIT_HEAD + r"-m\s*\"\$\(\s*cat\s*<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1\s*$"),
+)
+
+
+def _drop_commit_heredocs(cmd: str) -> str:
+    """Remove the heredoc body of a `git commit -F - <<EOF` or `git commit -m "$(cat <<'EOF'` line
+    (the commit message, which never runs the device). Only a line of exactly that shape qualifies;
+    every other heredoc is kept and matched (fail closed)."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        m = next((m for rx in _COMMIT_MSG_HEREDOC if (m := rx.match(line))), None)
+        if m and line.count("<<") == 1:
+            j = i
+            while j < len(lines) and lines[j].strip() != m.group(2):
+                j += 1
+            if j < len(lines):                       # a terminated body: drop it, keep the terminator
+                out.append(lines[j]); i = j + 1
+            continue
+        # any other heredoc: copy its bodies through unexamined, so a commit-shaped line inside
+        # them is never treated as a real `git commit` (bodies are matched as text, fail closed)
+        for w in [g[1] for g in _ANY_HEREDOC.findall(line)]:
+            while i < len(lines) and lines[i].strip() != w:
+                out.append(lines[i]); i += 1
+            if i < len(lines):
+                out.append(lines[i]); i += 1
+    return "\n".join(out)
+
+
+def _hardware_segments(cmd: str) -> list[str]:
+    """The texts hardware patterns are matched against: each simple command of `cmd` except a git
+    subcommand that cannot run the device. Fail closed: a line that cannot be split (unbalanced
+    quotes) is matched whole."""
+    cmd = _drop_commit_heredocs(cmd)
+    try:
+        shlex.split(cmd, comments=False, posix=True)
+        simples = fc.split_commands(cmd)
+    except Exception:
+        return [cmd]
+    if not simples:
+        return [cmd]
+    return [s for s in simples if not _git_cannot_run(s)]
+
+
 def check_hardware(cmd: str, cfg: dict, session: str) -> tuple[str, str] | None:
     hw = cfg.get("hardware") or {}
     first = {}
+    segments = _hardware_segments(cmd)
     for r, pats in hw.items():
-        pos = [m.start() for p in pats if (m := re.search(p, cmd))]
+        pos = [(i, m.start()) for i, seg in enumerate(segments) for p in pats if (m := re.search(p, seg))]
         if pos:
             first[r] = min(pos)
     matched = sorted(first, key=first.get)         # resources in the order they appear in the command
@@ -374,25 +459,34 @@ def check_preapproved(cmd: str, cwd: Path) -> tuple[str, str] | None:
         if not goal or not fc.GOAL_RE.match(goal):
             return None
         text = _git_show(root, f"origin/friday-plan/{goal}:docs/directives/{did}.md")
-        if text is None:
-            return None
-        parsed = fc.parse_directive_full(text)
-        if (parsed.get("goal") or "").strip() != goal:
-            return None
+        parsed = fc.parse_directive_full(text) if text is not None else {}
+        if text is not None and (parsed.get("goal") or "").strip() != goal:
+            text = None
         base = f"friday-plan/{goal}"
         simples = fc.split_commands(cmd)
-        rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*")))
-               for pat in parsed.get("allowed") or []]
-        used: list[str] = []
-        for simple in simples:
-            hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
-            if hit is None:
-                return None
-            if hit not in used:
-                used.append(hit)
-        if simples:
+
+        def matches(patterns: list[str]) -> list[str] | None:
+            rxs = [(pat, ".*".join(re.escape(part) for part in pat.split("*"))) for pat in patterns]
+            used: list[str] = []
+            for simple in simples:
+                hit = next((pat for pat, rx in rxs if re.fullmatch(rx, simple, re.S)), None)
+                if hit is None:
+                    return None
+                if hit not in used:
+                    used.append(hit)
+            return used if simples else None
+
+        if text is not None and (used := matches(parsed.get("allowed") or [])):
             pats = ", ".join(f"`{p}`" for p in used)
             return "allow", f"pre-approved in {did} (on origin/{base}): every command matches {pats}"
+        # Not covered by the published list. When the working tree's list would cover it, the user is
+        # asked, and told why and what to run. Only ever an ask, never an allow.
+        state = fc.plan_publish_state(root, did)
+        if state in ("not published", "stale") and (used := matches(local.get("allowed") or [])):
+            pats = ", ".join(f"`{p}`" for p in used)
+            return "ask", (f"{did}: this command matches {pats} in `## Allowed commands`, but it is NOT "
+                           f"pre-approved (plan {state}): the user runs \"! friday approve --goal {goal}\" "
+                           f"to publish the plan.")
     except (OSError, subprocess.SubprocessError, KeyError, ValueError):
         return None
     return None
@@ -509,7 +603,7 @@ def pretool(payload: dict) -> None:
         results.append(("deny", r))
     if (r := check_run_only(cmd, cfg)):
         results.append(("deny", r))
-    if (r := check_bash_file_io(cmd, cfg)):
+    if (r := check_bash_file_io(cmd, cfg, cwd)):
         results.append(("deny", r))
     if (r := check_push(cmd, cwd)):
         results.append(("deny", r))
@@ -517,8 +611,10 @@ def pretool(payload: dict) -> None:
         results.append(r)
     pre = None if any(d == "deny" for d, _ in results) else check_preapproved(cmd, cwd)
     if not any(d == "deny" for d, _ in results) and (r := check_hardware(cmd, cfg, payload.get("session_id", ""))):
-        results.append(("allow", f"{pre[1]}. {r[1]}") if pre and r[0] == "ask" else r)
-    if pre:
+        results.append(("allow", f"{pre[1]}. {r[1]}") if pre and pre[0] == "allow" and r[0] == "ask" else r)
+    # The not-pre-approved ask is only a fall-through: it never turns an allow (a session-approved
+    # hardware resource) into an ask.
+    if pre and not (pre[0] == "ask" and any(d == "allow" for d, _ in results)):
         results.append(pre)
     if results:
         decision = max(results, key=lambda r: DECISION_RANK[r[0]])[0]

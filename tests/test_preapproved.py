@@ -103,6 +103,14 @@ def pre(repo, cmd, session="s1"):
     return d["permissionDecision"], d["permissionDecisionReason"]
 
 
+def assert_asks_not_preapproved(result):
+    """A command the working tree lists but the published plan does not cover: an ask that says so
+    and names the user's publish command, never an allow."""
+    d, why = result
+    assert d == "ask", (d, why)
+    assert "NOT pre-approved" in why and "friday approve --goal core" in why, why
+
+
 def test_matching_command_allowed(repo):
     d, why = pre(repo, "friday dispatch core-01 --node robot")
     assert d == "allow" and "pre-approved in core-01 (on origin/friday-plan/core)" in why
@@ -114,7 +122,7 @@ def test_pattern_only_in_goal_branch_copy_gives_no_decision(tmp_path, monkeypatc
     r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["friday release *"])
     fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
     assert "friday release *" in (r / "docs" / "directives" / "core-01.md").read_text()
-    assert pre(r, "friday release radar")[0] is None
+    assert_asks_not_preapproved(pre(r, "friday release radar"))
 
 
 def test_base_without_a_copy_gives_no_decision(tmp_path, monkeypatch):
@@ -189,7 +197,7 @@ def test_editing_goal_base_header_cannot_widen(tmp_path, monkeypatch):
     fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
     g = r / "docs" / "goals" / "core.md"
     g.write_text(g.read_text().replace("Base: main", "Base: friday/core"))
-    assert pre(r, "friday release radar")[0] is None
+    assert_asks_not_preapproved(pre(r, "friday release radar"))
 
 
 def test_marker_goal_base_is_not_consulted(repo):
@@ -202,7 +210,7 @@ def test_pattern_only_on_origin_base_gives_no_decision(tmp_path, monkeypatch):
     git(r, "update-ref", "-d", "refs/remotes/origin/friday-plan/core")
     git(r, "update-ref", "refs/remotes/origin/main", "main")
     fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
-    assert pre(r, "friday nodes --clean")[0] is None
+    assert_asks_not_preapproved(pre(r, "friday nodes --clean"))
 
 
 def test_plan_ref_naming_another_goal_gives_no_decision(tmp_path, monkeypatch):
@@ -214,7 +222,7 @@ def test_plan_ref_naming_another_goal_gives_no_decision(tmp_path, monkeypatch):
     git(r, "update-ref", "refs/remotes/origin/friday-plan/core", "main")
     git(r, "checkout", "-q", "friday/core")
     fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
-    assert pre(r, "friday nodes --clean")[0] is None
+    assert_asks_not_preapproved(pre(r, "friday nodes --clean"))
 
 
 BIN = ROOT / "bin" / "friday"
@@ -241,7 +249,11 @@ def test_start_with_edited_base_on_a_friday_branch_gives_no_decision(tmp_path, m
     edit_goal_base(r, new)
     start(r)
     assert fc.read_marker(r)["goal_base"] == new
-    assert pre(r, "friday release radar")[0] is None
+    result = pre(r, "friday release radar")
+    if new == "friday/core":                          # start stayed on the widened tree: ask, never allow
+        assert_asks_not_preapproved(result)
+    else:                                             # start moved to a branch off the edited Base: no list at all
+        assert result[0] is None
 
 
 def test_start_with_edited_base_on_local_only_branch_gives_no_decision(tmp_path, monkeypatch):
@@ -255,7 +267,7 @@ def test_start_with_edited_base_on_local_only_branch_gives_no_decision(tmp_path,
     assert fc.read_marker(r)["goal_base"] == "wip"
     assert "friday release *" in subprocess.run(["git", "-C", str(r), "show", "wip:docs/directives/core-01.md"],
                                                 capture_output=True, text=True).stdout
-    assert pre(r, "friday release radar")[0] is None
+    assert_asks_not_preapproved(pre(r, "friday release radar"))
 
 
 def test_pattern_on_local_base_but_not_pushed_gives_no_decision(tmp_path, monkeypatch):
@@ -265,7 +277,7 @@ def test_pattern_on_local_base_but_not_pushed_gives_no_decision(tmp_path, monkey
     git(r, "commit", "--no-verify", "-qam", "local only")
     git(r, "checkout", "-q", "friday/core")
     start(r)
-    assert pre(r, "friday release radar")[0] is None
+    assert_asks_not_preapproved(pre(r, "friday release radar"))
 
 
 @pytest.mark.parametrize("cmd", [
@@ -374,3 +386,16 @@ def test_ssh_pattern_does_not_preapprove_quoted_inner_substitution(tmp_path, mon
     for cmd in ("ssh rover '$(friday accept x)'", 'ssh rover "\\$(friday approve --goal g)"',
                 'ssh rover "\\`friday accept x\\`"'):
         assert pre(r, cmd)[0] != "allow", cmd
+
+
+def test_session_approved_hardware_is_not_turned_into_an_ask_by_an_unpublished_list(tmp_path, monkeypatch):
+    r = make_repo(tmp_path, monkeypatch, [], branch_allowed=["./flash_radar *"])
+    (r / ".claude" / "friday.json").write_text(json.dumps(
+        {"hardware": {"radar": [r"\bflash_radar\b"]}, "hardware_approval": {"radar": "session"}}))
+    fc.write_marker(r, {"id": "core-01", "goal_base": "main"})
+    assert pre(r, "./flash_radar a")[0] == "ask"        # not yet approved for the session
+    payload = {"tool_name": "Bash", "tool_input": {"command": "./flash_radar a"}, "cwd": str(r), "session_id": "s1"}
+    subprocess.run([sys.executable, str(HOOK), "posttool"], input=json.dumps(payload), text=True,
+                   capture_output=True, env=os.environ, check=True)
+    d, why = pre(r, "./flash_radar b")
+    assert d == "allow" and why == "radar approved for this session", (d, why)
