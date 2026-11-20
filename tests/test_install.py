@@ -7,11 +7,16 @@ from pathlib import Path
 FRIDAY = Path(__file__).resolve().parent.parent / "bin" / "friday"
 
 
+def PY312(tmp_path):
+    return tmp_path / "home" / ".local" / "share" / "friday" / "python" / "py312"
+
+
 def fake_uv(tmp_path, real=False):
     """A `uv` that 'installs' and 'finds' a fake interpreter; returns the directory to put on PATH."""
     d = tmp_path / "fakeuv"
     d.mkdir(exist_ok=True)
-    py = tmp_path / "py312"
+    py = tmp_path / "home" / ".local" / "share" / "friday" / "python" / "py312"
+    py.parent.mkdir(parents=True, exist_ok=True)
     py.write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n' if real else "#!/bin/sh\n")
     py.chmod(0o755)
     uv = d / "uv"
@@ -43,8 +48,8 @@ def test_fresh_install_and_idempotent(tmp_path):
     assert link.is_file() and not link.is_symlink()
     assert link.read_text().splitlines()[-1].endswith(f"{FRIDAY.resolve()} \"$@\"")
     rec = tmp_path / "home" / ".local" / "state" / "friday" / "python"
-    assert rec.read_text().strip() == str(tmp_path / "py312")
-    assert str(tmp_path / "py312") in link.read_text()
+    assert rec.read_text().strip() == str(PY312(tmp_path))
+    assert str(PY312(tmp_path)) in link.read_text()
     r = run(tmp_path, "install")
     assert r.returncode == 0 and link.is_file()
 

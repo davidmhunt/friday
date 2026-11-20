@@ -2054,20 +2054,36 @@ def _shim_text(py: str, me: Path) -> str:
             f"exec {shlex.quote(py)} {shlex.quote(str(me))} \"$@\"\n")
 
 
+def _private_python_dir() -> Path:
+    """friday's own uv Python directory: ${XDG_DATA_HOME:-~/.local/share}/friday/python."""
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return Path(base) / "friday" / "python"
+
+
 def _uv_python() -> str | None:
-    """Install Python 3.12 with uv if needed and return its path; None (after saying why) on failure."""
+    """Install Python 3.12 with uv into friday's private directory (no uv bin shim, uv's default directory
+    untouched) and return its path; None (after saying why) on failure."""
     if shutil.which("uv") is None:
         print("friday: uv is not installed; install it (https://docs.astral.sh/uv/getting-started/installation/) "
               "and run `friday install` again", file=sys.stderr)
         return None
-    for args in (["python", "install", "3.12"], ["python", "find", "3.12"]):
-        r = subprocess.run(["uv", *args], capture_output=True, text=True)
+    pdir = _private_python_dir()
+    env = {**os.environ, "UV_PYTHON_INSTALL_DIR": str(pdir)}
+    pdir.mkdir(parents=True, exist_ok=True)
+    for args in (["python", "install", "3.12", "--no-bin", "--install-dir", str(pdir)],
+                 ["python", "find", "--managed-python", "3.12"]):
+        r = subprocess.run(["uv", *args], capture_output=True, text=True, env=env)
         if r.returncode != 0:
             print(f"friday: `uv {' '.join(args)}` failed: {(r.stderr or r.stdout).strip()}", file=sys.stderr)
             return None
     py = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     if not py:
-        print("friday: `uv python find 3.12` printed nothing", file=sys.stderr)
+        print("friday: `uv python find --managed-python 3.12` printed nothing", file=sys.stderr)
+        return None
+    roots = {os.path.abspath(pdir), os.path.realpath(pdir)}
+    if not any(os.path.abspath(py).startswith(x + os.sep) or os.path.realpath(py).startswith(x + os.sep)
+               for x in roots):
+        print(f"friday: uv found {py}, which is outside {pdir}; not recording it", file=sys.stderr)
         return None
     return py
 
@@ -2127,6 +2143,10 @@ def _uninstall_link(a) -> int:
         if rec.exists():
             rec.unlink()
             print(f"friday: removed {rec}")
+        pdir = _private_python_dir()
+        if pdir.exists():
+            shutil.rmtree(pdir, ignore_errors=True)
+            print(f"friday: removed {pdir}")
         return 0
     print(f"friday: no link at {link}; nothing to do")
     return 0

@@ -1,13 +1,14 @@
 #!/bin/sh
 # friday-python: run a script on friday's uv-managed Python.
-# Order: the interpreter recorded by `friday install`; else `uv python find 3.12`; else python3 (with a warning).
+# Order: the interpreter recorded by `friday install`; else uv's managed 3.12 in friday's private directory; else python3 (with a warning).
 rec="$HOME/.local/state/friday/python"
 if [ -f "$rec" ]; then
   py=$(head -n 1 "$rec")
   if [ -n "$py" ] && [ -x "$py" ]; then exec "$py" "$@"; fi
 fi
 if command -v uv >/dev/null 2>&1; then
-  py=$(uv python find 3.12 2>/dev/null)
+  pdir="${XDG_DATA_HOME:-$HOME/.local/share}/friday/python"
+  py=$(UV_PYTHON_INSTALL_DIR="$pdir" uv python find --managed-python 3.12 2>/dev/null)
   if [ -n "$py" ] && [ -x "$py" ]; then exec "$py" "$@"; fi
 fi
 echo "friday: no uv-managed Python found; falling back to python3 (run \`friday install\` to fix)" >&2
