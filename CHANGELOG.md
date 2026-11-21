@@ -12,6 +12,15 @@
 
 - friday knows each repo's forge (github, gitlab or none) through `forge()` and the `forge` config key, and `friday check` warns once per goal when `Land: pr` cannot work (forge `none`, or gitlab without glab) (#20, fg-01).
 
+- `friday status --push --every N` pushes every N seconds (at least 5) until SIGTERM or SIGINT and keeps going
+  when a push fails. The snapshot reads the host through `FRIDAY_PROC_ROOT`, `FRIDAY_DISK_PATH`,
+  `FRIDAY_TMUX_SOCKET` and `FRIDAY_LEASE_DIR`, and records `push_mode` (`FRIDAY_PUSH_MODE`, `timer` or
+  `container`), shown in the dash's node card (#13, pc-01).
+- `push = "timer" | "container"` per node in `nodes.toml`. `friday nodes --setup` for a `container` node builds
+  `friday-dash:local` if missing, runs `deploy/push.compose.yaml` (GPU overlay only with an nvidia runtime) and removes
+  the timer; switching back stops the container and installs the timer. `nodes --check` reports the mode and whether
+  the container runs. The Dockerfile gains `tmux` and `git` (#13, pc-02).
+
 ### Fixed
 
 - With `"bash_file_io": "deny"`, the active directive's own `Verify:` line is no longer denied by the bash_file_io rule (#33); the deny list, run_only, push and hardware checks still apply. A Verify that did not run now blocks with the denial text verbatim, or `Verify not run: the Verify call returned no reason (check the hook output)`.

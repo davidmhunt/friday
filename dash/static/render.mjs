@@ -117,7 +117,7 @@ export function machineCard(n) {
   ];
   for (const [i, g] of (r.gpus || []).entries())
     kv.push(["GPU " + i, (g.util == null ? "?" : g.util + "%") + " " + mib(g.mem && g.mem.used) + "/" + mib(g.mem && g.mem.total)]);
-  kv.push(["sessions", String(sess.length)], ["leases", String((r.leases || []).length)]);
+  kv.push(["sessions", String(sess.length)], ["leases", String((r.leases || []).length)], ["push", r.push_mode || "timer"]);
   return h("div", { cls: "card machine" + (n.status !== "ok" ? " stale" : "") + (waiting ? " needs-you" : "") },
     h("div", { cls: "card-head" }, h("span", { cls: "dot " + dotClass(n), title: n.status }),
       h("span", { cls: "card-title" }, n.name), h("span", { cls: "badge" }, n.role || "node")),
