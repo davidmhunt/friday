@@ -1,0 +1,11 @@
+# Overlay added by `friday nodes --setup` only when `docker info` lists the nvidia runtime:
+#   docker compose -f deploy/push.compose.yaml -f deploy/push.gpu.compose.yaml up -d
+services:
+  friday-push:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
