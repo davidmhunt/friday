@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import time
@@ -195,6 +196,52 @@ def load_config(root: Path | None) -> dict:
 
 
 APPROVAL_MODES = ("command", "session")
+FORGE_KINDS = ("github", "gitlab", "none")
+
+
+def parse_remote(url: str) -> tuple[str, str] | None:
+    """(host, project path) from an ssh (`git@host:path.git`, `ssh://git@host:port/path.git`) or
+    https remote URL; None when it is neither."""
+    url = url.strip()
+    m = (re.match(r"^(?:[\w.-]+@)?([\w.-]+):(?!//)/?(.+?)(?:\.git)?/?$", url)
+         or re.match(r"^(?:ssh|https?|git)://(?:[^@/]+@)?([\w.-]+)(?::\d+)?/(.+?)(?:\.git)?/?$", url))
+    if not m or not m.group(2):
+        return None
+    return m.group(1).lower(), m.group(2)
+
+
+def forge(root: Path | None) -> dict:
+    """The repo's forge: {"kind": github|gitlab|none, "host", "slug", "web"}. The `forge` key in
+    .claude/friday.json wins; else origin's host (github.com is github; a host named *gitlab*, or one
+    `glab auth status --hostname` accepts, is gitlab); else none."""
+    out = {"kind": "none", "host": "", "slug": "", "web": ""}
+    if root is None:
+        return out
+    r = _git(["remote", "get-url", "origin"], root)
+    parsed = parse_remote(r) if r else None
+    if parsed:
+        out.update(host=parsed[0], slug=parsed[1], web=f"https://{parsed[0]}")
+    cfg = load_config(root).get("forge")
+    if cfg in FORGE_KINDS:
+        out["kind"] = cfg
+        return out
+    if not parsed:
+        return out
+    host = parsed[0]
+    if host == "github.com":
+        out["kind"] = "github"
+    elif "gitlab" in host:
+        out["kind"] = "gitlab"
+    else:
+        glab = os.environ.get("FRIDAY_GLAB") or "glab"
+        try:
+            ok = subprocess.run([glab, "auth", "status", "--hostname", host], cwd=root,
+                                capture_output=True, text=True, timeout=20).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if ok:
+            out["kind"] = "gitlab"
+    return out
 
 
 def _pattern_sample(pat: str) -> str | None:
@@ -258,6 +305,8 @@ def config_issues(root: Path | None) -> list[Issue]:
     out = []
     if "bash_file_io" in cfg and cfg["bash_file_io"] not in ("deny", "allow"):
         out.append(Issue("error", rel, 1, f"bash_file_io is {cfg['bash_file_io']!r}; use deny or allow"))
+    if "forge" in cfg and cfg["forge"] not in FORGE_KINDS:
+        out.append(Issue("error", rel, 1, f"forge is {cfg['forge']!r}; use github, gitlab or none"))
     if "rules" in cfg:
         r = cfg["rules"]
         if not isinstance(r, list) or not all(isinstance(x, str) and x.strip() for x in r):
@@ -345,7 +394,7 @@ ACCEPTS = ("auto", "user")
 GOAL_KEYS = ("Status", "Base", "Land")
 DELIVERABLES = ("code", "doc", "slides", "external")
 DIRECTIVE_LANDS = ("goal", "pr", "none")
-GOAL_LANDS = ("pr", "none")
+GOAL_LANDS = ("pr", "push", "none")
 DIRECTIVE_SECTIONS = ("Goal", "Steps", "Out of scope", "Log")
 GOAL_SECTIONS = ("Goal", "Directives", "Log")
 
@@ -1014,6 +1063,39 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
         t = read(directive_path(root, did))
         return parse_directive_full(t)["status"] if t is not None else None
 
+    forge_info: list[dict] = []
+    land_warned: set = set()
+
+    def land_pr_warning(gid: str, g: dict | None, did: str | None, d: dict | None) -> None:
+        """One warning per goal with `Land: pr` (goal or directive) when the forge cannot open PRs."""
+        if gid in land_warned:
+            return
+        uses = (g is not None and g["land"] == "pr") or (d is not None and d["land"] == "pr")
+        if not uses and g is not None and did is None:
+            for x in g["directives"]:
+                t = read(directive_path(root, x["id"])) if ID_RE.match(x["id"]) else None
+                if t is not None and parse_directive_full(t)["land"] == "pr":
+                    uses = True
+                    break
+        if not uses:
+            return
+        if not forge_info:
+            forge_info.append(forge(root))
+        kind = forge_info[0]["kind"]
+        glab = os.environ.get("FRIDAY_GLAB") or "glab"
+        if kind == "none":
+            msg = ("origin is not a known forge, so `Land: pr` cannot open a PR; set the `forge` key in "
+                   ".claude/friday.json (github or gitlab) or use `Land: push`")
+        elif kind == "gitlab" and shutil.which(glab) is None:
+            msg = ("`Land: pr` on gitlab needs glab, which is not installed; install glab or use `Land: push`")
+        else:
+            return
+        land_warned.add(gid)
+        if g is not None:
+            add([Issue("warning", str(GOAL_DIR / f"{gid}.md"), 1, f"goal `{gid}`: {msg}")])
+        elif did:
+            add([Issue("warning", str(DIRECTIVE_DIR / f"{did}.md"), 1, f"goal `{gid}`: {msg}")])
+
     def cross_directive(did: str, d: dict) -> None:
         rel = str(DIRECTIVE_DIR / f"{did}.md")
         hl = {k: ln for k, _, ln in reversed(d["headers"])}
@@ -1030,6 +1112,7 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
         if did not in ids:
             add([Issue("error", rel, gline, f"goal `{gid}` ({grel}) does not list {did}")])
             return
+        land_pr_warning(gid, g, did, d)
         if d["status"] == "done":
             for e in ids[:ids.index(did)]:
                 if dstatus(e) != "done":
@@ -1042,6 +1125,7 @@ def check_repo(root: Path | str, directive: str | None = None, goal: str | None 
 
     def cross_goal(gid: str, g: dict) -> None:
         grel = str(GOAL_DIR / f"{gid}.md")
+        land_pr_warning(gid, g, None, None)
         for x in g["directives"]:
             if not ID_RE.match(x["id"]):
                 continue

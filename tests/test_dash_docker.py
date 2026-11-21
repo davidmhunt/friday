@@ -67,7 +67,7 @@ def test_compose_mounts(svc):
 
 def test_compose_no_secret_values(svc):
     _, s = svc
-    assert s["environment"] == ["GH_TOKEN"]  # passed through from the environment, no value
+    assert s["environment"] == ["GH_TOKEN", "GITLAB_TOKEN"]  # passed through from the environment, no value
     text = COMPOSE.read_text()
     assert not re.search(r"(gh[pousr]_|github_pat_)\w+", text)
     assert not re.search(r"GH_TOKEN\s*[=:]\s*\S", re.sub(r"(?m)^\s*#.*$", "", text))

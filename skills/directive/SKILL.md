@@ -129,7 +129,7 @@ collide with the branch `friday/<id>`). Error otherwise.
 |---|---|---|
 | Status | yes | `proposed`, `approved`, `running`, `done`, `blocked: <reason>` (a goal is not `running@<host>`) |
 | Base | yes | the branch the PR targets; must not be empty |
-| Land | yes | `pr`, `none` |
+| Land | yes | `pr`, `push`, `none` |
 
 Each key once (duplicate is an error). Unknown goal headers are ignored, with no warning.
 
@@ -176,7 +176,8 @@ must name this goal.
   it is active); `friday commits <id>` lists them, and any `untracked` line (a commit with no
   trailer that touches more than plan docs) is a review gap. Never commit to main.
 - `friday land --goal <goal>` re-runs every directive's Verify on the goal branch, marks the goal
-  done and opens the one PR into Base (exit 6 when a Verify fails; nothing is pushed).
+  done and opens the one PR into Base (exit 6 when a Verify fails; nothing is pushed). A goal with
+  `Land: push` only pushes `friday/<goal>` and prints `PUSHED:` and `COMPARE: <url>`; no PR is opened.
 - A Stop hook keeps the active directive from ending until its Verify passes; a PostToolUse hook
   runs the format check after edits to goal and directive files.
 - The plan lives on the goal branch `friday/<goal>`, never on Base. Amending an approved goal:
